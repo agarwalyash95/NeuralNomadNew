@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "apps.notifications",
     "apps.common",
     "apps.homepage",
+    "apps.reference",
     "apps.planner",
 ]
 

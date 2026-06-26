@@ -22,6 +22,7 @@ api_urlpatterns = [
     path('wallet/', include('apps.wallet.urls')),
     path('notifications/', include('apps.notifications.urls')),
     path('homepage/', include('apps.homepage.urls')),
+    path('reference/', include('apps.reference.urls')),
     path('planner/', include('apps.planner.urls')),
 ]
 
