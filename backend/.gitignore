@@ -1,0 +1,67 @@
+# Backend - Django
+## Environment
+.env
+.env.local
+
+## Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+## Virtual Environment
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+## IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+## Database
+*.sqlite3
+db.sqlite3
+postgres_data/
+
+## Media
+media/
+uploads/
+
+## Logs
+logs/
+*.log
+
+## Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+
+## OS
+.DS_Store
+Thumbs.db
+
+## Cache
+.cache/
+*.tmp

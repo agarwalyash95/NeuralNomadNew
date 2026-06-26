@@ -1,0 +1,160 @@
+"""
+Bookings app views
+"""
+
+from rest_framework import viewsets, status, permissions
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated, AllowAny
+from django.db.models import Q
+
+from .models import Booking, SearchInventory, Location
+from .serializers import BookingSerializer, SearchInventorySerializer, LocationSerializer
+
+
+class BookingViewSet(viewsets.ModelViewSet):
+    """Booking viewset — manages a user's saved bookings."""
+
+    serializer_class = BookingSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Booking.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        import uuid
+        reference_number = f"BK{uuid.uuid4().hex[:10].upper()}"
+        serializer.save(user=self.request.user, reference_number=reference_number)
+
+    @action(detail=True, methods=['post'])
+    def confirm_payment(self, request, pk=None):
+        """Confirm payment for a booking"""
+        booking = self.get_object()
+        booking.payment_confirmed = True
+        booking.status = 'confirmed'
+        booking.payment_method = request.data.get('payment_method', 'credit_card')
+        booking.save()
+        return Response(self.get_serializer(booking).data)
+
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, pk=None):
+        """Cancel a booking"""
+        booking = self.get_object()
+        if booking.status == 'completed':
+            return Response(
+                {'error': 'Cannot cancel completed bookings'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        booking.status = 'cancelled'
+        booking.save()
+        return Response(self.get_serializer(booking).data)
+
+    @action(detail=False, methods=['get'])
+    def pending(self, request):
+        """Get pending bookings"""
+        bookings = self.get_queryset().filter(status='pending')
+        return Response(self.get_serializer(bookings, many=True).data)
+
+    @action(detail=False, methods=['get'])
+    def confirmed(self, request):
+        """Get confirmed bookings"""
+        bookings = self.get_queryset().filter(status='confirmed')
+        return Response(self.get_serializer(bookings, many=True).data)
+
+
+class SearchInventoryViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Search Inventory viewset — read-only travel search results.
+
+    ════════════════════════════════════════════════════════════
+    FUTURE API INTEGRATION POINT:
+    To connect a real third-party API (e.g., Amadeus, Skyscanner),
+    override the `search` action below. Replace the database query
+    with your API call and serialize the response into the same
+    shape. The frontend will work without any changes.
+    ════════════════════════════════════════════════════════════
+
+    Endpoint: GET /api/bookings/inventory/search/
+    Query Params:
+      - service   : flights | trains | hotels | bus | cab  (required)
+      - origin    : city name or code (for flights/trains/bus/cab)
+      - destination: city name or code (for flights/trains/bus)
+      - city      : for hotels
+      - pickup    : for cabs
+    """
+    serializer_class = SearchInventorySerializer
+    permission_classes = [AllowAny]  # Search is public — no login required
+    queryset = SearchInventory.objects.filter(is_active=True)
+
+    @action(detail=False, methods=['get'])
+    def search(self, request):
+        """
+        Main search endpoint. Query the local inventory database.
+
+        Future: Replace this method body to call external APIs.
+        Keep the return format identical so the frontend stays unchanged.
+        """
+        service = request.query_params.get('service', '').lower()
+        origin = request.query_params.get('origin', '').strip().lower()
+        destination = request.query_params.get('destination', '').strip().lower()
+        city = request.query_params.get('city', '').strip().lower()
+        pickup = request.query_params.get('pickup', '').strip().lower()
+
+        if not service:
+            return Response({'error': 'service parameter is required'}, status=400)
+
+        qs = SearchInventory.objects.filter(is_active=True, service_type=service)
+
+        # --- Apply service-specific filters ---
+        if service == 'hotel':
+            if city:
+                qs = qs.filter(destination_city__icontains=city)
+        elif service == 'cab':
+            if pickup:
+                qs = qs.filter(origin_city__icontains=pickup)
+        else:
+            # flights, trains, bus
+            if origin:
+                qs = qs.filter(origin_city__icontains=origin)
+            if destination:
+                qs = qs.filter(destination_city__icontains=destination)
+
+        serializer = self.get_serializer(qs, many=True)
+        return Response(serializer.data)
+
+
+class LocationViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    ViewSet for searching locations for autocomplete dropdowns.
+    """
+    queryset = Location.objects.all()
+    serializer_class = LocationSerializer
+    permission_classes = [permissions.AllowAny]
+
+    @action(detail=False, methods=['get'])
+    def search(self, request):
+        """
+        Search locations by query and type.
+        Usage: /api/bookings/locations/search/?q=delhi&type=airport
+        """
+        query = request.query_params.get('q', '').strip()
+        loc_type = request.query_params.get('type', '').strip().lower()
+
+        if not query:
+            return Response([])
+
+        qs = self.get_queryset()
+
+        if loc_type:
+            qs = qs.filter(location_type=loc_type)
+
+        # Search across name, city, and code
+        qs = qs.filter(
+            Q(name__icontains=query) |
+            Q(city__icontains=query) |
+            Q(code__icontains=query)
+        )
+
+        # Limit to 10 suggestions
+        serializer = self.get_serializer(qs[:10], many=True)
+        return Response(serializer.data)

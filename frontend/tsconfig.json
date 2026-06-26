@@ -1,0 +1,86 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": [
+      "ES2020",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "resolveJsonModule": true,
+    "noImplicitAny": true,
+    "noImplicitThis": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictPropertyInitialization": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "allowUnusedLabels": false,
+    "allowUnreachableCode": false,
+    "noImplicitOverride": true,
+    "jsx": "preserve",
+    "forceConsistentCasingInFileNames": true,
+    "incremental": true,
+    "isolatedModules": true,
+    "moduleResolution": "bundler",
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ],
+      "@/components/*": [
+        "./src/components/*"
+      ],
+      "@/hooks/*": [
+        "./src/hooks/*"
+      ],
+      "@/services/*": [
+        "./src/services/*"
+      ],
+      "@/store/*": [
+        "./src/store/*"
+      ],
+      "@/lib/*": [
+        "./src/lib/*"
+      ],
+      "@/types/*": [
+        "./src/types/*"
+      ],
+      "@/constants/*": [
+        "./src/constants/*"
+      ],
+      "@/providers/*": [
+        "./src/providers/*"
+      ],
+      "@/assets/*": [
+        "./src/assets/*"
+      ]
+    },
+    "allowJs": true,
+    "noEmit": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ]
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "next-env.d.ts",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    ".next",
+    "out",
+    "dist"
+  ]
+}
