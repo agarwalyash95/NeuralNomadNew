@@ -1,7 +1,8 @@
 'use client';
 
-import PlannerShell from '@/features/planner/layout/PlannerShell';
-
 export default function PlannerPage() {
-  return <PlannerShell />;
+  return (
+    <div className="h-full w-full">
+    </div>
+  );
 }

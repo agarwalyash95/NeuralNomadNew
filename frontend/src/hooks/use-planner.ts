@@ -7,7 +7,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { plannerService } from '@/services/planner.service';
-import { usePlannerStore } from '@/features/planner/store/planner.store';
+import { usePlannerStore } from '@/features/_planner_archive/store/planner.store';
 import type { ChatResponse, PlannerWorkspace } from '@/services/planner.types';
 
 // ─── Query Keys ─────────────────────────────────────

@@ -1,56 +1,18 @@
-"""
-Plan Service — Trip and journey CRUD.
-"""
-
-import logging
-from apps.planner.models import PlannerTrip, TripCity, TripDay, TripActivity
-
-logger = logging.getLogger(__name__)
-
+from apps.planner.engine.timeline_engine import TimelineEngine
+from apps.planner.models import TripCity
 
 class PlanService:
-    """Manages trip plan CRUD operations."""
-
-    def get_full_plan(self, workspace_id: str) -> dict:
-        """Get complete trip plan with cities, days, and activities."""
-        try:
-            trip = PlannerTrip.objects.get(workspace_id=workspace_id)
-        except PlannerTrip.DoesNotExist:
-            return {}
-
-        cities = list(
-            trip.cities.filter(is_deleted=False).order_by('order').values(
-                'id', 'name', 'country', 'latitude', 'longitude',
-                'order', 'nights', 'arrival_date', 'departure_date',
-            )
+    @staticmethod
+    def add_city_to_trip(workspace, city_id, start_date=None, end_date=None):
+        trip = workspace.trip
+        order = trip.cities.count()
+        trip_city = TripCity.objects.create(
+            trip=trip,
+            city_id=city_id,
+            order=order,
+            start_date=start_date,
+            end_date=end_date
         )
-
-        days = []
-        for day in trip.days.filter(is_deleted=False).order_by('day_number'):
-            activities = list(
-                day.activities.filter(is_deleted=False).order_by('order').values(
-                    'id', 'title', 'category', 'location_name',
-                    'latitude', 'longitude', 'start_time', 'end_time',
-                    'duration_minutes', 'estimated_cost', 'currency_code',
-                    'status', 'order', 'notes',
-                )
-            )
-            days.append({
-                'id': str(day.id),
-                'day_number': day.day_number,
-                'date': str(day.date) if day.date else None,
-                'title': day.title,
-                'day_type': day.day_type,
-                'activities': activities,
-            })
-
-        return {
-            'id': str(trip.id),
-            'title': trip.title,
-            'summary': trip.summary,
-            'total_budget': float(trip.total_budget) if trip.total_budget else None,
-            'spent_budget': float(trip.spent_budget),
-            'currency_code': trip.currency_code,
-            'cities': cities,
-            'days': days,
-        }
+        if start_date and end_date:
+            TimelineEngine.generate_days_for_city(trip_city)
+        return trip_city

@@ -1,24 +1,10 @@
-"""
-Planner permissions — workspace ownership enforcement.
-"""
+from rest_framework import permissions
 
-from rest_framework.permissions import BasePermission
-
-
-class IsWorkspaceOwner(BasePermission):
-    """
-    Only the workspace owner can access workspace-nested endpoints.
-    """
-    message = 'You do not have access to this workspace.'
-
-    def has_permission(self, request, view):
-        # Must be authenticated
-        return request.user and request.user.is_authenticated
-
+class IsWorkspaceOwner(permissions.BasePermission):
     def has_object_permission(self, request, view, obj):
-        # Check workspace ownership
+        # obj could be PlannerWorkspace or related object
         if hasattr(obj, 'user'):
             return obj.user == request.user
-        if hasattr(obj, 'workspace'):
+        elif hasattr(obj, 'workspace'):
             return obj.workspace.user == request.user
         return False

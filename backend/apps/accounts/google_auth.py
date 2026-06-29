@@ -1,5 +1,4 @@
-import urllib.request
-import json
+import requests
 
 def verify_google_token(token, client_id):
     """
@@ -7,11 +6,15 @@ def verify_google_token(token, client_id):
     Returns None if verification fails.
     """
     try:
-        req = urllib.request.Request('https://www.googleapis.com/oauth2/v3/userinfo')
-        req.add_header('Authorization', f'Bearer {token}')
-        with urllib.request.urlopen(req) as response:
-            if response.status == 200:
-                return json.loads(response.read().decode('utf-8'))
+        response = requests.get(
+            'https://www.googleapis.com/oauth2/v3/userinfo',
+            headers={'Authorization': f'Bearer {token}'},
+            timeout=10
+        )
+        if response.status_code == 200:
+            return response.json()
+        print(f"Google token verification failed with status: {response.status_code}, {response.text}")
+        return None
     except Exception as e:
         print(f"Google token verification failed: {e}")
         return None

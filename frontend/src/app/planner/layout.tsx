@@ -1,11 +1,14 @@
-/**
- * Planner layout — fullscreen, no navbar padding.
- * The planner has its own navigation chrome.
- */
+'use client';
 
-export default function PlannerLayout({ children }: { children: React.ReactNode }) {
+import React from 'react';
+
+export default function PlannerLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <div className="fixed inset-0 z-50 bg-white dark:bg-slate-950">
+    <div className="h-screen w-full flex overflow-hidden bg-[#FAFAFA]">
       {children}
     </div>
   );

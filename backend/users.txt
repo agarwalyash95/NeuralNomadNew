@@ -1,0 +1,3 @@
+69 objects imported automatically (use -v 2 for details).
+
+[(UUID('20a7224b-a715-4b3c-9552-4ed057b12c74'), 'varshakarn18@gmail.com'), (UUID('fbb5756c-121e-4dd0-a644-a9b85afa5c82'), 'yash30076472@gmail.com')]

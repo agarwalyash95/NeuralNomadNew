@@ -66,7 +66,8 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
         window.location.reload();
       } catch (error) {
         console.error('Google login failed', error);
-        alert('Google Sign-In failed. Please try again.');
+        const errorMessage = error?.message || 'Please try again.';
+        alert(`Google Sign-In failed: ${errorMessage}`);
       } finally {
         setIsLoading(false);
       }

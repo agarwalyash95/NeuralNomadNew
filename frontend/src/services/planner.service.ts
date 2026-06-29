@@ -67,8 +67,15 @@ export const plannerService = {
 
   // ─── Plan ──────────────────────────────────────────
 
-  getPlan: (workspaceId: string) =>
-    apiClient.get<PlannerTrip>(`${BASE}/${workspaceId}/plan/`),
+  getPlan: (workspaceId: string) => {
+    if (typeof window !== 'undefined') {
+      const mockScenario = localStorage.getItem('DEV_mockScenario');
+      if (mockScenario && mockScenario !== 'none') {
+        return apiClient.get<PlannerTrip>(`/planner/debug/scenario/${mockScenario}/`);
+      }
+    }
+    return apiClient.get<PlannerTrip>(`${BASE}/${workspaceId}/plan/`);
+  },
 
   updatePlan: (workspaceId: string, data: Partial<PlannerTrip>) =>
     apiClient.patch<PlannerTrip>(`${BASE}/${workspaceId}/plan/`, data),
