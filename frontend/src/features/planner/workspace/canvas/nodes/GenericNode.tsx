@@ -18,6 +18,29 @@ interface GenericNodeProps {
 export default function GenericNode({ item, isLast, onClick, onReplace, onRemove }: GenericNodeProps) {
   const [isHovered, setIsHovered] = useState(false);
 
+  // Derive gradient based on item type
+  let gradientClass = 'bg-gradient-to-br from-slate-50 to-slate-100/50 border-slate-200';
+  let iconTint = 'text-slate-400';
+  
+  switch(item.type) {
+    case 'hotel':
+      gradientClass = isHovered ? 'bg-gradient-to-br from-indigo-50/80 to-indigo-100/60 border-indigo-200' : 'bg-gradient-to-br from-indigo-50/40 to-indigo-50/80 border-indigo-100';
+      iconTint = 'text-indigo-400';
+      break;
+    case 'activity':
+      gradientClass = isHovered ? 'bg-gradient-to-br from-emerald-50/80 to-emerald-100/60 border-emerald-200' : 'bg-gradient-to-br from-emerald-50/40 to-emerald-50/80 border-emerald-100';
+      iconTint = 'text-emerald-400';
+      break;
+    case 'food':
+      gradientClass = isHovered ? 'bg-gradient-to-br from-orange-50/80 to-orange-100/60 border-orange-200' : 'bg-gradient-to-br from-orange-50/40 to-orange-50/80 border-orange-100';
+      iconTint = 'text-orange-400';
+      break;
+    case 'taxi':
+      gradientClass = isHovered ? 'bg-gradient-to-br from-amber-50/80 to-amber-100/60 border-amber-200' : 'bg-gradient-to-br from-amber-50/40 to-amber-50/80 border-amber-100';
+      iconTint = 'text-amber-400';
+      break;
+  }
+
   const {
     attributes,
     listeners,
@@ -42,29 +65,22 @@ export default function GenericNode({ item, isLast, onClick, onReplace, onRemove
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
         >
-          {/* Drag Handle on the left outside the main box */}
-          <div 
-            {...attributes} 
-            {...listeners}
-            className="absolute -left-6 top-1/2 -translate-y-1/2 cursor-grab text-slate-300 opacity-0 transition-opacity group-hover:opacity-100 hover:text-slate-500"
-          >
-            <GripVertical size={16} />
-          </div>
-
           <div
+            {...attributes}
+            {...listeners}
             onClick={onClick}
-            className={`flex cursor-pointer items-start justify-between gap-3 rounded-[16px] border ${isHovered ? 'border-indigo-200' : 'border-[#e2ddd2]'} bg-white p-3 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md`}
+            className={`flex cursor-pointer items-start justify-between gap-3 rounded-[16px] border ${gradientClass} px-4 py-3 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md touch-none`}
           >
             <div className="flex min-w-0 gap-3">
               {item.image ? (
-                <div className="relative h-20 w-24 shrink-0 overflow-hidden rounded-xl">
+                <div className="relative h-20 w-24 shrink-0 overflow-hidden rounded-xl shadow-sm border border-white/50">
                   <Image src={item.image} alt={item.title} fill className="object-cover" />
                 </div>
               ) : null}
               <div className="min-w-0 py-0.5 flex flex-col justify-between">
                 <div>
                   <div className="flex items-center gap-2">
-                    <h4 className="text-sm font-semibold text-slate-900">{item.title}</h4>
+                    <h4 className="text-lg font-bold text-slate-900 tracking-tight">{item.title}</h4>
                     {item.rating && (
                       <div className="flex items-center text-amber-400">
                         {[...Array(5)].map((_, i) => (
@@ -74,16 +90,16 @@ export default function GenericNode({ item, isLast, onClick, onReplace, onRemove
                     )}
                   </div>
                   
-                  <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-600 font-medium">
                     {item.geoTag ? (
-                      <span className="flex items-center gap-1"><MapPin size={10} /> {item.geoTag}</span>
+                      <span className="flex items-center gap-1"><MapPin size={12} className={iconTint} /> {item.geoTag}</span>
                     ) : null}
                     {item.geoTag && <span className="text-slate-300">•</span>}
                     <span>{item.subtitle}</span>
                   </div>
                   
-                  {item.details ? <p className="mt-1 text-xs text-slate-400">{item.details}</p> : null}
-                  {item.aiTip ? <p className="mt-1 text-xs font-medium text-emerald-700">{item.aiTip}</p> : null}
+                  {item.details ? <p className="mt-1.5 text-xs text-slate-500">{item.details}</p> : null}
+                  {item.aiTip ? <p className="mt-1.5 text-xs font-semibold text-emerald-700 flex items-center gap-1"><Star size={10} className="text-emerald-500" fill="currentColor"/> {item.aiTip}</p> : null}
                 </div>
               </div>
             </div>

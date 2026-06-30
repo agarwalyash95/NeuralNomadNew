@@ -55,18 +55,22 @@ export default function NodeWrapper({ type, time, endTime, children, iconBgColor
   };
 
   return (
-    <div className="relative py-1.5 pl-24 md:pl-28">
-      <div className="absolute left-0 top-1/2 w-16 -translate-y-1/2 text-right">
-        <p className="text-xs font-semibold text-slate-800">{time}</p>
-        {endTime ? <p className="mt-0.5 text-[10px] font-medium text-slate-500">{endTime}</p> : null}
+    <div className="relative py-2 pl-[144px] pr-4">
+      {/* Main Spine passing through continuously */}
+      <div className="absolute bottom-0 left-[38px] top-0 w-1 bg-slate-800" />
+      
+      {/* Sub Spine passing through the items */}
+      <div className={`absolute left-[120px] top-0 w-[1.5px] bg-slate-200 ${isLast ? 'bottom-1/2' : 'bottom-0'}`} />
+
+      {/* Time column (between Main and Sub spine) */}
+      <div className="absolute left-[64px] top-[26px] w-[40px] text-right">
+        <p className="text-[11px] font-bold text-slate-800">{time}</p>
+        {endTime ? <p className="text-[10px] font-semibold text-slate-500">{endTime}</p> : null}
       </div>
 
-      {!isLast ? (
-        <div className="absolute bottom-[-52%] left-[81px] top-1/2 w-px bg-[#ddd7ca] md:left-[89px]" />
-      ) : null}
-
+      {/* Activity Icon on Sub Spine */}
       <div
-        className={`absolute left-[71px] top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-lg shadow-sm md:left-[79px] ${getBgColor()}`}
+        className={`absolute left-[108px] top-[26px] z-10 flex h-6 w-6 items-center justify-center rounded-full border-[2px] border-white shadow-sm ${getBgColor()}`}
       >
         {getIcon()}
       </div>

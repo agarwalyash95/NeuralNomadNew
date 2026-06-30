@@ -41,34 +41,70 @@ export default function FlightNode({ item, isLast, onClick, onReplace, onRemove 
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
         >
-          {/* Drag Handle on the left outside the main box */}
-          <div 
-            {...attributes} 
-            {...listeners}
-            className="absolute -left-6 top-1/2 -translate-y-1/2 cursor-grab text-slate-300 opacity-0 transition-opacity group-hover:opacity-100 hover:text-slate-500"
-          >
-            <GripVertical size={16} />
+          <div
+          {...attributes}
+          {...listeners}
+          onClick={onClick}
+          className="group flex cursor-pointer flex-col gap-4 rounded-[20px] border border-violet-200 bg-gradient-to-br from-violet-50/80 to-violet-100/40 p-4 px-5 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md touch-none"
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-violet-100 text-violet-600">
+                <Plane size={16} fill="currentColor" />
+              </div>
+              <div>
+                <p className="text-[11px] font-extrabold uppercase tracking-[0.25em] text-violet-600">
+                  {item.subtitle}
+                </p>
+                <h4 className="mt-0.5 text-lg font-bold text-slate-900 tracking-tight">{item.title}</h4>
+              </div>
+            </div>
+            <button className="rounded-full p-2 text-violet-400 opacity-0 transition-all group-hover:opacity-100 hover:bg-white/70 hover:text-violet-700">
+              <MoreVertical size={18} />
+            </button>
           </div>
 
-          <div
-            onClick={onClick}
-            className="grid cursor-pointer gap-3 rounded-[16px] border border-indigo-100 bg-[linear-gradient(180deg,#f9f8ff_0%,#eef2ff_100%)] p-3 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md lg:grid-cols-[1.3fr_auto]"
-          >
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-indigo-500">Flight</p>
-              <h4 className="mt-1 text-sm font-semibold text-slate-900">{item.title}</h4>
-              <p className="mt-0.5 text-xs text-slate-600">{item.subtitle}</p>
-              {item.aiTip ? <p className="mt-1 text-xs font-medium text-emerald-700">{item.aiTip}</p> : null}
+          {/* Flight Details Box */}
+          <div className="flex items-center justify-between rounded-xl bg-white/60 p-3 px-4 shadow-sm backdrop-blur-sm border border-white">
+            <div className="text-center">
+              <p className="text-lg font-bold text-slate-900">DEL</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">20:30</p>
             </div>
-            <div className="flex items-start justify-between gap-3 lg:flex-col lg:items-end">
-              <div className="text-right">
-                <p className="text-sm font-semibold text-slate-900">{item.price}</p>
-                <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-600">{item.status}</p>
+            
+            <div className="flex flex-1 flex-col items-center px-4">
+              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">1h 30m</p>
+              <div className="relative my-1.5 w-full border-t-[1.5px] border-dashed border-violet-200">
+                <Plane 
+                  size={14} 
+                  className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-violet-400 bg-transparent" 
+                />
               </div>
-              <button className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/70 hover:text-slate-800">
-                <MoreVertical size={14} />
-              </button>
+              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Direct</p>
             </div>
+
+            <div className="text-center">
+              <p className="text-lg font-bold text-slate-900">KUU</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">22:00</p>
+            </div>
+          </div>
+
+          {/* Details Footer */}
+          {item.details && (
+             <div className="flex items-center gap-2">
+                <div className="flex h-5 items-center rounded bg-emerald-100/80 px-2 text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+                  {item.status}
+                </div>
+                <p className="text-[11px] font-medium text-slate-600">{item.details}</p>
+             </div>
+          )}
+          
+          {item.aiTip && (
+             <p className="text-xs font-semibold text-violet-700 flex items-center gap-1.5 bg-violet-100/50 p-2 rounded-lg">
+                <Plane size={12} className="text-violet-500" fill="currentColor"/> 
+                {item.aiTip}
+             </p>
+          )} 
           </div>
 
           {/* Floating Action Bar on Hover */}

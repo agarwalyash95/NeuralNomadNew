@@ -29,6 +29,16 @@ interface ItineraryTimelineProps {
 
 export default function ItineraryTimeline({ onItemClick }: ItineraryTimelineProps) {
   const [data, setData] = useState(mockTripData);
+  const [collapsedCities, setCollapsedCities] = useState<Record<string, boolean>>({});
+  const [collapsedDays, setCollapsedDays] = useState<Record<string, boolean>>({});
+
+  const toggleCity = (cityId: string) => {
+    setCollapsedCities(prev => ({ ...prev, [cityId]: !prev[cityId] }));
+  };
+
+  const toggleDay = (dayId: string) => {
+    setCollapsedDays(prev => ({ ...prev, [dayId]: !prev[dayId] }));
+  };
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -113,14 +123,27 @@ export default function ItineraryTimeline({ onItemClick }: ItineraryTimelineProp
       onDragEnd={handleDragEnd}
     >
       <div className="pb-10">
-        {data.cities.map((city, cityIndex) => (
+        {data.cities.map((city, cityIndex) => {
+          const isCityCollapsed = !!collapsedCities[city.id];
+          return (
           <React.Fragment key={city.id}>
-            <CityHeaderNode city={city} />
+            <CityHeaderNode 
+              city={city} 
+              isCollapsed={isCityCollapsed} 
+              onToggle={() => toggleCity(city.id)} 
+            />
 
-            {city.days.map((day, dayIndex) => (
+            {!isCityCollapsed && city.days.map((day, dayIndex) => {
+              const isDayCollapsed = !!collapsedDays[day.id];
+              return (
               <React.Fragment key={day.id}>
-                <DayHeaderNode day={day} />
+                <DayHeaderNode 
+                  day={day} 
+                  isCollapsed={isDayCollapsed} 
+                  onToggle={() => toggleDay(day.id)} 
+                />
 
+                {!isDayCollapsed && (
                 <SortableContext id={day.id} items={day.items.map(i => i.id)} strategy={verticalListSortingStrategy}>
                   <div className="flex flex-col">
                     {day.items.map((item, itemIndex) => {
@@ -156,25 +179,27 @@ export default function ItineraryTimeline({ onItemClick }: ItineraryTimelineProp
                     })}
 
                     {/* Add Activity Button at the end of the day */}
-                    <div className="relative py-1.5 pl-24 md:pl-28">
-                      <div className="absolute bottom-0 left-[81px] top-0 w-px bg-[#ddd7ca] md:left-[89px]" />
-                      <div className="ml-[-0.5rem] flex justify-center">
-                        <button className="flex items-center gap-1.5 rounded-lg border border-[#ddd7ca] bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm transition-all hover:border-[#c8c1b3] hover:bg-[#faf8f2]">
+                    <div className="relative py-4 pl-[144px]">
+                      <div className="absolute bottom-0 left-[38px] top-0 w-1 bg-slate-800" />
+                      <div className="absolute bottom-1/2 left-[120px] top-0 w-[1.5px] bg-slate-200" />
+                      <div className="ml-[-1rem] flex justify-start">
+                        <button className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-500 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700">
                           <Plus size={14} /> Add Activity
                         </button>
                       </div>
                     </div>
                   </div>
                 </SortableContext>
+                )}
               </React.Fragment>
-            ))}
+            )})}
 
             {/* Inter-city Transit */}
-            {city.transitToNext && (
+            {!isCityCollapsed && city.transitToNext && (
               <TransitNode item={city.transitToNext} onClick={() => onItemClick?.(city.transitToNext!.type)} />
             )}
           </React.Fragment>
-        ))}
+        )})}
       </div>
     </DndContext>
   );

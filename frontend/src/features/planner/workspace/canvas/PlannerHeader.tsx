@@ -1,8 +1,13 @@
 import React from 'react';
-import { Share, Download, MoreVertical, CreditCard } from 'lucide-react';
+import { Share, Download, MoreVertical, CreditCard, Loader2 } from 'lucide-react';
 import { mockTripData } from './mockData';
 
-export default function PlannerHeader() {
+interface PlannerHeaderProps {
+  onExport?: () => void;
+  isExporting?: boolean;
+}
+
+export default function PlannerHeader({ onExport, isExporting }: PlannerHeaderProps) {
   return (
     <div className="mb-4 rounded-[16px] border border-[#e2ddd2] bg-white px-4 py-3 shadow-[0_16px_40px_-32px_rgba(15,23,42,0.35)]">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -28,9 +33,13 @@ export default function PlannerHeader() {
             <Share size={14} />
             Share
           </button>
-          <button className="flex items-center gap-1.5 rounded-lg border border-[#ddd7ca] bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-[#faf8f2]">
-            <Download size={14} />
-            Export
+          <button 
+            onClick={onExport}
+            disabled={isExporting}
+            className="flex items-center gap-1.5 rounded-lg border border-[#ddd7ca] bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-[#faf8f2] disabled:opacity-50"
+          >
+            {isExporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+            {isExporting ? 'Exporting...' : 'Export'}
           </button>
           <button className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-[#faf8f2] hover:text-slate-700">
             <MoreVertical size={16} />
