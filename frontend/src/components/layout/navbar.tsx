@@ -64,7 +64,9 @@ export default function Navbar() {
     if (isAuthenticated) {
       notificationService.unreadCount().then(res => {
         setUnreadCount((res as any)?.unread_count || 0);
-      }).catch(err => console.error(err));
+      }).catch(() => {
+        // Silently ignore if unread count fails
+      });
     }
   }, [isAuthenticated, isNotificationOpen]);
 

@@ -1,14 +1,26 @@
 'use client';
 
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { TravelSearchResult, FlightMeta, TrainMeta, HotelMeta, CabMeta } from '@/types/search';
 import { useRouter } from 'next/navigation';
-import { useBookingSelectionStore } from '@/store/booking-selection.store';
 import { ChevronDown, ChevronUp, Clock, MapPin, Plane, Train, BedDouble, Bus, Car } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { useBookingSelectionStore } from '@/store/booking-selection.store';
+import { TravelSearchResult, FlightMeta, TrainMeta, HotelMeta, CabMeta } from '@/types/search';
 
 interface Props {
   results: TravelSearchResult[];
+}
+
+const serviceIcons = {
+  flight: Plane,
+  train: Train,
+  hotel: BedDouble,
+  bus: Bus,
+  cab: Car,
+} as const;
+
+function formatRupees(value: number) {
+  return `Rs ${value.toLocaleString('en-IN')}`;
 }
 
 export default function SearchResults({ results }: Props) {
@@ -18,210 +30,220 @@ export default function SearchResults({ results }: Props) {
 
   if (results.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-slate-300 bg-white/50 p-12 text-center">
-        <p className="text-lg font-bold text-slate-500">No results found for your search.</p>
-        <p className="text-sm text-slate-400 mt-2">Try adjusting your filters or destination.</p>
+      <div className="rounded-[1.5rem] border border-dashed border-[#d7d0c3] bg-white/70 p-12 text-center">
+        <p className="text-lg font-bold text-slate-700">No results found for your search.</p>
+        <p className="mt-2 text-sm text-slate-500">Try adjusting your dates, route, or filters.</p>
       </div>
     );
   }
 
   const toggleExpand = (id: string) => {
-    setExpandedId(expandedId === id ? null : id);
+    setExpandedId((current) => (current === id ? null : id));
   };
 
-  const handleBook = (result: TravelSearchResult, _specificDetails?: unknown) => {
-    void _specificDetails; // reserved for passing class/provider selection in future
+  const handleBook = (result: TravelSearchResult, selection?: unknown) => {
+    void selection;
     setSelected(result);
     router.push('/book-now');
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {results.map((result) => {
         const isExpanded = expandedId === result.id;
         const isTrain = result.service_type === 'train';
+        const ServiceIcon = serviceIcons[result.service_type];
 
-        // Get cheapest price for the main card display
         let lowestPrice = 0;
         if (isTrain) {
           const trainMeta = result.meta as TrainMeta;
-          lowestPrice = Math.min(...(trainMeta.classes?.map((c) => c.price) || [0]));
+          lowestPrice = Math.min(...(trainMeta.classes?.map((item) => item.price) || [0]));
         } else if (result.providers && result.providers.length > 0) {
-          lowestPrice = Math.min(...result.providers.map((p) => p.price));
+          lowestPrice = Math.min(...result.providers.map((provider) => provider.price));
         } else if (result.service_type === 'hotel') {
           const hotelMeta = result.meta as HotelMeta;
-          lowestPrice = Math.min(...(hotelMeta.rooms?.map((r) => r.price_per_night) || [0]));
+          lowestPrice = Math.min(...(hotelMeta.rooms?.map((room) => room.price_per_night) || [0]));
         } else if (result.service_type === 'cab') {
           const cabMeta = result.meta as CabMeta;
-          lowestPrice = Math.min(...(cabMeta.cab_types?.map((c) => c.price_per_km) || [0]));
+          lowestPrice = Math.min(...(cabMeta.cab_types?.map((cab) => cab.price_per_km) || [0]));
         } else {
-           // flights/buses fallback if providers array is missing but classes exist
-           const flightMeta = result.meta as FlightMeta;
-           lowestPrice = Math.min(...(flightMeta.cabin_classes?.map((c) => c.price) || [0]));
+          const flightMeta = result.meta as FlightMeta;
+          lowestPrice = Math.min(...(flightMeta.cabin_classes?.map((item) => item.price) || [0]));
         }
 
         return (
-          <div key={result.id} className="rounded-[1.5rem] border border-white/60 bg-white/80 backdrop-blur-xl shadow-lg shadow-slate-200/50 overflow-hidden transition-all hover:shadow-xl hover:bg-white">
-            
-            {/* Top Main Card */}
-            <div className="p-6 sm:p-8">
-              <div className="flex flex-col md:flex-row justify-between gap-6">
-                
-                {/* Left: Info */}
+          <div
+            key={result.id}
+            className="overflow-hidden rounded-[1.75rem] border border-[#e5ded2] bg-white shadow-[0_18px_40px_rgba(15,23,42,0.07)] transition-all hover:shadow-[0_20px_50px_rgba(15,23,42,0.1)]"
+          >
+            <div className="p-5 sm:p-6">
+              <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
-                      {result.service_type === 'flight' && <Plane size={20} />}
-                      {result.service_type === 'train' && <Train size={20} />}
-                      {result.service_type === 'hotel' && <BedDouble size={20} />}
-                      {result.service_type === 'bus' && <Bus size={20} />}
-                      {result.service_type === 'cab' && <Car size={20} />}
+                  <div className="mb-5 flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-blue-100 bg-blue-50 text-blue-600">
+                      <ServiceIcon size={20} />
                     </div>
                     <div>
-                      <h3 className="text-xl font-black text-slate-800">{result.title}</h3>
-                      <p className="text-sm font-semibold text-slate-500 tracking-wide">{result.code}</p>
+                      <h3 className="text-lg font-bold text-slate-900 sm:text-xl">{result.title}</h3>
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">{result.code}</p>
                     </div>
                   </div>
 
-                  {result.service_type !== 'hotel' ? (
-                    <div className="flex items-center gap-4 mt-6">
-                      <div className="text-center sm:text-left">
-                        <p className="text-2xl font-black text-slate-800">{result.departure_time}</p>
-                        <p className="text-sm font-semibold text-slate-500 mt-1">{result.origin_city}</p>
+                  {result.service_type === 'hotel' ? (
+                    <div className="flex items-center gap-2 text-sm font-medium text-slate-600">
+                      <MapPin size={16} className="text-slate-400" />
+                      <span>
+                        {result.destination_city} • {(result.meta as HotelMeta).address}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3 sm:gap-5">
+                      <div>
+                        <p className="text-2xl font-bold text-slate-900">{result.departure_time}</p>
+                        <p className="mt-1 text-sm font-medium text-slate-500">{result.origin_city}</p>
                       </div>
-                      
-                      <div className="flex-1 flex flex-col items-center px-4">
-                        <p className="text-xs font-bold text-slate-400 mb-1 flex items-center gap-1"><Clock size={12}/> {result.duration}</p>
-                        <div className="w-full h-px bg-slate-300 relative">
-                          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-slate-300" />
+
+                      <div className="flex min-w-0 flex-1 flex-col items-center px-2">
+                        <p className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                          <Clock size={12} />
+                          {result.duration}
+                        </p>
+                        <div className="relative w-full">
+                          <div className="h-px w-full bg-[#d8d2c6]" />
+                          <div className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white bg-slate-400" />
                         </div>
-                        <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-wider">
-                          {result.stops === 0 ? 'Non-Stop' : `${result.stops} Stop(s)`}
+                        <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                          {result.stops === 0 ? 'Non-stop' : `${result.stops} stop${result.stops > 1 ? 's' : ''}`}
                         </p>
                       </div>
 
-                      <div className="text-center sm:text-right">
-                        <p className="text-2xl font-black text-slate-800">{result.arrival_time}</p>
-                        <p className="text-sm font-semibold text-slate-500 mt-1">{result.destination_city}</p>
+                      <div className="text-right">
+                        <p className="text-2xl font-bold text-slate-900">{result.arrival_time}</p>
+                        <p className="mt-1 text-sm font-medium text-slate-500">{result.destination_city}</p>
                       </div>
-                    </div>
-                  ) : (
-                    <div className="mt-4 flex items-center gap-2 text-slate-600">
-                      <MapPin size={16} />
-                      <span className="font-semibold">{result.destination_city} • {(result.meta as HotelMeta).address}</span>
                     </div>
                   )}
                 </div>
 
-                {/* Right: Price & CTA */}
-                <div className="flex flex-col items-end justify-center border-t md:border-t-0 md:border-l border-slate-200 pt-6 md:pt-0 md:pl-8">
-                  <p className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">Starts From</p>
-                  <p className="text-3xl font-black text-green-600 mb-4">
-                    ₹{lowestPrice.toLocaleString('en-IN')}
-                    {result.service_type === 'cab' && <span className="text-sm text-slate-500">/km</span>}
-                  </p>
-                  
-                  <Button 
+                <div className="flex flex-col gap-4 border-t border-[#ece6db] pt-5 lg:min-w-[220px] lg:items-end lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+                  <div className="lg:text-right">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Starting from</p>
+                    <p className="mt-1 text-3xl font-bold text-emerald-600">
+                      {formatRupees(lowestPrice)}
+                      {result.service_type === 'cab' ? <span className="ml-1 text-sm font-medium text-slate-500">/km</span> : null}
+                    </p>
+                  </div>
+
+                  <Button
                     onClick={() => toggleExpand(result.id)}
-                    className="w-full sm:w-40 rounded-xl font-bold bg-slate-800 hover:bg-slate-700 text-white flex items-center justify-center gap-2"
+                    className="flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 font-semibold text-white hover:bg-slate-800 lg:w-[180px]"
                   >
-                    {isTrain ? 'Check Classes' : 'Compare Prices'}
+                    {isTrain ? 'Check classes' : 'Compare prices'}
                     {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                   </Button>
                 </div>
               </div>
             </div>
 
-            {/* Expanded Section */}
-            {isExpanded && (
-              <div className="bg-slate-50 border-t border-slate-200 p-6 sm:p-8 animate-in slide-in-from-top-4 fade-in duration-200">
-                
+            {isExpanded ? (
+              <div className="border-t border-[#ece6db] bg-[#faf8f3] p-5 sm:p-6">
                 {isTrain ? (
-                  // TRAIN LAYOUT (Classes & Availability)
                   <div className="space-y-4">
-                    <h4 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-4 flex items-center gap-2">
-                      <Train size={16} className="text-blue-600"/> Class Availability
+                    <h4 className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.22em] text-slate-500">
+                      <Train size={14} className="text-blue-600" />
+                      Class availability
                     </h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                       {(result.meta as TrainMeta).classes?.map((trainClass, idx) => {
                         const isAvailable = trainClass.availability.startsWith('AVAILABLE');
                         return (
-                          <div key={idx} className="bg-white rounded-xl border border-slate-200 p-4 hover:border-blue-300 transition-colors">
-                            <div className="flex justify-between items-start mb-3">
+                          <div key={idx} className="rounded-2xl border border-[#e4ddd1] bg-white p-4 shadow-sm">
+                            <div className="mb-3 flex items-start justify-between gap-4">
                               <div>
-                                <p className="text-lg font-black text-slate-800">{trainClass.class}</p>
-                                <p className="text-xs font-semibold text-slate-500">{trainClass.label}</p>
+                                <p className="text-base font-bold text-slate-900">{trainClass.class}</p>
+                                <p className="text-xs font-medium text-slate-500">{trainClass.label}</p>
                               </div>
-                              <p className="text-xl font-black text-slate-800">₹{trainClass.price}</p>
+                              <p className="text-lg font-bold text-slate-900">{formatRupees(trainClass.price)}</p>
                             </div>
-                            
-                            <div className={`text-sm font-bold px-3 py-1.5 rounded-lg inline-block mb-4 ${isAvailable ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+
+                            <div
+                              className={`mb-4 inline-flex rounded-xl px-3 py-1.5 text-xs font-semibold ${
+                                isAvailable ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                              }`}
+                            >
                               {trainClass.availability}
                             </div>
-                            
-                            <Button 
+
+                            <Button
                               onClick={() => handleBook(result, trainClass)}
                               variant={isAvailable ? 'default' : 'outline'}
-                              className="w-full rounded-lg font-bold"
+                              className="w-full rounded-xl font-semibold"
                             >
-                              Book Now
+                              Book now
                             </Button>
                           </div>
-                        )
+                        );
                       })}
                     </div>
                   </div>
                 ) : (
-                  // FLIGHT/HOTEL/BUS/CAB LAYOUT (Multi-Provider Comparison)
-                  <div>
-                    <h4 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-4 flex items-center gap-2">
-                      <span className="w-4 h-4 rounded-full bg-blue-600 inline-block"/> Compare Provider Prices
-                    </h4>
-                    
-                    <div className="space-y-3">
-                      {/* Sort providers by price */}
-                      {[...(result.providers || [])].sort((a, b) => a.price - b.price).map((provider, idx) => {
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500">Provider comparison</h4>
+
+                    {[...(result.providers || [])]
+                      .sort((a, b) => a.price - b.price)
+                      .map((provider, idx) => {
                         const isCheapest = idx === 0;
                         return (
-                          <div key={idx} className={`flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-xl border transition-all ${isCheapest ? 'bg-green-50 border-green-200' : 'bg-white border-slate-200 hover:border-blue-300'}`}>
-                            <div className="mb-4 sm:mb-0">
-                              <p className="text-lg font-black text-slate-800 flex items-center gap-2">
+                          <div
+                            key={idx}
+                            className={`flex flex-col gap-4 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between ${
+                              isCheapest
+                                ? 'border-emerald-200 bg-emerald-50'
+                                : 'border-[#e4ddd1] bg-white'
+                            }`}
+                          >
+                            <div>
+                              <p className="flex items-center gap-2 text-base font-bold text-slate-900">
                                 {provider.provider}
-                                {isCheapest && <span className="px-2 py-0.5 rounded text-[10px] uppercase tracking-wider bg-green-200 text-green-800">Lowest</span>}
+                                {isCheapest ? (
+                                  <span className="rounded-full bg-emerald-200 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-800">
+                                    Lowest
+                                  </span>
+                                ) : null}
                               </p>
-                              {result.service_type === 'flight' && (
-                                <p className="text-xs font-semibold text-slate-500 mt-1">
-                                  Included: {(result.meta as FlightMeta).baggage} Baggage • {(result.meta as FlightMeta).meal} Meal
+                              {result.service_type === 'flight' ? (
+                                <p className="mt-1 text-xs font-medium text-slate-500">
+                                  Included: {(result.meta as FlightMeta).baggage} baggage • {(result.meta as FlightMeta).meal} meal
                                 </p>
-                              )}
+                              ) : null}
                             </div>
 
-                            <div className="flex items-center gap-6 w-full sm:w-auto justify-between sm:justify-end">
-                              <p className="text-2xl font-black text-slate-800">
-                                ₹{provider.price.toLocaleString('en-IN')}
-                                {result.service_type === 'cab' && <span className="text-sm text-slate-500">/km</span>}
+                            <div className="flex items-center justify-between gap-5 sm:justify-end">
+                              <p className="text-2xl font-bold text-slate-900">
+                                {formatRupees(provider.price)}
+                                {result.service_type === 'cab' ? <span className="ml-1 text-sm font-medium text-slate-500">/km</span> : null}
                               </p>
-                              <Button 
+                              <Button
                                 onClick={() => handleBook(result, provider)}
-                                className={`rounded-xl font-bold px-6 ${isCheapest ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-slate-800 hover:bg-slate-700 text-white'}`}
+                                className={`rounded-xl px-6 font-semibold ${
+                                  isCheapest ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-slate-900 text-white hover:bg-slate-800'
+                                }`}
                               >
-                                Book Now
+                                Book now
                               </Button>
                             </div>
                           </div>
-                        )
+                        );
                       })}
 
-                      {(!result.providers || result.providers.length === 0) && (
-                        <p className="text-sm text-slate-500 italic">No price comparisons available.</p>
-                      )}
-                    </div>
+                    {(!result.providers || result.providers.length === 0) ? (
+                      <p className="text-sm font-medium italic text-slate-500">No price comparisons available.</p>
+                    ) : null}
                   </div>
                 )}
-                
               </div>
-            )}
-            
+            ) : null}
           </div>
         );
       })}

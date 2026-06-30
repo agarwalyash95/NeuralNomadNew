@@ -1,15 +1,6 @@
-'use client';
-
 import React from 'react';
+import PlannerLayout from '@/features/planner/layout/PlannerLayout';
 
-export default function PlannerLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="h-screen w-full flex overflow-hidden bg-[#FAFAFA]">
-      {children}
-    </div>
-  );
+export default function Layout({ children }: { children: React.ReactNode }) {
+  return <PlannerLayout>{children}</PlannerLayout>;
 }

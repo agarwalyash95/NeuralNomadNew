@@ -44,7 +44,6 @@ INSTALLED_APPS = [
     "apps.common",
     "apps.homepage",
     "apps.reference",
-    "apps.planner",
 ]
 
 MIDDLEWARE = [

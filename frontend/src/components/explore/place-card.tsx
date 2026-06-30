@@ -4,9 +4,10 @@ import Image from 'next/image';
 
 interface PlaceCardProps {
   place: Attraction;
+  compact?: boolean;
 }
 
-export function PlaceCard({ place }: PlaceCardProps) {
+export function PlaceCard({ place, compact = false }: PlaceCardProps) {
   const renderPrice = (level: number | null | undefined) => {
     if (level === null || level === undefined) return null;
     return (
@@ -31,7 +32,7 @@ export function PlaceCard({ place }: PlaceCardProps) {
   const catDetails = getCategoryDetails(place.category);
 
   return (
-    <div className="group relative overflow-hidden rounded-3xl h-[400px] w-full isolate transition-all duration-500 hover:-translate-y-2 hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.5)] cursor-pointer">
+    <div className={`group relative overflow-hidden rounded-3xl isolate transition-all duration-500 hover:-translate-y-1 hover:shadow-[0_10px_30px_-10px_rgba(0,0,0,0.5)] cursor-pointer w-full ${compact ? 'h-[220px]' : 'h-[400px]'}`}>
       {/* Background Image */}
       <div className="absolute inset-0 bg-slate-900 z-0">
         {place.image_url ? (
@@ -39,12 +40,12 @@ export function PlaceCard({ place }: PlaceCardProps) {
             src={place.image_url}
             alt={place.name}
             fill
-            className="object-cover transition-transform duration-700 group-hover:scale-110 opacity-80 group-hover:opacity-100"
-            sizes="(max-width: 768px) 100vw, 400px"
+            className="object-cover transition-transform duration-700 group-hover:scale-105 opacity-80 group-hover:opacity-100"
+            sizes={compact ? "300px" : "(max-width: 768px) 100vw, 400px"}
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-slate-600 bg-slate-800">
-            <MapPin size={48} className="opacity-20" />
+            <MapPin size={compact ? 32 : 48} className="opacity-20" />
           </div>
         )}
       </div>
@@ -54,35 +55,35 @@ export function PlaceCard({ place }: PlaceCardProps) {
       <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 z-10" />
 
       {/* Content Container */}
-      <div className="absolute inset-0 z-20 p-5 flex flex-col">
+      <div className={`absolute inset-0 z-20 flex flex-col ${compact ? 'p-4' : 'p-5'}`}>
         {/* Top Header */}
         <div className="flex justify-between items-start">
-          <div className={`bg-gradient-to-r ${catDetails.color} backdrop-blur-md text-white px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 shadow-lg border border-white/10`}>
+          <div className={`bg-gradient-to-r ${catDetails.color} backdrop-blur-md text-white rounded-full font-bold flex items-center gap-1.5 shadow-lg border border-white/10 ${compact ? 'px-2.5 py-1 text-[10px]' : 'px-3 py-1.5 text-xs'}`}>
             <span>{catDetails.icon}</span>
             <span className="capitalize tracking-wide">{place.category.replace('_', ' ')}</span>
           </div>
           
-          <button className="w-8 h-8 rounded-full bg-black/40 backdrop-blur-md border border-white/20 flex items-center justify-center text-white/70 hover:text-white hover:bg-black/60 transition-colors transform opacity-0 group-hover:opacity-100 translate-y-[-10px] group-hover:translate-y-0 duration-300">
-            <Bookmark size={16} />
+          <button className={`${compact ? 'w-6 h-6' : 'w-8 h-8'} rounded-full bg-black/40 backdrop-blur-md border border-white/20 flex items-center justify-center text-white/70 hover:text-white hover:bg-black/60 transition-colors transform opacity-0 group-hover:opacity-100 translate-y-[-10px] group-hover:translate-y-0 duration-300`}>
+            <Bookmark size={compact ? 12 : 16} />
           </button>
         </div>
 
         {/* Bottom Content */}
-        <div className="mt-auto transform transition-transform duration-500 translate-y-4 group-hover:translate-y-0">
-          <h3 className="font-bold text-2xl text-white line-clamp-2 mb-2 drop-shadow-md">
+        <div className={`mt-auto transform transition-transform duration-500 translate-y-2 group-hover:translate-y-0`}>
+          <h3 className={`font-bold text-white line-clamp-2 drop-shadow-md ${compact ? 'text-lg leading-tight mb-1' : 'text-2xl mb-2'}`}>
             {place.name}
           </h3>
           
-          <p className="text-sm text-slate-300 line-clamp-1 mb-4 flex items-center gap-1.5">
-            <MapPin size={14} className="text-primary" />
-            {place.address || place.description}
+          <p className={`text-slate-300 line-clamp-1 flex items-center gap-1.5 ${compact ? 'text-xs mb-2' : 'text-sm mb-4'}`}>
+            <MapPin size={compact ? 12 : 14} className="text-primary shrink-0" />
+            <span className="truncate">{place.address || place.description}</span>
           </p>
 
-          <div className="flex items-center justify-between pt-4 border-t border-white/10">
-            <div className="flex items-center gap-1.5 bg-black/50 backdrop-blur-md text-amber-400 px-3 py-1.5 rounded-xl text-sm font-bold border border-white/5">
-              <Star size={16} className="fill-current" />
+          <div className={`flex items-center justify-between border-white/10 ${compact ? 'pt-2 border-t border-dashed' : 'pt-4 border-t'}`}>
+            <div className={`flex items-center gap-1 bg-black/50 backdrop-blur-md text-amber-400 rounded-lg font-bold border border-white/5 ${compact ? 'px-2 py-1 text-xs' : 'px-3 py-1.5 text-sm rounded-xl'}`}>
+              <Star size={compact ? 12 : 16} className="fill-current" />
               <span>{place.rating ? place.rating.toFixed(1) : 'New'}</span>
-              {place.review_count > 0 && (
+              {place.review_count > 0 && !compact && (
                 <span className="text-xs text-white/60 font-medium ml-1">({place.review_count})</span>
               )}
             </div>

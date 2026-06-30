@@ -1,5 +1,5 @@
 /**
- * Planner API service — all REST calls for the planner workspace.
+ * Planner API service â€” all REST calls for the planner workspace.
  * Uses the existing ApiClient with JWT auth.
  */
 
@@ -21,7 +21,7 @@ import type {
 const BASE = '/planner/workspaces';
 
 export const plannerService = {
-  // ─── Workspaces ────────────────────────────────────
+  // â”€â”€â”€ Workspaces â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   listWorkspaces: () =>
     apiClient.get<PlannerWorkspace[]>(`${BASE}/`),
@@ -41,7 +41,7 @@ export const plannerService = {
   getWorkspaceSummary: (id: string) =>
     apiClient.get<Record<string, unknown>>(`${BASE}/${id}/summary/`),
 
-  // ─── Memory ────────────────────────────────────────
+  // â”€â”€â”€ Memory â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   getMemory: (workspaceId: string) =>
     apiClient.get<PlannerMemory>(`${BASE}/${workspaceId}/memory/`),
@@ -49,7 +49,7 @@ export const plannerService = {
   updateMemory: (workspaceId: string, data: Partial<PlannerMemory>) =>
     apiClient.patch<PlannerMemory>(`${BASE}/${workspaceId}/memory/`, data),
 
-  // ─── Context ───────────────────────────────────────
+  // â”€â”€â”€ Context â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   getContext: (workspaceId: string) =>
     apiClient.get<WorkspaceContext>(`${BASE}/${workspaceId}/context/`),
@@ -57,7 +57,7 @@ export const plannerService = {
   updateContext: (workspaceId: string, data: Partial<WorkspaceContext>) =>
     apiClient.patch<WorkspaceContext>(`${BASE}/${workspaceId}/context/`, data),
 
-  // ─── Chat ──────────────────────────────────────────
+  // â”€â”€â”€ Chat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   listMessages: (workspaceId: string) =>
     apiClient.get<ChatMessage[]>(`${BASE}/${workspaceId}/chat/`),
@@ -65,7 +65,7 @@ export const plannerService = {
   sendMessage: (workspaceId: string, message: string) =>
     apiClient.post<ChatResponse>(`${BASE}/${workspaceId}/chat/`, { message }),
 
-  // ─── Plan ──────────────────────────────────────────
+  // â”€â”€â”€ Plan â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   getPlan: (workspaceId: string) => {
     if (typeof window !== 'undefined') {
@@ -80,12 +80,12 @@ export const plannerService = {
   updatePlan: (workspaceId: string, data: Partial<PlannerTrip>) =>
     apiClient.patch<PlannerTrip>(`${BASE}/${workspaceId}/plan/`, data),
 
-  // ─── Recommendations ──────────────────────────────
+  // â”€â”€â”€ Recommendations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   getRecommendations: (workspaceId: string) =>
     apiClient.get<Recommendation[]>(`${BASE}/${workspaceId}/recommendations/`),
 
-  // ─── Canvases ──────────────────────────────────────
+  // â”€â”€â”€ Canvases â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   listCanvases: (workspaceId: string) =>
     apiClient.get<CanvasInstance[]>(`${BASE}/${workspaceId}/canvases/`),
@@ -93,7 +93,7 @@ export const plannerService = {
   createCanvas: (workspaceId: string, data: Partial<CanvasInstance>) =>
     apiClient.post<CanvasInstance>(`${BASE}/${workspaceId}/canvases/`, data),
 
-  // ─── Cart ──────────────────────────────────────────
+  // â”€â”€â”€ Cart â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   listCart: (workspaceId: string) =>
     apiClient.get<BookingOrder[]>(`${BASE}/${workspaceId}/cart/`),
@@ -101,7 +101,7 @@ export const plannerService = {
   addToCart: (workspaceId: string, data: Partial<BookingOrder>) =>
     apiClient.post<BookingOrder>(`${BASE}/${workspaceId}/cart/`, data),
 
-  // ─── Saved Places ─────────────────────────────────
+  // â”€â”€â”€ Saved Places â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   listPlaces: (workspaceId: string) =>
     apiClient.get<SavedPlace[]>(`${BASE}/${workspaceId}/places/`),

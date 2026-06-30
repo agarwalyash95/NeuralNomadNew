@@ -165,7 +165,7 @@ features = [
         'description': 'Tell our AI your dream destination and get a full day-by-day plan in seconds.',
         'emoji': '🤖',
         'cta_label': 'Plan a trip →',
-        'cta_url': '/planner',
+        'cta_url': '#',
         'order': 1,
     },
     {
