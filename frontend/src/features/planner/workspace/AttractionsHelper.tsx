@@ -1,13 +1,14 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Search, MapPin, Loader2, Navigation, Map, Compass } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, Compass } from 'lucide-react';
 import { useExplore } from '@/hooks/use-explore';
 import { useExploreDetails } from '@/hooks/use-explore-details';
 import { attractionService } from '@/services/attraction.service';
 import { useDebounce } from '@/hooks/use-debounce';
-import { PlaceCard } from '@/components/explore/place-card';
 import { DetailsModal } from '@/components/explore/details-modal';
+import AttractionsSearchForm from './helpers/attractions/AttractionsSearchForm';
+import AttractionsResults from './helpers/attractions/AttractionsResults';
 
 export default function AttractionsHelper() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -20,7 +21,6 @@ export default function AttractionsHelper() {
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
 
   const debouncedSearch = useDebounce(searchQuery, 300);
-  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const { exploreLocation, places, loading: exploring } = useExplore();
   const { fetchDetails, details, loading: loadingDetails } = useExploreDetails();
@@ -118,109 +118,27 @@ export default function AttractionsHelper() {
             <Search size={16} className="text-slate-400" />
           </div>
         ) : (
-          <form onSubmit={handleSearchSubmit} className="relative flex flex-col gap-3 rounded-[24px] border border-[#ddd7ca] bg-white p-4 shadow-sm">
-            <div className="mb-1 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-800">Search destination</h3>
-              {currentLocationStr ? (
-                <button
-                  type="button"
-                  onClick={() => setIsSearchExpanded(false)}
-                  className="text-xs font-semibold text-blue-600 hover:text-blue-700"
-                >
-                  Cancel
-                </button>
-              ) : null}
-            </div>
-
-            <div ref={dropdownRef} className="group relative w-full rounded-2xl border border-[#ddd7ca] bg-white px-3 py-3 transition-colors focus-within:border-blue-500">
-              <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500 transition-colors group-focus-within:text-blue-600">
-                Location
-              </label>
-              <div className="flex items-center gap-2">
-                <MapPin size={16} className="shrink-0 text-slate-400 group-focus-within:text-blue-500" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                    setShowDropdown(true);
-                  }}
-                  placeholder="Tokyo, Japan"
-                  className="w-full truncate bg-transparent text-sm font-semibold text-slate-800 placeholder:text-slate-300 outline-none"
-                />
-              </div>
-
-              {showDropdown && searchQuery.length > 1 ? (
-                <div className="custom-scrollbar absolute left-0 right-0 top-[110%] z-50 max-h-64 overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-xl">
-                  {searchingDropdown ? (
-                    <div className="flex justify-center p-4">
-                      <Loader2 size={20} className="animate-spin text-blue-600" />
-                    </div>
-                  ) : suggestions.length > 0 ? (
-                    <ul className="py-2">
-                      {suggestions.map((pred) => (
-                        <li
-                          key={pred.place_id}
-                          onClick={() => handleSelectLocation(pred)}
-                          className="flex cursor-pointer items-center gap-3 px-4 py-2 transition-colors hover:bg-slate-50"
-                        >
-                          <Navigation size={14} className="shrink-0 text-slate-400" />
-                          <div className="truncate">
-                            <p className="truncate text-sm font-semibold text-slate-800">
-                              {pred.structured_formatting?.main_text || pred.description}
-                            </p>
-                            <p className="truncate text-xs text-slate-500">
-                              {pred.structured_formatting?.secondary_text}
-                            </p>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <div className="p-4 text-center text-xs text-slate-500">No places found.</div>
-                  )}
-                </div>
-              ) : null}
-            </div>
-
-            <button
-              type="submit"
-              disabled={!searchQuery.trim()}
-              className="mt-1 flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-white transition-all hover:bg-slate-800 disabled:opacity-50"
-            >
-              <Search size={16} />
-              Explore
-            </button>
-          </form>
+          <AttractionsSearchForm
+            searchQuery={searchQuery}
+            showDropdown={showDropdown}
+            suggestions={suggestions}
+            searchingDropdown={searchingDropdown}
+            currentLocationStr={currentLocationStr}
+            onSearchQueryChange={setSearchQuery}
+            onShowDropdownChange={setShowDropdown}
+            onSelectLocation={handleSelectLocation}
+            onSubmit={handleSearchSubmit}
+          />
         )}
 
         <div className="mt-6 border-t border-[#e7e1d5] pt-4">
-          {exploring ? (
-            <div className="flex flex-col items-center justify-center py-10">
-              <div className="mb-3 h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
-              <p className="text-xs font-semibold tracking-[0.18em] text-slate-500">Finding the best spots...</p>
-            </div>
-          ) : currentLocationStr ? (
-            <div className="space-y-4">
-              <h3 className="text-sm font-bold text-slate-800">
-                Top {activeFilter !== 'all' ? activeFilter : 'places'} in {currentLocationStr.split(',')[0]}
-              </h3>
-              {filteredPlaces.length > 0 ? (
-                <div className="flex flex-col gap-4">
-                  {filteredPlaces.map((place) => (
-                    <div key={place.id} onClick={() => handlePlaceClick(place.id)} className="cursor-pointer">
-                      <PlaceCard place={place} compact />
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 py-8 text-center">
-                  <Map size={32} className="mx-auto mb-2 text-slate-300" />
-                  <p className="text-sm font-semibold text-slate-600">No places found</p>
-                </div>
-              )}
-            </div>
-          ) : null}
+          <AttractionsResults
+            exploring={exploring}
+            currentLocationStr={currentLocationStr}
+            activeFilter={activeFilter}
+            filteredPlaces={filteredPlaces}
+            onPlaceClick={handlePlaceClick}
+          />
         </div>
       </div>
 

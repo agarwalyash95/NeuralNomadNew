@@ -8,15 +8,15 @@ import {
   Plane,
   Search,
   TrainFront,
-  ChevronDown,
-  MapPin,
-  CalendarDays,
-  Users,
 } from 'lucide-react';
 import { useTravelSearch } from '@/hooks/use-travel-search';
 import { BookingSearchParams, BookingService } from '@/types/booking';
-import SearchResults from '@/components/bookings/search-results';
-import LocationAutocomplete from '@/components/bookings/location-autocomplete';
+import FlightSearchForm from './helpers/booking/FlightSearchForm';
+import HotelSearchForm from './helpers/booking/HotelSearchForm';
+import TrainSearchForm from './helpers/booking/TrainSearchForm';
+import BusSearchForm from './helpers/booking/BusSearchForm';
+import CabSearchForm from './helpers/booking/CabSearchForm';
+import BookingResults from './helpers/booking/BookingResults';
 
 const services: { id: BookingService; label: string; icon: React.ElementType }[] = [
   { id: 'flight', label: 'Flights', icon: Plane },
@@ -67,77 +67,6 @@ function validateParams(params: BookingSearchParams): string | null {
   }
   if (!params.origin.trim() && !params.destination.trim()) return 'Enter origin or destination.';
   return null;
-}
-
-function SearchField({
-  label,
-  value,
-  placeholder,
-  type = 'text',
-  onChange,
-  icon: Icon,
-}: {
-  label: string;
-  value: string;
-  placeholder?: string;
-  type?: string;
-  onChange: (value: string) => void;
-  icon?: React.ElementType;
-}) {
-  return (
-    <div className="group relative w-full rounded-2xl border border-[#ddd7ca] bg-white px-3 py-3 transition-colors focus-within:border-blue-500">
-      <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500 transition-colors group-focus-within:text-blue-600">
-        {label}
-      </label>
-      <div className="flex items-center gap-2">
-        {Icon ? <Icon size={16} className="shrink-0 text-slate-400 group-focus-within:text-blue-500" /> : null}
-        <input
-          type={type}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          className="w-full truncate bg-transparent text-sm font-semibold text-slate-800 placeholder:text-slate-300 outline-none"
-        />
-      </div>
-    </div>
-  );
-}
-
-function SelectField({
-  label,
-  value,
-  options,
-  onChange,
-  icon: Icon,
-}: {
-  label: string;
-  value: string;
-  options: { value: string; label: string }[];
-  onChange: (value: string) => void;
-  icon?: React.ElementType;
-}) {
-  return (
-    <div className="group relative w-full rounded-2xl border border-[#ddd7ca] bg-white px-3 py-3 transition-colors focus-within:border-blue-500">
-      <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500 transition-colors group-focus-within:text-blue-600">
-        {label}
-      </label>
-      <div className="relative flex items-center gap-2">
-        {Icon ? <Icon size={16} className="shrink-0 text-slate-400 group-focus-within:text-blue-500" /> : null}
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="w-full cursor-pointer truncate appearance-none bg-transparent pr-4 text-sm font-semibold text-slate-800 outline-none"
-        >
-          {options.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-        <ChevronDown size={14} className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-slate-400" />
-      </div>
-    </div>
-  );
 }
 
 interface BookingHelperProps {
@@ -261,134 +190,40 @@ export default function BookingHelper({ initialService }: BookingHelperProps) {
               </div>
             ) : null}
 
-            {params.service === 'flight' ? (
-              <>
-                <LocationAutocomplete icon={MapPin} label="From" value={params.origin} type="airport" placeholder="City or airport" onChange={(v) => updateParam(setParams, 'origin', v)} flex="w-full" />
-                <LocationAutocomplete icon={MapPin} label="To" value={params.destination} type="airport" placeholder="City or airport" onChange={(v) => updateParam(setParams, 'destination', v)} flex="w-full" />
-                <div className="flex gap-2">
-                  <SearchField icon={CalendarDays} label="Depart" type="date" value={params.departureDate} onChange={(v) => updateParam(setParams, 'departureDate', v)} />
-                  {params.tripType === 'round-trip' ? (
-                    <SearchField icon={CalendarDays} label="Return" type="date" value={params.returnDate} onChange={(v) => updateParam(setParams, 'returnDate', v)} />
-                  ) : null}
-                </div>
-                <div className="flex gap-2">
-                  <SearchField icon={Users} label="Travellers" type="number" value={params.travellers} onChange={(v) => updateParam(setParams, 'travellers', v)} />
-                  <SelectField
-                    label="Class"
-                    value={params.cabinClass}
-                    options={[
-                      { value: 'Economy', label: 'Economy' },
-                      { value: 'Premium Economy', label: 'Premium economy' },
-                      { value: 'Business', label: 'Business' },
-                      { value: 'First', label: 'First' },
-                    ]}
-                    onChange={(v) => updateParam(setParams, 'cabinClass', v)}
-                  />
-                </div>
-              </>
-            ) : null}
+            {params.service === 'flight' && (
+              <FlightSearchForm
+                params={params}
+                onUpdateParam={(field, value) => updateParam(setParams, field, value)}
+              />
+            )}
 
-            {params.service === 'hotel' ? (
-              <>
-                <LocationAutocomplete icon={MapPin} label="Where" value={params.city} type="city" placeholder="City, area, or property" onChange={(v) => updateParam(setParams, 'city', v)} flex="w-full" />
-                <div className="flex gap-2">
-                  <SearchField icon={CalendarDays} label="Check-in" type="date" value={params.checkIn} onChange={(v) => updateParam(setParams, 'checkIn', v)} />
-                  <SearchField icon={CalendarDays} label="Check-out" type="date" value={params.checkOut} onChange={(v) => updateParam(setParams, 'checkOut', v)} />
-                </div>
-                <div className="flex gap-2">
-                  <SearchField icon={BedDouble} label="Rooms" type="number" value={params.roomCount} placeholder="1" onChange={(v) => updateParam(setParams, 'roomCount', v)} />
-                  <SelectField
-                    icon={Users}
-                    label="Guests"
-                    value={params.travellers}
-                    options={[
-                      { value: '1', label: '1 guest' },
-                      { value: '2', label: '2 guests' },
-                      { value: '3', label: '3 guests' },
-                      { value: '4', label: '4 guests' },
-                    ]}
-                    onChange={(v) => updateParam(setParams, 'travellers', v)}
-                  />
-                </div>
-              </>
-            ) : null}
+            {params.service === 'hotel' && (
+              <HotelSearchForm
+                params={params}
+                onUpdateParam={(field, value) => updateParam(setParams, field, value)}
+              />
+            )}
 
-            {params.service === 'train' ? (
-              <>
-                <LocationAutocomplete icon={TrainFront} label="From station" value={params.origin} type="station" placeholder="Delhi" onChange={(v) => updateParam(setParams, 'origin', v)} flex="w-full" />
-                <LocationAutocomplete icon={TrainFront} label="To station" value={params.destination} type="station" placeholder="Mumbai" onChange={(v) => updateParam(setParams, 'destination', v)} flex="w-full" />
-                <SearchField icon={CalendarDays} label="Travel date" type="date" value={params.departureDate} onChange={(v) => updateParam(setParams, 'departureDate', v)} />
-                <div className="flex gap-2">
-                  <SelectField
-                    label="Class"
-                    value={params.trainClass}
-                    options={[
-                      { value: 'SL', label: 'SL • Sleeper' },
-                      { value: '3A', label: '3A • AC 3-Tier' },
-                      { value: '2A', label: '2A • AC 2-Tier' },
-                      { value: '1A', label: '1A • First AC' },
-                      { value: 'CC', label: 'CC • Chair Car' },
-                      { value: 'EC', label: 'EC • Executive Chair' },
-                    ]}
-                    onChange={(v) => updateParam(setParams, 'trainClass', v)}
-                  />
-                  <SelectField
-                    label="Quota"
-                    value={params.quota}
-                    options={[
-                      { value: 'GN', label: 'General' },
-                      { value: 'TQ', label: 'Tatkal' },
-                      { value: 'LD', label: 'Ladies' },
-                    ]}
-                    onChange={(v) => updateParam(setParams, 'quota', v)}
-                  />
-                </div>
-              </>
-            ) : null}
+            {params.service === 'train' && (
+              <TrainSearchForm
+                params={params}
+                onUpdateParam={(field, value) => updateParam(setParams, field, value)}
+              />
+            )}
 
-            {params.service === 'bus' ? (
-              <>
-                <LocationAutocomplete icon={MapPin} label="From city" value={params.origin} type="city" placeholder="Bangalore" onChange={(v) => updateParam(setParams, 'origin', v)} flex="w-full" />
-                <LocationAutocomplete icon={MapPin} label="To city" value={params.destination} type="city" placeholder="Goa" onChange={(v) => updateParam(setParams, 'destination', v)} flex="w-full" />
-                <SearchField icon={CalendarDays} label="Date" type="date" value={params.departureDate} onChange={(v) => updateParam(setParams, 'departureDate', v)} />
-                <div className="flex gap-2">
-                  <SelectField
-                    label="Seat type"
-                    value={params.fareType}
-                    options={[
-                      { value: 'Sleeper', label: 'Sleeper' },
-                      { value: 'Semi-Sleeper', label: 'Semi-sleeper' },
-                      { value: 'Seater', label: 'Seater' },
-                      { value: 'AC Sleeper', label: 'AC Sleeper' },
-                      { value: 'AC Seater', label: 'AC Seater' },
-                    ]}
-                    onChange={(v) => updateParam(setParams, 'fareType', v)}
-                  />
-                  <SearchField icon={Users} label="Passengers" type="number" value={params.travellers} onChange={(v) => updateParam(setParams, 'travellers', v)} />
-                </div>
-              </>
-            ) : null}
+            {params.service === 'bus' && (
+              <BusSearchForm
+                params={params}
+                onUpdateParam={(field, value) => updateParam(setParams, field, value)}
+              />
+            )}
 
-            {params.service === 'cab' ? (
-              <>
-                <SelectField
-                  icon={Car}
-                  label="Cab type"
-                  value={params.cabType}
-                  options={[
-                    { value: 'outstation', label: 'Outstation' },
-                    { value: 'airport', label: 'Airport transfer' },
-                    { value: 'hourly', label: 'Hourly rental' },
-                  ]}
-                  onChange={(v) => updateParam(setParams, 'cabType', v)}
-                />
-                <LocationAutocomplete icon={MapPin} label="Pickup" value={params.pickup} type="city" placeholder="Delhi Airport" onChange={(v) => updateParam(setParams, 'pickup', v)} flex="w-full" />
-                {params.cabType === 'outstation' ? (
-                  <LocationAutocomplete icon={MapPin} label="Drop" value={params.drop} type="city" placeholder="Agra" onChange={(v) => updateParam(setParams, 'drop', v)} flex="w-full" />
-                ) : null}
-                <SearchField icon={CalendarDays} label="Pickup time" type="datetime-local" value={params.departureDate} onChange={(v) => updateParam(setParams, 'departureDate', v)} />
-              </>
-            ) : null}
+            {params.service === 'cab' && (
+              <CabSearchForm
+                params={params}
+                onUpdateParam={(field, value) => updateParam(setParams, field, value)}
+              />
+            )}
 
             <button
               type="submit"
@@ -408,19 +243,7 @@ export default function BookingHelper({ initialService }: BookingHelperProps) {
         )}
 
         <div className="mt-6 border-t border-[#e7e1d5] pt-6">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center py-10">
-              <div className="mb-3 h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
-              <p className="text-xs font-semibold tracking-[0.18em] text-slate-500">Searching live inventory...</p>
-            </div>
-          ) : results.length > 0 ? (
-            <div className="space-y-4">
-              <h3 className="text-sm font-bold text-slate-800">Results</h3>
-              <div className="custom-scrollbar max-h-[400px] overflow-y-auto pr-1">
-                <SearchResults results={results} />
-              </div>
-            </div>
-          ) : null}
+          <BookingResults loading={loading} results={results} />
         </div>
       </div>
     </div>

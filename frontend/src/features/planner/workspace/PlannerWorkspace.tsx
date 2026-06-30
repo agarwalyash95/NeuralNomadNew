@@ -4,11 +4,11 @@ import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
-import BookingHelper from './BookingHelper';
-import AttractionsHelper from './AttractionsHelper';
-import TravelPrepHelper from './TravelPrepHelper';
+import { FlightCanvas, HotelCanvas, TrainCanvas, BusCanvas, CabCanvas } from './helpers/booking/canvas';
+import { AttractionsCanvas } from './helpers/attractions/canvas';
+import { ForexCanvas, VisaCanvas } from './helpers/travel-prep/canvas';
 
-type ContextPanelType = 'none' | 'flights' | 'hotels' | 'activities' | 'prep' | 'trains' | 'cabs';
+type ContextPanelType = 'none' | 'flight' | 'hotel' | 'train' | 'bus' | 'cab' | 'attractions' | 'forex' | 'visa';
 
 import PlannerHeader from './canvas/PlannerHeader';
 import PreJourneyChecklist from './canvas/PreJourneyChecklist';
@@ -63,8 +63,10 @@ export default function PlannerWorkspace() {
           <PlannerHeader onExport={handleExport} isExporting={isExporting} />
           <PreJourneyChecklist
             onChecklistClick={(type) => {
-              if (type === 'visa' || type === 'forex') {
-                setActivePanel('prep');
+              if (type === 'visa') {
+                setActivePanel('visa');
+              } else if (type === 'forex') {
+                setActivePanel('forex');
               }
             }}
           />
@@ -72,24 +74,24 @@ export default function PlannerWorkspace() {
             onItemClick={(type) => {
               switch (type) {
                 case 'flight':
-                  setActivePanel('flights');
+                  setActivePanel('flight');
                   break;
                 case 'hotel':
-                  setActivePanel('hotels');
+                  setActivePanel('hotel');
                   break;
                 case 'train':
-                  setActivePanel('trains');
+                  setActivePanel('train');
+                  break;
+                case 'bus':
+                  setActivePanel('bus');
                   break;
                 case 'taxi':
                 case 'cab':
-                  setActivePanel('cabs');
+                  setActivePanel('cab');
                   break;
                 case 'activity':
                 case 'food':
-                  setActivePanel('activities');
-                  break;
-                case 'bus':
-                  setActivePanel('trains');
+                  setActivePanel('attractions');
                   break;
               }
             }}
@@ -101,40 +103,20 @@ export default function PlannerWorkspace() {
         {activePanel !== 'none' && (
           <motion.div
             initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 440, opacity: 1 }}
+            animate={{ width: 600, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 280, damping: 30 }}
-            className="flex h-full shrink-0 flex-col overflow-hidden border-l border-[#e2ddd2] bg-[#f7f4ed]"
+            className="flex h-full shrink-0 flex-col overflow-hidden border-l border-[#e2ddd2]"
           >
-            <div className="flex h-full w-[440px] flex-col overflow-hidden">
-              <div className="z-20 flex items-center justify-between border-b border-[#e2ddd2] bg-white/85 px-5 py-4 shadow-sm backdrop-blur-sm">
-                <div>
-                  <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500">
-                    Context panel
-                  </p>
-                  <h2 className="mt-1 text-base font-semibold text-slate-800">
-                    {activePanel === 'activities'
-                      ? 'Explore'
-                      : activePanel === 'prep'
-                        ? 'Travel prep'
-                        : 'Booking assistant'}
-                  </h2>
-                </div>
-                <button
-                  onClick={() => setActivePanel('none')}
-                  className="rounded-full bg-[#f6f4ef] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600 transition-colors hover:bg-[#ece7dc] hover:text-slate-900"
-                >
-                  Close
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto">
-                {activePanel === 'flights' && <BookingHelper initialService="flight" />}
-                {activePanel === 'hotels' && <BookingHelper initialService="hotel" />}
-                {activePanel === 'trains' && <BookingHelper initialService="train" />}
-                {activePanel === 'cabs' && <BookingHelper initialService="cab" />}
-                {activePanel === 'activities' && <AttractionsHelper />}
-                {activePanel === 'prep' && <TravelPrepHelper />}
-              </div>
+            <div className="flex h-full w-[600px] flex-col overflow-hidden">
+              {activePanel === 'flight' && <FlightCanvas onClose={() => setActivePanel('none')} />}
+              {activePanel === 'hotel' && <HotelCanvas onClose={() => setActivePanel('none')} />}
+              {activePanel === 'train' && <TrainCanvas onClose={() => setActivePanel('none')} />}
+              {activePanel === 'bus' && <BusCanvas onClose={() => setActivePanel('none')} />}
+              {activePanel === 'cab' && <CabCanvas onClose={() => setActivePanel('none')} />}
+              {activePanel === 'attractions' && <AttractionsCanvas onClose={() => setActivePanel('none')} />}
+              {activePanel === 'forex' && <ForexCanvas onClose={() => setActivePanel('none')} />}
+              {activePanel === 'visa' && <VisaCanvas onClose={() => setActivePanel('none')} />}
             </div>
           </motion.div>
         )}
