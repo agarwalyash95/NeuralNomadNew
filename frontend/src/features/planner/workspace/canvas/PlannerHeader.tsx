@@ -1,13 +1,14 @@
 import React from 'react';
 import { Share, Download, MoreVertical, CreditCard, Loader2 } from 'lucide-react';
-import { mockTripData } from './mockData';
+import { MockTripData } from './mockData';
 
 interface PlannerHeaderProps {
+  data: MockTripData;
   onExport?: () => void;
   isExporting?: boolean;
 }
 
-export default function PlannerHeader({ onExport, isExporting }: PlannerHeaderProps) {
+export default function PlannerHeader({ data, onExport, isExporting }: PlannerHeaderProps) {
   return (
     <div className="mb-4 rounded-[16px] border border-[#e2ddd2] bg-white px-4 py-3 shadow-[0_16px_40px_-32px_rgba(15,23,42,0.35)]">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -18,9 +19,9 @@ export default function PlannerHeader({ onExport, isExporting }: PlannerHeaderPr
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">Trip overview</p>
             <h1 className="mt-1 text-xl font-semibold tracking-tight text-slate-900">
-              {mockTripData.title}
+              {data.title}
             </h1>
-            <p className="mt-1 text-xs text-slate-500">{mockTripData.stats}</p>
+            <p className="mt-1 text-xs text-slate-500">{data.stats}</p>
           </div>
         </div>
 

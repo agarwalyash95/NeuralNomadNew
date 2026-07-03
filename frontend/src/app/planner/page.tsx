@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import PlannerChat from '@/features/planner/chat/PlannerChat';
 import PlannerWorkspace from '@/features/planner/workspace/PlannerWorkspace';
 import FloatingChat from '@/features/planner/chat/FloatingChat';
@@ -10,6 +10,27 @@ export type PlannerMode = 'chat' | 'plan';
 
 export default function PlannerPage() {
   const [mode, setMode] = useState<PlannerMode>('chat');
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const startNewPlan = () => {
+      setMode('chat');
+      setWorkspaceId(null);
+    };
+
+    const openWorkspace = (e: Event) => {
+      const { workspaceId: wid, hasPlan } = (e as CustomEvent).detail;
+      if (wid) setWorkspaceId(wid);
+      setMode(hasPlan ? 'plan' : 'chat');
+    };
+
+    window.addEventListener('planner:new-plan', startNewPlan);
+    window.addEventListener('planner:open-workspace', openWorkspace);
+    return () => {
+      window.removeEventListener('planner:new-plan', startNewPlan);
+      window.removeEventListener('planner:open-workspace', openWorkspace);
+    };
+  }, []);
 
   return (
     <div className="relative flex h-full w-full overflow-hidden bg-[#f6f4ef]">
@@ -23,7 +44,13 @@ export default function PlannerPage() {
             transition={{ duration: 0.28, ease: 'easeOut' }}
             className="absolute inset-0"
           >
-            <PlannerChat onModeChange={setMode} />
+            <PlannerChat
+              workspaceId={workspaceId}
+              onModeChange={(newMode, newWorkspaceId) => {
+                if (newWorkspaceId) setWorkspaceId(newWorkspaceId);
+                setMode(newMode);
+              }}
+            />
           </motion.div>
         ) : (
           <motion.div
@@ -34,8 +61,8 @@ export default function PlannerPage() {
             transition={{ duration: 0.28, ease: 'easeOut' }}
             className="absolute inset-0 flex"
           >
-            <PlannerWorkspace />
-            <FloatingChat />
+            <PlannerWorkspace workspaceId={workspaceId} />
+            <FloatingChat workspaceId={workspaceId} />
           </motion.div>
         )}
       </AnimatePresence>

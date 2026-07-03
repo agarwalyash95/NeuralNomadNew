@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { mockTripData } from './mockData';
+import React, { useState, useEffect } from 'react';
+import { MockTripData } from './mockData';
 import CityHeaderNode from './nodes/CityHeaderNode';
 import DayHeaderNode from './nodes/DayHeaderNode';
 import FlightNode from './nodes/FlightNode';
@@ -24,13 +24,18 @@ import {
 } from '@dnd-kit/sortable';
 
 interface ItineraryTimelineProps {
+  data: MockTripData;
   onItemClick?: (type: string) => void;
 }
 
-export default function ItineraryTimeline({ onItemClick }: ItineraryTimelineProps) {
-  const [data, setData] = useState(mockTripData);
+export default function ItineraryTimeline({ data, onItemClick }: ItineraryTimelineProps) {
+  const [localData, setLocalData] = useState<MockTripData>(data);
   const [collapsedCities, setCollapsedCities] = useState<Record<string, boolean>>({});
   const [collapsedDays, setCollapsedDays] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setLocalData(data);
+  }, [data]);
 
   const toggleCity = (cityId: string) => {
     setCollapsedCities(prev => ({ ...prev, [cityId]: !prev[cityId] }));
@@ -48,9 +53,9 @@ export default function ItineraryTimeline({ onItemClick }: ItineraryTimelineProp
   );
 
   const findDayAndCity = (id: string | number) => {
-    for (let c = 0; c < data.cities.length; c++) {
-      for (let d = 0; d < data.cities[c].days.length; d++) {
-        const day = data.cities[c].days[d];
+    for (let c = 0; c < localData.cities.length; c++) {
+      for (let d = 0; d < localData.cities[c].days.length; d++) {
+        const day = localData.cities[c].days[d];
         if (day.id === id) return { cityIndex: c, dayIndex: d, isDay: true, itemIndex: -1 };
         const itemIndex = day.items.findIndex(i => i.id === id);
         if (itemIndex !== -1) return { cityIndex: c, dayIndex: d, isDay: false, itemIndex };
@@ -67,12 +72,10 @@ export default function ItineraryTimeline({ onItemClick }: ItineraryTimelineProp
     const overInfo = findDayAndCity(over.id);
 
     if (!activeInfo || !overInfo) return;
-    // Disallow cross-city dragging
     if (activeInfo.cityIndex !== overInfo.cityIndex) return;
 
-    // Moving between different days in the same city
     if (activeInfo.dayIndex !== overInfo.dayIndex) {
-      setData(prev => {
+      setLocalData(prev => {
         const newData = JSON.parse(JSON.stringify(prev));
         const activeItem = newData.cities[activeInfo.cityIndex].days[activeInfo.dayIndex].items.splice(activeInfo.itemIndex, 1)[0];
         
@@ -96,9 +99,8 @@ export default function ItineraryTimeline({ onItemClick }: ItineraryTimelineProp
     if (!activeInfo || !overInfo) return;
     if (activeInfo.cityIndex !== overInfo.cityIndex) return;
 
-    // Moving within the same day
     if (activeInfo.dayIndex === overInfo.dayIndex && activeInfo.itemIndex !== overInfo.itemIndex) {
-      setData(prev => {
+      setLocalData(prev => {
         const newData = JSON.parse(JSON.stringify(prev));
         const dayItems = newData.cities[activeInfo.cityIndex].days[activeInfo.dayIndex].items;
         newData.cities[activeInfo.cityIndex].days[activeInfo.dayIndex].items = arrayMove(dayItems, activeInfo.itemIndex, overInfo.itemIndex);
@@ -108,7 +110,7 @@ export default function ItineraryTimeline({ onItemClick }: ItineraryTimelineProp
   };
 
   const handleRemove = (cityIndex: number, dayIndex: number, itemIndex: number) => {
-    setData(prev => {
+    setLocalData(prev => {
       const newData = JSON.parse(JSON.stringify(prev));
       newData.cities[cityIndex].days[dayIndex].items.splice(itemIndex, 1);
       return newData;
@@ -123,7 +125,7 @@ export default function ItineraryTimeline({ onItemClick }: ItineraryTimelineProp
       onDragEnd={handleDragEnd}
     >
       <div className="pb-10">
-        {data.cities.map((city, cityIndex) => {
+        {localData.cities.map((city, cityIndex) => {
           const isCityCollapsed = !!collapsedCities[city.id];
           return (
           <React.Fragment key={city.id}>
@@ -149,9 +151,7 @@ export default function ItineraryTimeline({ onItemClick }: ItineraryTimelineProp
                     {day.items.map((item, itemIndex) => {
                       const isLastItemInDay = itemIndex === day.items.length - 1;
                       
-                      // For the last day of a city, and the last item of that day,
-                      // if there's no transit to the next city, the timeline stops here.
-                      const isVeryLastItem = isLastItemInDay && dayIndex === city.days.length - 1 && !city.transitToNext && cityIndex === data.cities.length - 1;
+                      const isVeryLastItem = isLastItemInDay && dayIndex === city.days.length - 1 && !city.transitToNext && cityIndex === localData.cities.length - 1;
 
                       if (item.type === 'flight') {
                         return (
@@ -178,7 +178,6 @@ export default function ItineraryTimeline({ onItemClick }: ItineraryTimelineProp
                       }
                     })}
 
-                    {/* Add Activity Button at the end of the day */}
                     <div className="relative py-4 pl-[144px]">
                       <div className="absolute bottom-0 left-[38px] top-0 w-1 bg-slate-800" />
                       <div className="absolute bottom-1/2 left-[120px] top-0 w-[1.5px] bg-slate-200" />
@@ -194,7 +193,6 @@ export default function ItineraryTimeline({ onItemClick }: ItineraryTimelineProp
               </React.Fragment>
             )})}
 
-            {/* Inter-city Transit */}
             {!isCityCollapsed && city.transitToNext && (
               <TransitNode item={city.transitToNext} onClick={() => onItemClick?.(city.transitToNext!.type)} />
             )}

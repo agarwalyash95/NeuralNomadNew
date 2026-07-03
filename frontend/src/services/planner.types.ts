@@ -5,7 +5,7 @@
 
 // ─── Enums & Constants ─────────────────────────────
 
-export type WorkspaceStatus = 'draft' | 'active' | 'completed' | 'archived' | 'booked';
+export type WorkspaceStatus = 'draft' | 'active' | 'completed' | 'archived' | 'saved' | 'booked';
 export type WorkspaceMode = 'planning' | 'exploring' | 'booking' | 'review' | 'traveling' | 'completed';
 export type ChatRole = 'user' | 'assistant' | 'system';
 export type CanvasType = 'plan' | 'flight' | 'hotel' | 'train' | 'bus' | 'cab' | 'attraction' | 'activity' | 'restaurant' | 'visa' | 'forex' | 'booking';
@@ -25,6 +25,25 @@ export interface PlannerWorkspace {
   updated_at: string;
   chat_count: number;
   active_canvases: CanvasType[];
+  draft_state?: TripDraftState;
+}
+
+export interface TripDraftState {
+  id: string;
+  destination_city: string | null;
+  destination_text: string;
+  start_date: string | null;
+  end_date: string | null;
+  adults: number;
+  children: number;
+  infants: number;
+  budget_tier: string;
+  budget_amount: string | null;
+  budget_currency: string;
+  interests: string[];
+  metadata: Record<string, unknown>;
+  ready_for_plan: boolean;
+  missing_slots: string[];
 }
 
 // ─── Memory ────────────────────────────────────────
@@ -82,10 +101,13 @@ export interface ChatMessage {
   message: string;
   widgets: WidgetData[];
   commands: CommandData[];
+  metadata?: Record<string, any>;
   created_at: string;
 }
 
 export interface ChatResponse {
+  workspace: PlannerWorkspace;
+  draft_state: TripDraftState;
   user_message: {
     id: string;
     role: 'user';
@@ -98,6 +120,7 @@ export interface ChatResponse {
     message: string;
     widgets: WidgetData[];
     commands: CommandData[];
+    metadata?: Record<string, any>;
     created_at: string;
   };
   command_results: Array<{
@@ -106,6 +129,8 @@ export interface ChatResponse {
     result?: Record<string, unknown>;
     error?: string;
   }>;
+  ready_for_plan: boolean;
+  missing_slots: string[];
 }
 
 // ─── Trip / Plan ───────────────────────────────────

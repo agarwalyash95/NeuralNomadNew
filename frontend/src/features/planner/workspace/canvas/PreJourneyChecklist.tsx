@@ -1,12 +1,13 @@
 import React from 'react';
 import { ChevronDown, Plus, CheckCircle, Clock } from 'lucide-react';
-import { mockTripData } from './mockData';
+import { MockTripData } from './mockData';
 
 interface PreJourneyChecklistProps {
+  data: MockTripData['checklist'];
   onChecklistClick: (type: string) => void;
 }
 
-export default function PreJourneyChecklist({ onChecklistClick }: PreJourneyChecklistProps) {
+export default function PreJourneyChecklist({ data, onChecklistClick }: PreJourneyChecklistProps) {
   return (
     <div className="mb-4">
       <div className="mb-2 flex items-center justify-between">
@@ -21,7 +22,7 @@ export default function PreJourneyChecklist({ onChecklistClick }: PreJourneyChec
       </div>
 
       <div className="grid gap-3 md:grid-cols-3">
-        {mockTripData.checklist.map((item) => (
+        {data.map((item) => (
           <div
             key={item.id}
             onClick={() => onChecklistClick(item.type)}

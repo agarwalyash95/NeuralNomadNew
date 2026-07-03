@@ -15,7 +15,6 @@ import type {
   CanvasInstance,
   BookingOrder,
   SavedPlace,
-  PaginatedResponse,
 } from './planner.types';
 
 const BASE = '/planner/workspaces';
@@ -23,11 +22,17 @@ const BASE = '/planner/workspaces';
 export const plannerService = {
   // â”€â”€â”€ Workspaces â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  listWorkspaces: () =>
-    apiClient.get<PlannerWorkspace[]>(`${BASE}/`),
+  listWorkspaces: async (): Promise<PlannerWorkspace[]> => {
+    const data = await apiClient.get<{ results: PlannerWorkspace[] } | PlannerWorkspace[]>(`${BASE}/`);
+    // DRF returns paginated: { count, results: [] }
+    return Array.isArray(data) ? data : (data as any).results ?? [];
+  },
 
   createWorkspace: (title: string = 'New Trip') =>
     apiClient.post<PlannerWorkspace>(`${BASE}/`, { title }),
+
+  sendLazyMessage: (message: string, structured_value?: any) =>
+    apiClient.post<ChatResponse>('/planner/chat/', { message, structured_value }),
 
   getWorkspace: (id: string) =>
     apiClient.get<PlannerWorkspace>(`${BASE}/${id}/`),
@@ -62,8 +67,11 @@ export const plannerService = {
   listMessages: (workspaceId: string) =>
     apiClient.get<ChatMessage[]>(`${BASE}/${workspaceId}/chat/`),
 
-  sendMessage: (workspaceId: string, message: string) =>
-    apiClient.post<ChatResponse>(`${BASE}/${workspaceId}/chat/`, { message }),
+  sendMessage: (workspaceId: string, message: string, structured_value?: any) =>
+    apiClient.post<ChatResponse>(`${BASE}/${workspaceId}/chat/`, { message, structured_value }),
+
+  createPlan: (workspaceId: string) =>
+    apiClient.post<PlannerTrip>(`${BASE}/${workspaceId}/plan/`),
 
   // â”€â”€â”€ Plan â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 

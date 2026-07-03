@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MoreVertical, GripVertical, Repeat, Map, Edit3, Trash2 } from 'lucide-react';
+import { MoreVertical, GripVertical, Repeat, Map, Edit3, Trash2, Plane } from 'lucide-react';
 import { ItineraryItem } from '../mockData';
 import NodeWrapper from './NodeWrapper';
 import { useSortable } from '@dnd-kit/sortable';
@@ -33,6 +33,17 @@ export default function FlightNode({ item, isLast, onClick, onReplace, onRemove 
     zIndex: isDragging ? 10 : 1,
   };
 
+  // Attempt to parse "Origin to Dest" from subtitle or title
+  let origin = 'DEP';
+  let dest = 'ARR';
+  let duration = 'Direct';
+  
+  const titleParts = (item.subtitle || item.title || '').split(' to ');
+  if (titleParts.length === 2) {
+    origin = titleParts[0].substring(0, 3).toUpperCase();
+    dest = titleParts[1].substring(0, 3).toUpperCase();
+  }
+
   return (
     <div ref={setNodeRef} style={style} className="relative">
       <NodeWrapper type="flight" time={item.startTime} endTime={item.endTime} isLast={isLast}>
@@ -55,7 +66,7 @@ export default function FlightNode({ item, isLast, onClick, onReplace, onRemove 
               </div>
               <div>
                 <p className="text-[11px] font-extrabold uppercase tracking-[0.25em] text-violet-600">
-                  {item.subtitle}
+                  {item.subtitle || "Flight"}
                 </p>
                 <h4 className="mt-0.5 text-lg font-bold text-slate-900 tracking-tight">{item.title}</h4>
               </div>
@@ -68,24 +79,24 @@ export default function FlightNode({ item, isLast, onClick, onReplace, onRemove 
           {/* Flight Details Box */}
           <div className="flex items-center justify-between rounded-xl bg-white/60 p-3 px-4 shadow-sm backdrop-blur-sm border border-white">
             <div className="text-center">
-              <p className="text-lg font-bold text-slate-900">DEL</p>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">20:30</p>
+              <p className="text-lg font-bold text-slate-900">{origin}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{item.startTime || "TBD"}</p>
             </div>
             
             <div className="flex flex-1 flex-col items-center px-4">
-              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">1h 30m</p>
+              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{duration}</p>
               <div className="relative my-1.5 w-full border-t-[1.5px] border-dashed border-violet-200">
                 <Plane 
                   size={14} 
                   className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-violet-400 bg-transparent" 
                 />
               </div>
-              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Direct</p>
+              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{item.price || "Check Price"}</p>
             </div>
 
             <div className="text-center">
-              <p className="text-lg font-bold text-slate-900">KUU</p>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">22:00</p>
+              <p className="text-lg font-bold text-slate-900">{dest}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{item.endTime || "TBD"}</p>
             </div>
           </div>
 
