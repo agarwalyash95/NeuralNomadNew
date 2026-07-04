@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { MockTripData } from './mockData';
+import { MockTripData, ItineraryItem } from './mockData';
 import CityHeaderNode from './nodes/CityHeaderNode';
 import DayHeaderNode from './nodes/DayHeaderNode';
 import FlightNode from './nodes/FlightNode';
 import GenericNode from './nodes/GenericNode';
 import TransitNode from './nodes/TransitNode';
+import DeletingNode from './nodes/DeletingNode';
 import { Plus } from 'lucide-react';
 import {
   DndContext,
@@ -26,15 +27,56 @@ import {
 interface ItineraryTimelineProps {
   data: MockTripData;
   onItemClick?: (type: string) => void;
+  onItemHover?: (item: ItineraryItem | null) => void;
+  onCityEnter?: (cityId: string) => void;
+  onDayEnter?: (dayId: string) => void;
+  onDataChange?: (newData: MockTripData) => void;
 }
 
-export default function ItineraryTimeline({ data, onItemClick }: ItineraryTimelineProps) {
+export default function ItineraryTimeline({ 
+  data, 
+  onItemClick, 
+  onItemHover, 
+  onCityEnter, 
+  onDayEnter,
+  onDataChange 
+}: ItineraryTimelineProps) {
   const [localData, setLocalData] = useState<MockTripData>(data);
   const [collapsedCities, setCollapsedCities] = useState<Record<string, boolean>>({});
   const [collapsedDays, setCollapsedDays] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    setLocalData(data);
+    // Preserve any isDeleting/isInactive states from localData when new props arrive
+    setLocalData(prev => {
+      const merged = JSON.parse(JSON.stringify(data));
+      prev.cities.forEach((pCity, cIdx) => {
+        const mCity = merged.cities[cIdx];
+        if (!mCity) return;
+        
+        if (pCity.transitToNext?.isDeleting) {
+          if (mCity.transitToNext) mCity.transitToNext.isDeleting = true;
+        }
+        if (pCity.transitToNext?.isInactive) {
+          if (mCity.transitToNext) mCity.transitToNext.isInactive = true;
+        }
+
+        pCity.days.forEach((pDay, dIdx) => {
+          const mDay = mCity.days[dIdx];
+          if (!mDay) return;
+
+          pDay.items.forEach((pItem) => {
+            if (pItem.isDeleting || pItem.isInactive) {
+              const mItem = mDay.items.find((i: any) => i.id === pItem.id);
+              if (mItem) {
+                if (pItem.isDeleting) mItem.isDeleting = true;
+                if (pItem.isInactive) mItem.isInactive = true;
+              }
+            }
+          });
+        });
+      });
+      return merged;
+    });
   }, [data]);
 
   const toggleCity = (cityId: string) => {
@@ -54,8 +96,11 @@ export default function ItineraryTimeline({ data, onItemClick }: ItineraryTimeli
 
   const findDayAndCity = (id: string | number) => {
     for (let c = 0; c < localData.cities.length; c++) {
-      for (let d = 0; d < localData.cities[c].days.length; d++) {
-        const day = localData.cities[c].days[d];
+      const city = localData.cities[c];
+      if (!city) continue;
+      for (let d = 0; d < city.days.length; d++) {
+        const day = city.days[d];
+        if (!day) continue;
         if (day.id === id) return { cityIndex: c, dayIndex: d, isDay: true, itemIndex: -1 };
         const itemIndex = day.items.findIndex(i => i.id === id);
         if (itemIndex !== -1) return { cityIndex: c, dayIndex: d, isDay: false, itemIndex };
@@ -84,6 +129,7 @@ export default function ItineraryTimeline({ data, onItemClick }: ItineraryTimeli
         } else {
           newData.cities[overInfo.cityIndex].days[overInfo.dayIndex].items.splice(overInfo.itemIndex, 0, activeItem);
         }
+        onDataChange?.(newData);
         return newData;
       });
     }
@@ -104,15 +150,99 @@ export default function ItineraryTimeline({ data, onItemClick }: ItineraryTimeli
         const newData = JSON.parse(JSON.stringify(prev));
         const dayItems = newData.cities[activeInfo.cityIndex].days[activeInfo.dayIndex].items;
         newData.cities[activeInfo.cityIndex].days[activeInfo.dayIndex].items = arrayMove(dayItems, activeInfo.itemIndex, overInfo.itemIndex);
+        onDataChange?.(newData);
         return newData;
       });
     }
   };
 
-  const handleRemove = (cityIndex: number, dayIndex: number, itemIndex: number) => {
+  // Safe ID-based soft removal with 5s countdown
+  const handleRemove = (itemId: string) => {
     setLocalData(prev => {
       const newData = JSON.parse(JSON.stringify(prev));
-      newData.cities[cityIndex].days[dayIndex].items.splice(itemIndex, 1);
+      for (const city of newData.cities) {
+        for (const day of city.days) {
+          const item = day.items.find((i: any) => i.id === itemId);
+          if (item) {
+            item.isDeleting = true;
+            break;
+          }
+        }
+      }
+      onDataChange?.(newData);
+      return newData;
+    });
+  };
+
+  const handleUndo = (itemId: string) => {
+    setLocalData(prev => {
+      const newData = JSON.parse(JSON.stringify(prev));
+      for (const city of newData.cities) {
+        for (const day of city.days) {
+          const item = day.items.find((i: any) => i.id === itemId);
+          if (item) {
+            delete item.isDeleting;
+            break;
+          }
+        }
+      }
+      onDataChange?.(newData);
+      return newData;
+    });
+  };
+
+  const handlePermanentRemove = (itemId: string) => {
+    setLocalData(prev => {
+      const newData = JSON.parse(JSON.stringify(prev));
+      for (const city of newData.cities) {
+        for (const day of city.days) {
+          const item = day.items.find((i: any) => i.id === itemId);
+          if (item) {
+            item.isInactive = true;
+            delete item.isDeleting;
+            break;
+          }
+        }
+      }
+      onDataChange?.(newData);
+      return newData;
+    });
+  };
+
+  // Transit soft removal with 5s countdown
+  const handleRemoveTransit = (cityId: string) => {
+    setLocalData(prev => {
+      const newData = JSON.parse(JSON.stringify(prev));
+      const city = newData.cities.find((c: any) => c.id === cityId);
+      if (city?.transitToNext) {
+        city.transitToNext.isDeleting = true;
+      }
+      onDataChange?.(newData);
+      return newData;
+    });
+  };
+
+  const handleUndoTransit = (cityId: string) => {
+    setLocalData(prev => {
+      const newData = JSON.parse(JSON.stringify(prev));
+      const city = newData.cities.find((c: any) => c.id === cityId);
+      if (city?.transitToNext) {
+        delete city.transitToNext.isDeleting;
+      }
+      onDataChange?.(newData);
+      return newData;
+    });
+  };
+
+  const handlePermanentRemoveTransit = (cityId: string) => {
+    setLocalData(prev => {
+      const newData = JSON.parse(JSON.stringify(prev));
+      const city = newData.cities.find((c: any) => c.id === cityId);
+      if (city?.transitToNext) {
+        city.transitToNext.isInactive = true;
+        delete city.transitToNext.isDeleting;
+      }
+      onDataChange?.(newData);
       return newData;
     });
   };
@@ -128,30 +258,58 @@ export default function ItineraryTimeline({ data, onItemClick }: ItineraryTimeli
         {localData.cities.map((city, cityIndex) => {
           const isCityCollapsed = !!collapsedCities[city.id];
           return (
-          <React.Fragment key={city.id}>
-            <CityHeaderNode 
-              city={city} 
-              isCollapsed={isCityCollapsed} 
-              onToggle={() => toggleCity(city.id)} 
-            />
+          <div 
+            key={city.id} 
+            className="w-full"
+            onMouseEnter={() => onCityEnter?.(city.id)}
+          >
+            <div 
+              id={`city-${city.cityName.replace(/\s+/g, '-').toLowerCase()}`}
+            >
+              <CityHeaderNode 
+                city={city} 
+                isCollapsed={isCityCollapsed} 
+                onToggle={() => toggleCity(city.id)} 
+              />
+            </div>
 
             {!isCityCollapsed && city.days.map((day, dayIndex) => {
               const isDayCollapsed = !!collapsedDays[day.id];
               return (
-              <React.Fragment key={day.id}>
-                <DayHeaderNode 
-                  day={day} 
-                  isCollapsed={isDayCollapsed} 
-                  onToggle={() => toggleDay(day.id)} 
-                />
+              <div 
+                key={day.id} 
+                className="w-full"
+                onMouseEnter={() => {
+                  onDayEnter?.(day.id);
+                  onCityEnter?.(city.id);
+                }}
+              >
+                <div id={`day-${day.dayNumber}`}>
+                  <DayHeaderNode 
+                    day={day} 
+                    isCollapsed={isDayCollapsed} 
+                    onToggle={() => toggleDay(day.id)} 
+                  />
+                </div>
 
                 {!isDayCollapsed && (
-                <SortableContext id={day.id} items={day.items.map(i => i.id)} strategy={verticalListSortingStrategy}>
+                <SortableContext id={day.id} items={day.items.filter(i => !i.isInactive).map(i => i.id)} strategy={verticalListSortingStrategy}>
                   <div className="flex flex-col">
-                    {day.items.map((item, itemIndex) => {
+                    {day.items.filter(item => !item.isInactive).map((item, itemIndex) => {
                       const isLastItemInDay = itemIndex === day.items.length - 1;
                       
                       const isVeryLastItem = isLastItemInDay && dayIndex === city.days.length - 1 && !city.transitToNext && cityIndex === localData.cities.length - 1;
+
+                      if (item.isDeleting) {
+                        return (
+                          <DeletingNode 
+                            key={item.id}
+                            item={item}
+                            onUndo={() => handleUndo(item.id)}
+                            onExpire={() => handlePermanentRemove(item.id)}
+                          />
+                        );
+                      }
 
                       if (item.type === 'flight') {
                         return (
@@ -160,8 +318,8 @@ export default function ItineraryTimeline({ data, onItemClick }: ItineraryTimeli
                             item={item} 
                             isLast={isVeryLastItem} 
                             onClick={() => onItemClick?.('flight')}
-                            onReplace={() => onItemClick?.('helper')}
-                            onRemove={() => handleRemove(cityIndex, dayIndex, itemIndex)}
+                            onRemove={() => handleRemove(item.id)}
+                            onHover={(hovered) => onItemHover?.(hovered ? item : null)}
                           />
                         );
                       } else {
@@ -171,8 +329,8 @@ export default function ItineraryTimeline({ data, onItemClick }: ItineraryTimeli
                             item={item} 
                             isLast={isVeryLastItem} 
                             onClick={() => onItemClick?.(item.type)} 
-                            onReplace={() => onItemClick?.('helper')}
-                            onRemove={() => handleRemove(cityIndex, dayIndex, itemIndex)}
+                            onRemove={() => handleRemove(item.id)}
+                            onHover={(hovered) => onItemHover?.(hovered ? item : null)}
                           />
                         );
                       }
@@ -190,13 +348,27 @@ export default function ItineraryTimeline({ data, onItemClick }: ItineraryTimeli
                   </div>
                 </SortableContext>
                 )}
-              </React.Fragment>
+              </div>
             )})}
 
-            {!isCityCollapsed && city.transitToNext && (
-              <TransitNode item={city.transitToNext} onClick={() => onItemClick?.(city.transitToNext!.type)} />
+            {!isCityCollapsed && city.transitToNext && !city.transitToNext.isInactive && (
+              city.transitToNext.isDeleting ? (
+                <DeletingNode 
+                  key={city.transitToNext.id}
+                  item={city.transitToNext}
+                  onUndo={() => handleUndoTransit(city.id)}
+                  onExpire={() => handlePermanentRemoveTransit(city.id)}
+                />
+              ) : (
+                <TransitNode 
+                  item={city.transitToNext} 
+                  onClick={() => onItemClick?.(city.transitToNext!.type)} 
+                  onHover={(hovered) => onItemHover?.(hovered ? city.transitToNext! : null)}
+                  onRemove={() => handleRemoveTransit(city.id)}
+                />
+              )
             )}
-          </React.Fragment>
+          </div>
         )})}
       </div>
     </DndContext>

@@ -122,7 +122,7 @@ class HotelMaster(models.Model):
     star_rating = models.DecimalField(max_digits=2, decimal_places=1, blank=True, null=True)
     user_rating = models.DecimalField(max_digits=3, decimal_places=2, blank=True, null=True)
     address = models.TextField(blank=True, null=True)
-    image_url = models.URLField(blank=True, null=True)
+    image_url = models.URLField(max_length=1000, blank=True, null=True)
     latitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
     longitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
 
@@ -135,7 +135,7 @@ class RestaurantMaster(models.Model):
     cuisine = models.CharField(max_length=255, blank=True, null=True)
     price_range = models.CharField(max_length=10, blank=True, null=True) # e.g. $$
     user_rating = models.DecimalField(max_digits=3, decimal_places=2, blank=True, null=True)
-    image_url = models.URLField(blank=True, null=True)
+    image_url = models.URLField(max_length=1000, blank=True, null=True)
 
     def __str__(self):
         return self.name
@@ -145,7 +145,7 @@ class AttractionMaster(models.Model):
     name = models.CharField(max_length=255)
     category = models.CharField(max_length=100, blank=True, null=True) # e.g. Temple, Museum
     user_rating = models.DecimalField(max_digits=3, decimal_places=2, blank=True, null=True)
-    image_url = models.URLField(blank=True, null=True)
+    image_url = models.URLField(max_length=1000, blank=True, null=True)
     suggested_duration_mins = models.IntegerField(blank=True, null=True)
 
     def __str__(self):
@@ -156,7 +156,7 @@ class ActivityMaster(models.Model):
     name = models.CharField(max_length=255)
     category = models.CharField(max_length=100, blank=True, null=True) # e.g. Adventure, Food
     price_estimate = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
-    image_url = models.URLField(blank=True, null=True)
+    image_url = models.URLField(max_length=1000, blank=True, null=True)
 
     def __str__(self):
         return self.name

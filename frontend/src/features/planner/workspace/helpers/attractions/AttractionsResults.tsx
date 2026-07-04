@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Loader2, Map } from 'lucide-react';
+import { Map } from 'lucide-react';
 import { PlaceCard } from '@/components/explore/place-card';
 
 interface AttractionsResultsProps {

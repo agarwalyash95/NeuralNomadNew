@@ -1,14 +1,16 @@
 import React from 'react';
-import { MoreVertical, Train, Plane, Bus } from 'lucide-react';
+import { Train, Plane, Bus, Trash2 } from 'lucide-react';
 import { ItineraryItem } from '../mockData';
 import Image from 'next/image';
 
 interface TransitNodeProps {
   item: ItineraryItem;
   onClick?: () => void;
+  onHover?: (isHovered: boolean) => void;
+  onRemove?: () => void;
 }
 
-export default function TransitNode({ item, onClick }: TransitNodeProps) {
+export default function TransitNode({ item, onClick, onHover, onRemove }: TransitNodeProps) {
   const getIcon = () => {
     switch (item.type) {
       case 'train':
@@ -33,6 +35,8 @@ export default function TransitNode({ item, onClick }: TransitNodeProps) {
 
       <div
         onClick={onClick}
+        onMouseEnter={() => onHover?.(true)}
+        onMouseLeave={() => onHover?.(false)}
         className="flex cursor-pointer items-center justify-between gap-3 rounded-[16px] border border-sky-200 bg-gradient-to-br from-sky-50/80 to-sky-100/40 p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
       >
         <div className="flex min-w-0 items-center gap-3">
@@ -48,8 +52,12 @@ export default function TransitNode({ item, onClick }: TransitNodeProps) {
             {item.details ? <p className="mt-1.5 text-xs font-semibold text-sky-700">{item.details}</p> : null}
           </div>
         </div>
-        <button className="rounded-full p-2 text-sky-400 transition-colors hover:bg-white/70 hover:text-sky-700">
-          <MoreVertical size={18} />
+        <button 
+          onClick={(e) => { e.stopPropagation(); onRemove?.(); }}
+          className="rounded-xl bg-rose-50 p-2 text-rose-500 border border-rose-100/80 shadow-xs hover:bg-rose-100 hover:text-rose-600 active:scale-95 transition-all cursor-pointer shrink-0"
+          title="Delete Transit"
+        >
+          <Trash2 size={15} />
         </button>
       </div>
     </div>

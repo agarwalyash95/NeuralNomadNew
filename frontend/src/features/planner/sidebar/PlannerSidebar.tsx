@@ -100,14 +100,14 @@ export default function PlannerSidebar({ isOpen, onToggle }: PlannerSidebarProps
             animate={{ opacity: 1, scale: 1, x: 0 }}
             exit={{ opacity: 0, scale: 0.9, x: -10 }}
             transition={{ duration: 0.2 }}
-            className="absolute left-5 top-5 z-50"
+            className="absolute left-5 top-5 z-[60]"
           >
             <button
               onClick={onToggle}
-              className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white/95 text-slate-500 shadow-md backdrop-blur-md transition-all duration-200 hover:scale-105 hover:border-slate-300 hover:bg-white hover:text-slate-950 hover:shadow-lg active:scale-95"
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#e2ddd2] bg-white/90 text-[#8c857b] shadow-[0_4px_12px_rgba(139,124,103,0.15)] backdrop-blur-md transition-all duration-300 hover:scale-110 hover:border-[#dcd7cb] hover:bg-white hover:text-slate-900 active:scale-95"
               title="Open sidebar"
             >
-              <PanelLeftOpen size={16} strokeWidth={1.8} />
+              <PanelLeftOpen size={15} strokeWidth={1.5} />
             </button>
           </motion.div>
         )}
@@ -117,9 +117,9 @@ export default function PlannerSidebar({ isOpen, onToggle }: PlannerSidebarProps
         initial={false}
         animate={{ width: isOpen ? sidebarWidth : 0 }}
         className={cn(
-          'relative z-20 flex h-full shrink-0 flex-col overflow-hidden border-r border-slate-200',
-          'bg-[#f8fafc]', // Sleek mist-slate-50 background that looks crisp and premium
-          'shadow-[inset_-1px_0_0_0_rgba(0,0,0,0.015),_inset_1px_0_0_0_rgba(255,255,255,0.8)]',
+          'relative z-20 flex h-full shrink-0 flex-col overflow-hidden border-r border-[#e2ddd2]/70',
+          'bg-gradient-to-b from-[#fbf9f4]/95 via-[#f6f4ef]/90 to-[#faf8f3]/95 backdrop-blur-md',
+          'shadow-[inset_-1px_0_0_0_rgba(255,255,255,0.4)]',
           !isOpen && 'border-none'
         )}
         transition={{ type: 'spring', stiffness: 280, damping: 30 }}
@@ -137,34 +137,36 @@ export default function PlannerSidebar({ isOpen, onToggle }: PlannerSidebarProps
               <div className="mb-5 flex items-center justify-between">
                 <div className="flex flex-col">
                   <div className="mb-1 flex items-center gap-1.5">
-                    <Sparkles size={11} className="text-blue-500 animate-pulse" />
-                    <p className="text-[9px] font-bold uppercase tracking-[0.28em] text-slate-400">
+                    <Sparkles size={11} className="text-amber-500 fill-amber-500/10 animate-pulse" />
+                    <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-[#9c957b]">
                       Neural Nomad
                     </p>
                   </div>
-                  <h2 className="text-lg font-bold tracking-tight text-slate-800">
-                    Trips in progress
+                  <h2 className="text-xl font-semibold tracking-tight text-slate-800">
+                    Your Journeys
                   </h2>
                 </div>
                 
                 <button
                   onClick={onToggle}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white/80 text-slate-500 shadow-sm backdrop-blur-sm transition-all duration-200 hover:border-slate-300 hover:bg-white hover:text-slate-950 hover:shadow-md active:scale-95"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#e2ddd2]/60 bg-white/60 text-[#8c857b] shadow-sm backdrop-blur-sm transition-all duration-300 hover:border-[#ddd7ca] hover:bg-white hover:text-slate-900 hover:shadow-md active:scale-95"
                   title="Close sidebar"
                 >
-                  <PanelLeftClose size={15} strokeWidth={1.8} />
+                  <PanelLeftClose size={14} strokeWidth={1.5} />
                 </button>
               </div>
 
               {/* Primary Call-to-Action */}
               <div className="mb-6">
-                <button
+                <motion.button
+                  whileHover={{ scale: 1.02, y: -0.5 }}
+                  whileTap={{ scale: 0.98 }}
                   onClick={handleNewPlan}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition-all duration-200 hover:bg-slate-800 hover:shadow-[0_4px_12px_rgba(15,23,42,0.15)] active:scale-[0.98]"
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#1e1e1a] via-[#121210] to-[#1e1e1a] border border-white/5 px-4 py-2.5 text-xs font-semibold text-[#fbfaf7] shadow-[0_4px_12px_rgba(30,30,26,0.15)] transition-all duration-300 hover:bg-[#282824] hover:shadow-[0_8px_20px_-4px_rgba(30,30,26,0.35)]"
                 >
-                  <Plus size={14} strokeWidth={2.5} />
+                  <Plus size={13} strokeWidth={2.5} className="text-amber-400" />
                   <span>New Plan</span>
-                </button>
+                </motion.button>
               </div>
 
               {/* Scrollable Nav Sections */}
@@ -222,17 +224,17 @@ function WorkspaceSection({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between px-2 mb-1.5">
-        <h3 className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-400">
+        <h3 className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#968f83]">
           {title}
         </h3>
         {workspaces.length > 0 && (
-          <span className="text-[9px] font-bold bg-slate-200/50 text-slate-500 px-1.5 py-0.5 rounded-full scale-90">
+          <span className="text-[9px] font-bold bg-[#e8e3d5]/60 text-[#7c756a] px-2 py-0.5 rounded-full scale-90">
             {workspaces.length}
           </span>
         )}
       </div>
 
-      <div className="max-h-[200px] overflow-y-auto custom-scrollbar pr-0.5 space-y-1">
+      <div className="max-h-[220px] overflow-y-auto custom-scrollbar pr-0.5 space-y-1.5">
         {workspaces.length > 0 ? (
           workspaces.map((workspace) => {
             const hasPlan = workspace.status !== 'draft';
@@ -244,7 +246,8 @@ function WorkspaceSection({
                 key={workspace.id}
                 icon={hasPlan ? <Map size={14} strokeWidth={1.8} /> : <MessageSquare size={14} strokeWidth={1.8} />}
                 label={workspace.title}
-                meta={`${hasPlan ? 'Plan ready' : 'Draft'}${dateStr ? ' · ' + dateStr : ''}`}
+                dateStr={dateStr}
+                status={workspace.status}
                 isActive={workspace.id === activeWorkspaceId}
                 onClick={() => onOpen(workspace, hasPlan)}
                 onDelete={(e) => onDelete(e, workspace.id)}
@@ -252,7 +255,7 @@ function WorkspaceSection({
             );
           })
         ) : (
-          <p className="px-2 py-2 text-xs text-slate-400/80 italic font-medium">{emptyMessage}</p>
+          <p className="px-2 py-2 text-xs text-[#968f83]/80 italic font-medium">{emptyMessage}</p>
         )}
       </div>
     </div>
@@ -262,7 +265,8 @@ function WorkspaceSection({
 interface SidebarItemProps {
   icon: React.ReactNode;
   label: string;
-  meta: string;
+  dateStr?: string;
+  status: string;
   isActive?: boolean;
   onClick?: () => void;
   onDelete?: (e: React.MouseEvent) => void;
@@ -271,27 +275,60 @@ interface SidebarItemProps {
 function SidebarItem({
   icon,
   label,
-  meta,
+  dateStr,
+  status,
   isActive = false,
   onClick,
   onDelete,
 }: SidebarItemProps) {
+  
+  // Render luxury-style pill badges
+  const getStatusBadge = () => {
+    switch (status) {
+      case 'booked':
+        return (
+          <span className="text-[8px] font-bold tracking-wider uppercase bg-indigo-50 text-indigo-700 border border-indigo-200/40 px-1.5 py-0.5 rounded-md">
+            Booked
+          </span>
+        );
+      case 'saved':
+        return (
+          <span className="text-[8px] font-bold tracking-wider uppercase bg-emerald-50 text-emerald-700 border border-emerald-200/40 px-1.5 py-0.5 rounded-md">
+            Saved
+          </span>
+        );
+      case 'draft':
+        return (
+          <span className="text-[8px] font-bold tracking-wider uppercase bg-slate-100/90 text-slate-600 border border-slate-200/40 px-1.5 py-0.5 rounded-md">
+            Draft
+          </span>
+        );
+      case 'active':
+      default:
+        return (
+          <span className="text-[8px] font-bold tracking-wider uppercase bg-amber-50 text-amber-700 border border-amber-200/40 px-1.5 py-0.5 rounded-md">
+            Plan Ready
+          </span>
+        );
+    }
+  };
+
   return (
     <div
       onClick={onClick}
       className={cn(
-        "group relative flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left cursor-pointer transition-all duration-200",
+        "group relative flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left cursor-pointer transition-all duration-300",
         isActive
-          ? "bg-white border border-slate-200 shadow-[0_4px_12px_rgba(0,0,0,0.02)] before:absolute before:left-0 before:top-3 before:bottom-3 before:w-0.5 before:rounded-r-full before:bg-blue-600"
-          : "hover:bg-slate-200/50 active:bg-slate-200/85 border border-transparent"
+          ? "bg-white border border-[#d3cbbe] shadow-[0_6px_16px_-4px_rgba(139,124,103,0.12)] before:absolute before:left-0 before:top-2.5 before:bottom-2.5 before:w-1 before:rounded-r-md before:bg-[#bfa780]"
+          : "bg-white/45 border border-[#e8e3d5]/30 hover:bg-white/85 hover:border-[#ddd7ca] hover:shadow-[0_4px_12px_rgba(139,124,103,0.04)]"
       )}
     >
       <div
         className={cn(
-          "flex h-8 w-8 items-center justify-center rounded-lg transition-all duration-200 shadow-sm shrink-0",
+          "flex h-8 w-8 items-center justify-center rounded-lg transition-all duration-300 shadow-sm shrink-0",
           isActive
-            ? "bg-blue-600 text-white"
-            : "bg-white border border-slate-200 text-slate-500 group-hover:text-slate-800 group-hover:bg-white"
+            ? "bg-[#bfa780] text-white shadow-[0_2px_8px_rgba(191,167,128,0.25)] border border-[#bfa780]"
+            : "bg-white border border-[#e8e3d5]/60 text-[#8c857b] group-hover:text-slate-800 group-hover:bg-white group-hover:border-[#ddd7ca]"
         )}
       >
         {icon}
@@ -300,21 +337,27 @@ function SidebarItem({
       <div className="min-w-0 flex-1 pr-6">
         <p
           className={cn(
-            "truncate text-xs font-semibold leading-none",
-            isActive ? "text-slate-900 font-bold" : "text-slate-600 font-medium group-hover:text-slate-900"
+            "truncate text-xs leading-tight transition-colors duration-200",
+            isActive ? "text-slate-900 font-bold" : "text-slate-600 font-semibold group-hover:text-slate-900"
           )}
         >
           {label}
         </p>
-        <p className="mt-1 truncate text-[10px] text-slate-400 font-medium">
-          {meta}
-        </p>
+        
+        <div className="mt-1 flex items-center gap-1.5">
+          {getStatusBadge()}
+          {dateStr && (
+            <span className="text-[9px] text-[#9c958a] font-medium">
+              • {dateStr}
+            </span>
+          )}
+        </div>
       </div>
 
       {onDelete && (
         <button
           onClick={onDelete}
-          className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 opacity-0 transition-all duration-150 hover:bg-red-50 hover:text-red-600 rounded-lg group-hover:opacity-100 focus:opacity-100"
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 opacity-0 transition-all duration-200 hover:bg-red-50 hover:text-red-600 rounded-lg group-hover:opacity-100 focus:opacity-100"
           title="Delete Plan"
         >
           <Trash2 size={13} strokeWidth={2} />
@@ -323,3 +366,4 @@ function SidebarItem({
     </div>
   );
 }
+

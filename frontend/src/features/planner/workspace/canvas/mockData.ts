@@ -7,12 +7,17 @@ export interface ItineraryItem {
   subtitle: string;
   details?: string;
   price?: string;
-  status?: 'Confirmed' | 'Pending' | 'Book Now';
+  status?: 'Confirmed' | 'Pending' | 'Book Now' | 'inactive';
   aiTip?: string;
   image?: string;
   rating?: number;
   geoTag?: string;
   distanceToNext?: string;
+  latitude?: number;
+  longitude?: number;
+  isInactive?: boolean;
+  isDeleting?: boolean;
+  _rawActivity?: any;
 }
 
 export interface ItineraryDay {

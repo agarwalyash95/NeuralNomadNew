@@ -99,8 +99,8 @@ export interface ChatMessage {
   id: string;
   role: ChatRole;
   message: string;
-  widgets: WidgetData[];
-  commands: CommandData[];
+  widgets?: WidgetData[];
+  commands?: CommandData[];
   metadata?: Record<string, any>;
   created_at: string;
 }
@@ -108,21 +108,8 @@ export interface ChatMessage {
 export interface ChatResponse {
   workspace: PlannerWorkspace;
   draft_state: TripDraftState;
-  user_message: {
-    id: string;
-    role: 'user';
-    message: string;
-    created_at: string;
-  };
-  assistant_message: {
-    id: string;
-    role: 'assistant';
-    message: string;
-    widgets: WidgetData[];
-    commands: CommandData[];
-    metadata?: Record<string, any>;
-    created_at: string;
-  };
+  user_message: ChatMessage;
+  assistant_message: ChatMessage;
   command_results: Array<{
     type: string;
     status: string;

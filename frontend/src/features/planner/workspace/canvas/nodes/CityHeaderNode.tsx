@@ -1,5 +1,4 @@
-import React from 'react';
-import { MoreVertical, MapPin, CalendarDays, CloudSun, Moon, ChevronDown, ChevronRight } from 'lucide-react';
+import { MoreVertical, CloudSun, ChevronDown } from 'lucide-react';
 import { ItineraryCity } from '../mockData';
 
 interface CityHeaderNodeProps {

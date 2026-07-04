@@ -1,10 +1,10 @@
 'use client';
 
-import React, { FormEvent, useState } from 'react';
+import React, { FormEvent, useState, useEffect } from 'react';
 import { TrainFront, Search, X, ArrowRight, Edit2, Check } from 'lucide-react';
 import { BookingSearchParams } from '@/types/booking';
 import TrainSearchForm from '../TrainSearchForm';
-import { mockTrainResults } from './mockTransportData';
+import { searchService } from '@/services/search.service';
 
 const initialParams: BookingSearchParams = {
   service: 'train',
@@ -45,8 +45,55 @@ export default function TrainCanvas({ onClose }: TrainCanvasProps) {
   const [formError, setFormError] = useState<string | null>(null);
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState(mockTrainResults);
+  const [results, setResults] = useState<any[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>(['AC Class', 'Available']);
+
+  const fetchTrains = async (searchParams: BookingSearchParams) => {
+    setLoading(true);
+    try {
+      const apiResults = await searchService.search(searchParams);
+      const mapped = apiResults.map((train) => {
+        const classes = train.meta?.classes?.map((c) => ({
+          name: c.class || c.label,
+          seats: c.availability || 'Available',
+          price: c.price,
+        })) || [];
+
+        const getDisplayTime = (isoStr: string) => {
+          if (!isoStr) return '12:00';
+          if (isoStr.includes('T')) return isoStr.split('T')[1]?.slice(0, 5) ?? '20:00';
+          return isoStr.slice(0, 5);
+        };
+
+        return {
+          id: train.id,
+          name: train.title,
+          trainNumber: train.code,
+          days: train.days_of_week?.join(', ') || 'Daily',
+          rating: 4.3,
+          departure: {
+            time: getDisplayTime(train.departure_time),
+            station: train.origin_code || 'NDLS',
+          },
+          arrival: {
+            time: getDisplayTime(train.arrival_time),
+            station: train.destination_code || 'MMCT',
+          },
+          duration: train.duration || '16h 00m',
+          classes: classes,
+        };
+      });
+      setResults(mapped);
+    } catch (err) {
+      console.error('Error fetching trains:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTrains(params);
+  }, []);
 
   const validateParams = (): string | null => {
     if (!params.origin.trim() && !params.destination.trim()) {
@@ -63,12 +110,8 @@ export default function TrainCanvas({ onClose }: TrainCanvasProps) {
       return;
     }
     setFormError(null);
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      setIsSearchExpanded(false);
-      setResults(mockTrainResults);
-    }, 800);
+    setIsSearchExpanded(false);
+    await fetchTrains(params);
   };
 
   const toggleTag = (tag: string) => {
@@ -271,7 +314,7 @@ export default function TrainCanvas({ onClose }: TrainCanvasProps) {
                   </div>
 
                   <div className="flex flex-wrap gap-2">
-                    {train.classes.map((cls) => (
+                    {train.classes?.map((cls: any) => (
                       <div
                         key={cls.name}
                         className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"

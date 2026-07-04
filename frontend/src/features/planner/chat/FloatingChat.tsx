@@ -127,9 +127,9 @@ export default function FloatingChat({ workspaceId }: FloatingChatProps) {
                   )}>
                     {message.message}
                   </div>
-                  {message.widgets?.length > 0 && (
+                  {Boolean(message.widgets && message.widgets.length > 0) && (
                     <div className="flex flex-col gap-2 w-full">
-                      {message.widgets.map((widget, i) => (
+                      {message.widgets!.map((widget, i) => (
                         <ChatWidget key={i} widget={widget} onSubmit={handleSubmit} />
                       ))}
                     </div>
@@ -170,7 +170,7 @@ export default function FloatingChat({ workspaceId }: FloatingChatProps) {
                   }}
                 />
                 <button
-                  onClick={handleSubmit}
+                  onClick={() => handleSubmit()}
                   className={cn(
                     'absolute bottom-2 right-2 rounded-xl p-1.5 transition-all',
                     query.trim().length > 0 && !isSending

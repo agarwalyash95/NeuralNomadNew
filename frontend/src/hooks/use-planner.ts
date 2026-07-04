@@ -7,7 +7,6 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { plannerService } from '@/services/planner.service';
-import { usePlannerStore } from '@/features/_planner_archive/store/planner.store';
 import type { ChatResponse, PlannerWorkspace } from '@/services/planner.types';
 
 // ─── Query Keys ─────────────────────────────────────
@@ -34,13 +33,11 @@ export function useWorkspaces() {
 
 export function useCreateWorkspace() {
   const qc = useQueryClient();
-  const setActiveWorkspaceId = usePlannerStore((s) => s.setActiveWorkspaceId);
 
   return useMutation({
     mutationFn: (title?: string) => plannerService.createWorkspace(title),
-    onSuccess: (workspace: PlannerWorkspace) => {
+    onSuccess: (_workspace: PlannerWorkspace) => {
       qc.invalidateQueries({ queryKey: keys.workspaces });
-      setActiveWorkspaceId(workspace.id);
     },
   });
 }
@@ -57,11 +54,9 @@ export function useMessages(workspaceId: string | null) {
 
 export function useSendMessage(workspaceId: string | null) {
   const qc = useQueryClient();
-  const setIsSending = usePlannerStore((s) => s.setIsSending);
 
   return useMutation({
     mutationFn: (message: string) => {
-      setIsSending(true);
       return plannerService.sendMessage(workspaceId!, message);
     },
     onSuccess: (_data: ChatResponse) => {
@@ -71,9 +66,6 @@ export function useSendMessage(workspaceId: string | null) {
         qc.invalidateQueries({ queryKey: keys.context(workspaceId) });
         qc.invalidateQueries({ queryKey: keys.recommendations(workspaceId) });
       }
-    },
-    onSettled: () => {
-      setIsSending(false);
     },
   });
 }

@@ -1,10 +1,10 @@
 'use client';
 
-import React, { FormEvent, useState } from 'react';
+import React, { FormEvent, useState, useEffect } from 'react';
 import { Plane, Search, X, ArrowRight, Edit2, Check } from 'lucide-react';
 import { BookingSearchParams } from '@/types/booking';
 import FlightSearchForm from '../FlightSearchForm';
-import { mockFlightResults } from './mockFlightData';
+import { searchService } from '@/services/search.service';
 
 const initialParams: BookingSearchParams = {
   service: 'flight',
@@ -45,8 +45,64 @@ export default function FlightCanvas({ onClose }: FlightCanvasProps) {
   const [formError, setFormError] = useState<string | null>(null);
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState(mockFlightResults);
+  const [results, setResults] = useState<any[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>(['Cheapest', 'Morning']);
+
+  const fetchFlights = async (searchParams: BookingSearchParams) => {
+    setLoading(true);
+    try {
+      const apiResults = await searchService.search(searchParams);
+      const mapped = apiResults.map((flight) => {
+        const cabinClass = flight.meta?.cabin_classes?.[0];
+        const price = flight.providers?.[0]?.price || cabinClass?.price || 4850;
+        const seats = cabinClass?.seats_available ? `${cabinClass.seats_available} seats left` : '12 seats left';
+        const baggage = flight.meta?.baggage || '15 kg';
+        const meal = flight.meta?.meal;
+
+        const getDisplayTime = (isoStr: string) => {
+          if (!isoStr) return '06:30';
+          if (isoStr.includes('T')) return isoStr.split('T')[1]?.slice(0, 5) ?? '08:00';
+          return isoStr.slice(0, 5);
+        };
+
+        return {
+          id: flight.id,
+          airline: flight.title,
+          flightNumber: flight.code,
+          logo: '✈️',
+          departure: {
+            time: getDisplayTime(flight.departure_time),
+            airport: flight.origin_code || 'DEL',
+            city: flight.origin_city || 'Delhi',
+            date: flight.departure_time ? new Date(flight.departure_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Mar 15',
+          },
+          arrival: {
+            time: getDisplayTime(flight.arrival_time),
+            airport: flight.destination_code || 'BOM',
+            city: flight.destination_city || 'Mumbai',
+            date: flight.arrival_time ? new Date(flight.arrival_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Mar 15',
+          },
+          duration: flight.duration || '2h 45m',
+          stops: flight.stops === 0 ? 'Non-stop' : `${flight.stops} stop(s)`,
+          price: price,
+          class: cabinClass?.class || 'Economy',
+          seats: seats,
+          baggage: baggage,
+          rating: 4.5,
+          amenities: meal ? ['WiFi', 'Meal'] : ['WiFi'],
+        };
+      });
+      setResults(mapped);
+    } catch (err) {
+      console.error('Error fetching flights:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchFlights(params);
+  }, []);
 
   const validateParams = (): string | null => {
     if (!params.origin.trim() && !params.destination.trim()) {
@@ -63,13 +119,8 @@ export default function FlightCanvas({ onClose }: FlightCanvasProps) {
       return;
     }
     setFormError(null);
-    setLoading(true);
-    // Simulate search
-    setTimeout(() => {
-      setLoading(false);
-      setIsSearchExpanded(false);
-      setResults(mockFlightResults);
-    }, 800);
+    setIsSearchExpanded(false);
+    await fetchFlights(params);
   };
 
   const toggleTag = (tag: string) => {
@@ -276,7 +327,7 @@ export default function FlightCanvas({ onClose }: FlightCanvasProps) {
                         <span>{flight.baggage}</span>
                         <span>•</span>
                         <span>{flight.seats}</span>
-                        {flight.amenities.map((amenity) => (
+                        {flight.amenities?.map((amenity: string) => (
                           <React.Fragment key={amenity}>
                             <span>•</span>
                             <span>{amenity}</span>

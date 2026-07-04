@@ -40,20 +40,27 @@ class ForexDataViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({'error': 'to_currency parameter is required'}, status=400)
 
         try:
-            from_rate = ForexData.objects.get(currency=from_currency)
-            to_rate = ForexData.objects.get(currency=to_currency)
+            if from_currency == 'INR':
+                from_rate_val = 1.0
+            else:
+                from_rate_val = float(ForexData.objects.get(currency=from_currency).exchange_rate)
+
+            if to_currency == 'INR':
+                to_rate_val = 1.0
+            else:
+                to_rate_val = float(ForexData.objects.get(currency=to_currency).exchange_rate)
 
             # Convert: amount in from_currency → to_currency
             # Both rates are stored as "1 unit of currency = X INR"
             # So: amount_in_from * (from_rate / to_rate) = amount_in_to
-            converted_amount = float(amount) * (float(from_rate.exchange_rate) / float(to_rate.exchange_rate))
+            converted_amount = float(amount) * (from_rate_val / to_rate_val)
 
             return Response({
                 'from_currency': from_currency,
                 'to_currency': to_currency,
                 'amount': float(amount),
                 'converted_amount': round(converted_amount, 4),
-                'rate': round(float(from_rate.exchange_rate) / float(to_rate.exchange_rate), 6)
+                'rate': round(from_rate_val / to_rate_val, 6)
             })
         except ForexData.DoesNotExist:
             return Response({'error': 'Currency not found'}, status=404)

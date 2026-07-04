@@ -1,10 +1,10 @@
 'use client';
 
-import React, { FormEvent, useState } from 'react';
+import React, { FormEvent, useState, useEffect } from 'react';
 import { BusFront, Search, X, ArrowRight, Edit2, Check } from 'lucide-react';
 import { BookingSearchParams } from '@/types/booking';
 import BusSearchForm from '../BusSearchForm';
-import { mockBusResults } from './mockTransportData';
+import { searchService } from '@/services/search.service';
 
 const initialParams: BookingSearchParams = {
   service: 'bus',
@@ -45,8 +45,53 @@ export default function BusCanvas({ onClose }: BusCanvasProps) {
   const [formError, setFormError] = useState<string | null>(null);
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState(mockBusResults);
+  const [results, setResults] = useState<any[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>(['AC Sleeper', 'WiFi']);
+
+  const fetchBuses = async (searchParams: BookingSearchParams) => {
+    setLoading(true);
+    try {
+      const apiResults = await searchService.search(searchParams);
+      const mapped = apiResults.map((bus) => {
+        const price = bus.providers?.[0]?.price || bus.meta?.seats?.[0]?.price || 850;
+        const seats = bus.meta?.seats?.[0]?.seats_available ? `${bus.meta.seats[0].seats_available} seats left` : '15 seats left';
+
+        const getDisplayTime = (isoStr: string) => {
+          if (!isoStr) return '20:00';
+          if (isoStr.includes('T')) return isoStr.split('T')[1]?.slice(0, 5) ?? '20:00';
+          return isoStr.slice(0, 5);
+        };
+
+        return {
+          id: bus.id,
+          operator: bus.title,
+          busType: bus.meta?.bus_type || 'AC Sleeper',
+          rating: 4.1,
+          departure: {
+            time: getDisplayTime(bus.departure_time),
+            location: bus.origin_code || 'DEL',
+          },
+          arrival: {
+            time: getDisplayTime(bus.arrival_time),
+            location: bus.destination_code || 'BOM',
+          },
+          duration: bus.duration || '12h 00m',
+          amenities: ['WiFi', 'Water Bottle', 'Charging Point'],
+          seats: seats,
+          price: price,
+        };
+      });
+      setResults(mapped);
+    } catch (err) {
+      console.error('Error fetching buses:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchBuses(params);
+  }, []);
 
   const validateParams = (): string | null => {
     if (!params.origin.trim() && !params.destination.trim()) {
@@ -63,12 +108,8 @@ export default function BusCanvas({ onClose }: BusCanvasProps) {
       return;
     }
     setFormError(null);
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      setIsSearchExpanded(false);
-      setResults(mockBusResults);
-    }, 800);
+    setIsSearchExpanded(false);
+    await fetchBuses(params);
   };
 
   const toggleTag = (tag: string) => {
@@ -271,7 +312,7 @@ export default function BusCanvas({ onClose }: BusCanvasProps) {
                   </div>
 
                   <div className="mb-3 flex flex-wrap gap-2">
-                    {bus.amenities.map((amenity) => (
+                    {bus.amenities?.map((amenity: string) => (
                       <span key={amenity} className="rounded bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600">
                         {amenity}
                       </span>

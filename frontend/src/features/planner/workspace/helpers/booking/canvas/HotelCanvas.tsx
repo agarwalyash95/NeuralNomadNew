@@ -1,10 +1,10 @@
 'use client';
 
-import React, { FormEvent, useState } from 'react';
+import React, { FormEvent, useState, useEffect } from 'react';
 import { BedDouble, Search, X, ArrowRight, Edit2, Check, Star } from 'lucide-react';
 import { BookingSearchParams } from '@/types/booking';
 import HotelSearchForm from '../HotelSearchForm';
-import { mockHotelResults } from './mockHotelData';
+import { searchService } from '@/services/search.service';
 
 const initialParams: BookingSearchParams = {
   service: 'hotel',
@@ -45,8 +45,45 @@ export default function HotelCanvas({ onClose }: HotelCanvasProps) {
   const [formError, setFormError] = useState<string | null>(null);
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState(mockHotelResults);
+  const [results, setResults] = useState<any[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>(['Free WiFi', '4+ Stars']);
+
+  const fetchHotels = async (searchParams: BookingSearchParams) => {
+    setLoading(true);
+    try {
+      const apiResults = await searchService.search(searchParams);
+      const mapped = apiResults.map((hotel) => {
+        const firstRoom = hotel.meta?.rooms?.[0];
+        const price = hotel.providers?.[0]?.price || firstRoom?.price_per_night || 3500;
+        const originalPrice = price * 1.15;
+        const amenities = hotel.meta?.amenities || ['Free WiFi', 'AC', 'Room Service'];
+
+        return {
+          id: hotel.id,
+          name: hotel.title,
+          image: '🏨',
+          stars: hotel.meta?.star_rating || 4,
+          location: hotel.meta?.address || hotel.destination_city || 'City Center',
+          rating: 4.4,
+          reviews: 120,
+          amenities: amenities,
+          roomType: firstRoom?.type || 'Deluxe Room',
+          cancellation: 'Free cancellation',
+          price: price,
+          originalPrice: originalPrice,
+        };
+      });
+      setResults(mapped);
+    } catch (err) {
+      console.error('Error fetching hotels:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchHotels(params);
+  }, []);
 
   const validateParams = (): string | null => {
     if (!params.city.trim()) return 'Enter a destination city.';
@@ -61,12 +98,8 @@ export default function HotelCanvas({ onClose }: HotelCanvasProps) {
       return;
     }
     setFormError(null);
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      setIsSearchExpanded(false);
-      setResults(mockHotelResults);
-    }, 800);
+    setIsSearchExpanded(false);
+    await fetchHotels(params);
   };
 
   const toggleTag = (tag: string) => {
@@ -279,7 +312,7 @@ export default function HotelCanvas({ onClose }: HotelCanvasProps) {
                       </div>
 
                       <div className="mb-2 flex flex-wrap gap-2 text-[10px]">
-                        {hotel.amenities.slice(0, 4).map((amenity) => (
+                        {hotel.amenities?.slice(0, 4).map((amenity: string) => (
                           <span key={amenity} className="rounded bg-slate-100 px-2 py-0.5 text-slate-600">
                             {amenity}
                           </span>

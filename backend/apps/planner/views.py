@@ -82,7 +82,7 @@ class PlannerWorkspaceViewSet(viewsets.ModelViewSet):
         draft, _ = TripDraftState.objects.get_or_create(workspace=workspace)
         return Response(TripDraftStateSerializer(draft).data)
 
-    @action(detail=True, methods=["post", "get"], url_path="plan")
+    @action(detail=True, methods=["post", "get", "patch"], url_path="plan")
     def plan(self, request, pk=None):
         workspace = self.get_object()
         service = ConversationService()
@@ -96,6 +96,13 @@ class PlannerWorkspaceViewSet(viewsets.ModelViewSet):
 
         if not hasattr(workspace, "trip"):
             return Response({"detail": "Plan has not been created yet."}, status=status.HTTP_404_NOT_FOUND)
+
+        if request.method == "PATCH":
+            serializer = PlannerTripSerializer(workspace.trip, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            return Response(serializer.data)
+
         return Response(PlannerTripSerializer(workspace.trip).data)
 
 

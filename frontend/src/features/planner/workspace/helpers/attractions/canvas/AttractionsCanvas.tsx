@@ -1,43 +1,84 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Compass, X, Edit2, Check, Star, MapPin } from 'lucide-react';
-import { mockAttractionsResults } from './mockAttractionsData';
+import React, { useState, useEffect } from 'react';
+import { Compass, X, Edit2, Star } from 'lucide-react';
+import { attractionService } from '@/services/attraction.service';
 
 interface AttractionsCanvasProps {
   onClose?: () => void;
 }
 
 export default function AttractionsCanvas({ onClose }: AttractionsCanvasProps) {
-  const [searchQuery, setSearchQuery] = useState('Tokyo, Japan');
+  const [searchQuery, setSearchQuery] = useState('Mumbai, India');
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState(mockAttractionsResults);
-  const [selectedTags, setSelectedTags] = useState<string[]>(['Temples', 'Free Entry']);
+  const [results, setResults] = useState<any[]>([]);
   const [activeFilter, setActiveFilter] = useState<'all' | 'sights' | 'food' | 'activities'>('all');
 
-  const toggleTag = (tag: string) => {
-    setSelectedTags(prev => 
-      prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
-    );
+  const fetchAttractions = async (query: string) => {
+    setLoading(true);
+    try {
+      const response = await attractionService.explore(query);
+      const apiResults = response.results || [];
+      const mapped = apiResults.map((place: any) => {
+        const openHours = place.opening_hours ? Object.values(place.opening_hours)[0] : '9:00 AM - 6:00 PM';
+        return {
+          id: place.id,
+          name: place.name,
+          location: place.address || `${place.destination?.city || ''}, ${place.destination?.country || ''}`,
+          rating: place.rating || 4.5,
+          description: place.description,
+          openHours: openHours,
+          entryFee: place.ticket_price || 'Free Entry',
+          timeNeeded: place.estimated_duration || '2-3 hours',
+          image: '🎡',
+          category: place.category,
+        };
+      });
+      setResults(mapped);
+    } catch (err) {
+      console.error('Error fetching attractions:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const recommendedTags = [
-    'Temples',
-    'Free Entry',
-    'Museums',
-    'Food',
-    'Shopping',
-    'Nightlife',
-    'Parks'
-  ];
+  useEffect(() => {
+    fetchAttractions(searchQuery);
+  }, []);
+
+
 
   const filterResults = () => {
     if (activeFilter === 'all') return results;
-    if (activeFilter === 'sights') return results.filter(r => r.category === 'temple' || r.category === 'tourist_attraction');
-    if (activeFilter === 'food') return results.filter(r => r.category === 'restaurant');
-    if (activeFilter === 'activities') return results.filter(r => r.category === 'amusement_park');
+    if (activeFilter === 'sights') {
+      return results.filter(r => 
+        r.category === 'temple' || 
+        r.category === 'tourist_attraction' || 
+        r.category === 'sightseeing' || 
+        r.category === 'Sights'
+      );
+    }
+    if (activeFilter === 'food') {
+      return results.filter(r => 
+        r.category === 'restaurant' || 
+        r.category === 'cafe' || 
+        r.category === 'Food'
+      );
+    }
+    if (activeFilter === 'activities') {
+      return results.filter(r => 
+        r.category === 'amusement_park' || 
+        r.category === 'activity' || 
+        r.category === 'Activities'
+      );
+    }
     return results;
+  };
+
+  const handleUpdateLocation = async () => {
+    setIsSearchExpanded(false);
+    await fetchAttractions(searchQuery);
   };
 
   return (
@@ -75,50 +116,29 @@ export default function AttractionsCanvas({ onClose }: AttractionsCanvasProps) {
               className="group w-full rounded-xl border border-slate-200 bg-white p-3 text-left transition-all hover:border-rose-300 hover:shadow-md"
             >
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <MapPin size={16} className="text-slate-400" />
-                  <span className="text-sm font-semibold text-slate-900">{searchQuery}</span>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-slate-900">{searchQuery}</p>
+                  <p className="mt-1 text-xs text-slate-500">Explore sights, dining and local activities</p>
                 </div>
                 <Edit2 size={16} className="text-slate-400 group-hover:text-rose-600" />
               </div>
             </button>
 
-            {/* Filter Tabs */}
-            <div className="mt-3 flex gap-2">
+            {/* Tabs / Filters */}
+            <div className="mt-4 flex gap-1 rounded-lg bg-slate-100 p-1">
               {(['all', 'sights', 'food', 'activities'] as const).map((filter) => (
                 <button
                   key={filter}
                   onClick={() => setActiveFilter(filter)}
-                  className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold capitalize transition-all ${
+                  className={`flex-1 rounded-md py-1.5 text-xs font-semibold uppercase tracking-wider transition-all ${
                     activeFilter === filter
-                      ? 'bg-rose-600 text-white shadow-sm'
-                      : 'border border-slate-200 bg-white text-slate-600 hover:bg-rose-50'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
                   {filter}
                 </button>
               ))}
-            </div>
-
-            {/* Tags */}
-            <div className="mt-3">
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">Quick Filters</p>
-              <div className="flex flex-wrap gap-2">
-                {recommendedTags.map((tag) => (
-                  <button
-                    key={tag}
-                    onClick={() => toggleTag(tag)}
-                    className={`rounded-full border px-3 py-1 text-xs font-medium transition-all ${
-                      selectedTags.includes(tag)
-                        ? 'border-rose-600 bg-rose-600 text-white shadow-sm'
-                        : 'border-slate-200 bg-white text-slate-600 hover:border-rose-300 hover:bg-rose-50'
-                    }`}
-                  >
-                    {selectedTags.includes(tag) && <Check size={12} className="mr-1 inline" />}
-                    {tag}
-                  </button>
-                ))}
-              </div>
             </div>
           </div>
         )}
@@ -138,25 +158,21 @@ export default function AttractionsCanvas({ onClose }: AttractionsCanvasProps) {
                 </button>
               </div>
 
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Enter city or place"
-                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-rose-500 focus:outline-none"
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Where to explore?"
+                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-rose-500 focus:outline-none"
+                />
+              </div>
 
               <button
-                onClick={() => {
-                  setLoading(true);
-                  setTimeout(() => {
-                    setLoading(false);
-                    setIsSearchExpanded(false);
-                  }, 800);
-                }}
+                onClick={handleUpdateLocation}
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-rose-600 py-3 text-sm font-semibold text-white transition-all hover:bg-rose-700"
               >
-                Update Location
+                Search
               </button>
             </div>
           </div>

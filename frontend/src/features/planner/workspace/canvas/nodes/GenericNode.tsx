@@ -1,21 +1,20 @@
 import React, { useState } from 'react';
-import { MoreVertical, GripVertical, Star, MapPin, Moon, Repeat, Map, Edit3, Trash2 } from 'lucide-react';
+import { Star, MapPin, Trash2 } from 'lucide-react';
 import { ItineraryItem } from '../mockData';
 import NodeWrapper from './NodeWrapper';
 import Image from 'next/image';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { AnimatePresence, motion } from 'framer-motion';
 
 interface GenericNodeProps {
   item: ItineraryItem;
   isLast?: boolean;
   onClick?: () => void;
-  onReplace?: () => void;
   onRemove?: () => void;
+  onHover?: (isHovered: boolean) => void;
 }
 
-export default function GenericNode({ item, isLast, onClick, onReplace, onRemove }: GenericNodeProps) {
+export default function GenericNode({ item, isLast, onClick, onRemove, onHover }: GenericNodeProps) {
   const [isHovered, setIsHovered] = useState(false);
 
   // Derive gradient based on item type
@@ -62,8 +61,14 @@ export default function GenericNode({ item, isLast, onClick, onReplace, onRemove
       <NodeWrapper type={item.type} time={item.startTime} endTime={item.endTime} isLast={isLast}>
         <div 
           className="relative group"
-          onMouseEnter={() => setIsHovered(true)}
-          onMouseLeave={() => setIsHovered(false)}
+          onMouseEnter={() => {
+            setIsHovered(true);
+            onHover?.(true);
+          }}
+          onMouseLeave={() => {
+            setIsHovered(false);
+            onHover?.(false);
+          }}
         >
           <div
             {...attributes}
@@ -99,66 +104,24 @@ export default function GenericNode({ item, isLast, onClick, onReplace, onRemove
                   </div>
                   
                   {item.details ? <p className="mt-1.5 text-xs text-slate-500">{item.details}</p> : null}
-                  {item.aiTip ? <p className="mt-1.5 text-xs font-semibold text-emerald-700 flex items-center gap-1"><Star size={10} className="text-emerald-500" fill="currentColor"/> {item.aiTip}</p> : null}
                 </div>
               </div>
             </div>
 
-            <div className="flex flex-col items-end justify-between h-[80px]">
-              <div className="flex items-center gap-2">
-                {item.price ? (
-                  <p className="text-sm font-semibold text-slate-900">{item.price}</p>
-                ) : null}
-                <button className="rounded-lg p-1 text-slate-400 transition-colors hover:bg-[#faf8f2] hover:text-slate-800">
-                  <MoreVertical size={16} />
-                </button>
-              </div>
+            <div className="flex flex-col items-end justify-between h-[80px] shrink-0">
+              {item.price ? (
+                <p className="text-sm font-bold text-slate-950">{item.price}</p>
+              ) : <div />}
               
-              <div className="flex items-center gap-2 mt-auto">
-                <button className="text-slate-400 hover:text-slate-600 transition-colors">
-                  <MapPin size={14} />
-                </button>
-                <button className="text-slate-400 hover:text-slate-600 transition-colors">
-                  <Moon size={14} />
-                </button>
-                <button 
-                  onClick={(e) => { e.stopPropagation(); onReplace?.(); }}
-                  className="flex items-center gap-1.5 rounded-lg bg-indigo-50 px-2 py-1 text-[11px] font-semibold text-indigo-600 transition-colors hover:bg-indigo-100"
-                >
-                  <Repeat size={12} /> Replace
-                </button>
-              </div>
+              <button 
+                onClick={(e) => { e.stopPropagation(); onRemove?.(); }}
+                className="mt-auto rounded-xl bg-rose-50 p-2 text-rose-500 border border-rose-100/80 shadow-xs hover:bg-rose-100 hover:text-rose-600 active:scale-95 transition-all cursor-pointer"
+                title="Delete Item"
+              >
+                <Trash2 size={15} />
+              </button>
             </div>
           </div>
-
-          {/* Floating Action Bar on Hover */}
-          <AnimatePresence>
-            {isHovered && (
-              <motion.div
-                initial={{ opacity: 0, y: 5 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 5 }}
-                transition={{ duration: 0.15 }}
-                className="absolute left-1/2 -bottom-4 z-20 flex -translate-x-1/2 items-center gap-1 rounded-xl bg-indigo-600 px-3 py-1.5 shadow-lg"
-              >
-                <button onClick={(e) => { e.stopPropagation(); onReplace?.(); }} className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-medium text-white hover:bg-indigo-500 transition-colors">
-                  <Repeat size={12} /> Replace
-                </button>
-                <div className="w-px h-3 bg-indigo-400/50" />
-                <button className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-medium text-white hover:bg-indigo-500 transition-colors">
-                  <Map size={12} /> Compare
-                </button>
-                <div className="w-px h-3 bg-indigo-400/50" />
-                <button className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-medium text-white hover:bg-indigo-500 transition-colors">
-                  <Edit3 size={12} /> Notes
-                </button>
-                <div className="w-px h-3 bg-indigo-400/50" />
-                <button onClick={(e) => { e.stopPropagation(); onRemove?.(); }} className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-medium text-white hover:bg-indigo-500 transition-colors">
-                  <Trash2 size={12} /> Remove
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
 
         {item.distanceToNext && (

@@ -1,10 +1,10 @@
 'use client';
 
-import React, { FormEvent, useState } from 'react';
+import React, { FormEvent, useState, useEffect } from 'react';
 import { Car, Search, X, Edit2, Check } from 'lucide-react';
 import { BookingSearchParams } from '@/types/booking';
 import CabSearchForm from '../CabSearchForm';
-import { mockCabResults } from './mockTransportData';
+import { searchService } from '@/services/search.service';
 
 const initialParams: BookingSearchParams = {
   service: 'cab',
@@ -45,8 +45,41 @@ export default function CabCanvas({ onClose }: CabCanvasProps) {
   const [formError, setFormError] = useState<string | null>(null);
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState(mockCabResults);
+  const [results, setResults] = useState<any[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>(['Sedan', 'AC']);
+
+  const fetchCabs = async (searchParams: BookingSearchParams) => {
+    setLoading(true);
+    try {
+      const apiResults = await searchService.search(searchParams);
+      const mapped = apiResults.map((cab) => {
+        const firstCabType = cab.meta?.cab_types?.[0];
+        const price = cab.providers?.[0]?.price || firstCabType?.base_fare || 500;
+        const capacity = firstCabType?.max_seats ? `Max seats: ${firstCabType.max_seats}` : '4 seats';
+
+        return {
+          id: cab.id,
+          provider: cab.title,
+          carType: firstCabType?.type || 'Sedan',
+          model: cab.code,
+          rating: 4.5,
+          capacity: capacity,
+          estimatedTime: cab.duration || '45 mins',
+          features: ['AC', 'GPS', 'Luggage Space'],
+          price: price,
+        };
+      });
+      setResults(mapped);
+    } catch (err) {
+      console.error('Error fetching cabs:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCabs(params);
+  }, []);
 
   const validateParams = (): string | null => {
     if (!params.pickup.trim()) return 'Enter a pickup location.';
@@ -61,12 +94,8 @@ export default function CabCanvas({ onClose }: CabCanvasProps) {
       return;
     }
     setFormError(null);
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      setIsSearchExpanded(false);
-      setResults(mockCabResults);
-    }, 800);
+    setIsSearchExpanded(false);
+    await fetchCabs(params);
   };
 
   const toggleTag = (tag: string) => {
@@ -256,7 +285,7 @@ export default function CabCanvas({ onClose }: CabCanvasProps) {
                       </div>
 
                       <div className="flex flex-wrap gap-2">
-                        {cab.features.map((feature) => (
+                        {cab.features?.map((feature: string) => (
                           <span key={feature} className="rounded bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600">
                             {feature}
                           </span>
