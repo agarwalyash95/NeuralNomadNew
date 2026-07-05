@@ -9,6 +9,15 @@ from datetime import timedelta
 # Build paths inside the project
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
+# Load environment variables from .env
+try:
+    from dotenv import load_dotenv
+    env_path = BASE_DIR / '.env'
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path)
+except ImportError:
+    pass
+
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-change-this-in-production")
 
@@ -295,3 +304,13 @@ if SENTRY_DSN:
 GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
+
+# ============================================
+# RapidAPI & Booking Providers Configuration
+# ============================================
+RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY", "")
+FLIGHT_PROVIDER = os.getenv("FLIGHT_PROVIDER", "sky_scrapper")
+HOTEL_PROVIDER = os.getenv("HOTEL_PROVIDER", "booking_com")
+BUS_PROVIDER = os.getenv("BUS_PROVIDER", "redbus")
+TRAIN_PROVIDER = os.getenv("TRAIN_PROVIDER", "live_train")
+CAB_PROVIDER = os.getenv("CAB_PROVIDER", "booking_taxi")

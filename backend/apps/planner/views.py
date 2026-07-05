@@ -123,3 +123,21 @@ def lazy_chat(request):
         structured_value=structured_value,
     )
     return Response(ChatResponseSerializer(result).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def batch_distances(request):
+    """
+    POST /api/v1/planner/distances/
+    Body: { "pairs": [...], "mode": "driving" }
+    """
+    pairs = request.data.get("pairs", [])
+    mode = request.data.get("mode", "driving")
+    if not pairs:
+        return Response({"detail": "pairs list is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    from apps.planner.services.distance_service import DistanceService
+    results = DistanceService.fetch_batch_distances(pairs, mode=mode)
+    return Response({"distances": results})
+

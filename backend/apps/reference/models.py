@@ -131,32 +131,104 @@ class HotelMaster(models.Model):
 
 class RestaurantMaster(models.Model):
     city = models.ForeignKey(City, on_delete=models.CASCADE)
+    place_id = models.CharField(max_length=255, blank=True, null=True, unique=True)
     name = models.CharField(max_length=255)
     cuisine = models.CharField(max_length=255, blank=True, null=True)
+    primary_type = models.CharField(max_length=100, blank=True, null=True)
     price_range = models.CharField(max_length=10, blank=True, null=True) # e.g. $$
+    price_level = models.IntegerField(null=True, blank=True)
     user_rating = models.DecimalField(max_digits=3, decimal_places=2, blank=True, null=True)
+    user_ratings_total = models.IntegerField(default=0)
     image_url = models.URLField(max_length=1000, blank=True, null=True)
+    address = models.TextField(blank=True, null=True)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
+
+    # Deep Details
+    outdoor_seating = models.BooleanField(null=True, blank=True)
+    good_for_groups = models.BooleanField(null=True, blank=True)
+    allows_dogs = models.BooleanField(null=True, blank=True)
+    good_for_children = models.BooleanField(null=True, blank=True)
+    menu_for_children = models.BooleanField(null=True, blank=True)
+    serves_vegetarian_food = models.BooleanField(null=True, blank=True)
+    dine_in = models.BooleanField(null=True, blank=True)
+    takeout = models.BooleanField(null=True, blank=True)
+    delivery = models.BooleanField(null=True, blank=True)
+
+    parking_options = models.JSONField(default=list, blank=True)
+    payment_options = models.JSONField(default=list, blank=True)
+    reviews = models.JSONField(default=list, blank=True)
+    secondary_images = models.JSONField(default=list, blank=True)
+    opening_hours = models.JSONField(default=list, blank=True)
+    
+    national_phone_number = models.CharField(max_length=50, blank=True, null=True)
+    website_uri = models.URLField(max_length=1000, blank=True, null=True)
+    editorial_summary = models.TextField(blank=True, null=True)
 
     def __str__(self):
         return self.name
 
 class AttractionMaster(models.Model):
     city = models.ForeignKey(City, on_delete=models.CASCADE)
+    place_id = models.CharField(max_length=255, blank=True, null=True, unique=True)
     name = models.CharField(max_length=255)
     category = models.CharField(max_length=100, blank=True, null=True) # e.g. Temple, Museum
+    primary_type = models.CharField(max_length=100, blank=True, null=True)
     user_rating = models.DecimalField(max_digits=3, decimal_places=2, blank=True, null=True)
+    user_ratings_total = models.IntegerField(default=0)
     image_url = models.URLField(max_length=1000, blank=True, null=True)
+    address = models.TextField(blank=True, null=True)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
     suggested_duration_mins = models.IntegerField(blank=True, null=True)
+    ticket_price_estimate = models.CharField(max_length=100, blank=True, null=True)
+
+    # Deep Details
+    good_for_children = models.BooleanField(null=True, blank=True)
+    wheelchair_accessible = models.BooleanField(null=True, blank=True)
+    good_for_groups = models.BooleanField(null=True, blank=True)
+
+    parking_options = models.JSONField(default=list, blank=True)
+    reviews = models.JSONField(default=list, blank=True)
+    secondary_images = models.JSONField(default=list, blank=True)
+    opening_hours = models.JSONField(default=list, blank=True)
+
+    national_phone_number = models.CharField(max_length=50, blank=True, null=True)
+    website_uri = models.URLField(max_length=1000, blank=True, null=True)
+    editorial_summary = models.TextField(blank=True, null=True)
 
     def __str__(self):
         return self.name
 
 class ActivityMaster(models.Model):
     city = models.ForeignKey(City, on_delete=models.CASCADE)
+    place_id = models.CharField(max_length=255, blank=True, null=True, unique=True)
     name = models.CharField(max_length=255)
-    category = models.CharField(max_length=100, blank=True, null=True) # e.g. Adventure, Food
+    category = models.CharField(max_length=100, blank=True, null=True) # e.g. Adventure, Sports
+    primary_type = models.CharField(max_length=100, blank=True, null=True)
     price_estimate = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
+    user_rating = models.DecimalField(max_digits=3, decimal_places=2, blank=True, null=True)
+    user_ratings_total = models.IntegerField(default=0)
     image_url = models.URLField(max_length=1000, blank=True, null=True)
+    address = models.TextField(blank=True, null=True)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
+    suggested_duration = models.CharField(max_length=100, blank=True, null=True)
+    difficulty_level = models.CharField(max_length=50, blank=True, null=True)
+
+    # Deep Details
+    good_for_children = models.BooleanField(null=True, blank=True)
+    good_for_groups = models.BooleanField(null=True, blank=True)
+    guided_tour = models.BooleanField(null=True, blank=True)
+    equipment_included = models.BooleanField(null=True, blank=True)
+
+    reviews = models.JSONField(default=list, blank=True)
+    secondary_images = models.JSONField(default=list, blank=True)
+    opening_hours = models.JSONField(default=list, blank=True)
+
+    national_phone_number = models.CharField(max_length=50, blank=True, null=True)
+    website_uri = models.URLField(max_length=1000, blank=True, null=True)
+    editorial_summary = models.TextField(blank=True, null=True)
 
     def __str__(self):
         return self.name

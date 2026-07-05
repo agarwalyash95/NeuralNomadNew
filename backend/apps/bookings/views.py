@@ -62,25 +62,22 @@ class BookingViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(bookings, many=True).data)
 
 
+from .providers.registry import provider_registry
+
+
 class SearchInventoryViewSet(viewsets.ReadOnlyModelViewSet):
     """
-    Search Inventory viewset — read-only travel search results.
-
-    ════════════════════════════════════════════════════════════
-    FUTURE API INTEGRATION POINT:
-    To connect a real third-party API (e.g., Amadeus, Skyscanner),
-    override the `search` action below. Replace the database query
-    with your API call and serialize the response into the same
-    shape. The frontend will work without any changes.
-    ════════════════════════════════════════════════════════════
+    Search Inventory viewset — read-only travel search results via Provider Registry.
 
     Endpoint: GET /api/bookings/inventory/search/
     Query Params:
-      - service   : flights | trains | hotels | bus | cab  (required)
-      - origin    : city name or code (for flights/trains/bus/cab)
-      - destination: city name or code (for flights/trains/bus)
-      - city      : for hotels
-      - pickup    : for cabs
+      - service     : flight | train | hotel | bus | cab  (required)
+      - origin      : city name or code (for flights/trains/bus)
+      - destination : city name or code (for flights/trains/bus)
+      - city        : for hotels
+      - pickup      : for cabs
+      - drop        : for cabs
+      - departureDate: departure date
     """
     serializer_class = SearchInventorySerializer
     permission_classes = [AllowAny]  # Search is public — no login required
@@ -89,38 +86,19 @@ class SearchInventoryViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=False, methods=['get'])
     def search(self, request):
         """
-        Main search endpoint. Query the local inventory database.
-
-        Future: Replace this method body to call external APIs.
-        Keep the return format identical so the frontend stays unchanged.
+        Main search endpoint using dynamic provider architecture.
+        Delegates to RapidAPI endpoints (SkyScrapper, BookingCom, Redbus, LiveTrainStatus)
+        or mock database fallbacks.
         """
         service = request.query_params.get('service', '').lower()
-        origin = request.query_params.get('origin', '').strip().lower()
-        destination = request.query_params.get('destination', '').strip().lower()
-        city = request.query_params.get('city', '').strip().lower()
-        pickup = request.query_params.get('pickup', '').strip().lower()
-
         if not service:
             return Response({'error': 'service parameter is required'}, status=400)
 
-        qs = SearchInventory.objects.filter(is_active=True, service_type=service)
+        # Convert query params to dict
+        params = request.query_params.dict()
+        results = provider_registry.search(service, params)
+        return Response(results)
 
-        # --- Apply service-specific filters ---
-        if service == 'hotel':
-            if city:
-                qs = qs.filter(destination_city__icontains=city)
-        elif service == 'cab':
-            if pickup:
-                qs = qs.filter(origin_city__icontains=pickup)
-        else:
-            # flights, trains, bus
-            if origin:
-                qs = qs.filter(origin_city__icontains=origin)
-            if destination:
-                qs = qs.filter(destination_city__icontains=destination)
-
-        serializer = self.get_serializer(qs, many=True)
-        return Response(serializer.data)
 
 
 class LocationViewSet(viewsets.ReadOnlyModelViewSet):
