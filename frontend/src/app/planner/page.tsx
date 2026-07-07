@@ -3,7 +3,6 @@
 import React, { useEffect, useState } from 'react';
 import PlannerChat from '@/features/planner/chat/PlannerChat';
 import PlannerWorkspace from '@/features/planner/workspace/PlannerWorkspace';
-import FloatingChat from '@/features/planner/chat/FloatingChat';
 import { AnimatePresence, motion } from 'framer-motion';
 
 export type PlannerMode = 'chat' | 'plan';
@@ -62,7 +61,6 @@ export default function PlannerPage() {
             className="absolute inset-0 flex"
           >
             <PlannerWorkspace workspaceId={workspaceId} />
-            <FloatingChat workspaceId={workspaceId} />
           </motion.div>
         )}
       </AnimatePresence>

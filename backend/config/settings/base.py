@@ -1,12 +1,13 @@
 """
-Django settings base - shared across all environments
+Django base settings for neuralnomad project.
 """
 
-import os
 from pathlib import Path
+import os
 from datetime import timedelta
+import sys
 
-# Build paths inside the project
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # Load environment variables from .env
@@ -18,49 +19,48 @@ try:
 except ImportError:
     pass
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-change-this-in-production")
+# Quick-start development settings - unsuitable for production
+SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-development-key-change-in-production")
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv("DEBUG", "True").lower() == "true"
+DEBUG = os.getenv("DEBUG", "True").lower() in ("true", "1", "t")
 
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,[::1]").split(",")
 
 # Application definition
 INSTALLED_APPS = [
-    "daphne",  # ASGI server
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    # Third-party apps
+    # Third party packages
     "rest_framework",
+    "rest_framework_simplejwt",
     "corsheaders",
     "django_filters",
     "drf_spectacular",
-    "django_extensions",
     # Local apps
     "apps.accounts",
-    "apps.bookings",
-    "apps.attractions",
-    "apps.visa",
-    "apps.forex",
-    "apps.travelpass",
-    "apps.wallet",
-    "apps.notifications",
-    "apps.common",
-    "apps.homepage",
-    "apps.reference",
     "apps.planner",
+    "apps.reference",
+    "apps.bookings",
+    "apps.notifications",
+    "apps.wallet",
+    "apps.attractions",
+    "apps.common",
+    "apps.forex",
+    "apps.homepage",
+    "apps.travelpass",
+    "apps.visa",
 ]
 
+
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
-    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -89,22 +89,30 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
-# Database Configuration
-DATABASES = {
-    "default": {
-        "ENGINE": os.getenv("DB_ENGINE", "django.db.backends.postgresql"),
-        "NAME": os.getenv("DB_NAME", "neuralnomad"),
-        "USER": os.getenv("DB_USER", "agarwy"),
-        "PASSWORD": os.getenv("DB_PASSWORD", "Yashpdf1@"),
-        "HOST": os.getenv("DB_HOST", "neuralnomad.postgres.database.azure.com"),
-        "PORT": os.getenv("DB_PORT", "5432"),
-        "ATOMIC_REQUESTS": True,
-        "CONN_MAX_AGE": 600,
-        "OPTIONS": {
-            "sslmode": "require",  # Crucial for Azure PostgreSQL
-        },
+# Database Configuration — defaults to Azure PostgreSQL, supports local SQLite fallback via USE_LOCAL_DB=True
+if os.getenv("USE_LOCAL_DB", "").lower() in ("true", "1", "yes") or os.getenv("DB_ENGINE") == "django.db.backends.sqlite3":
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": os.getenv("DB_ENGINE", "django.db.backends.postgresql"),
+            "NAME": os.getenv("DB_NAME", "neuralnomad"),
+            "USER": os.getenv("DB_USER", "postgres"),
+            "PASSWORD": os.getenv("DB_PASSWORD", "Yashpdf1@"),
+            "HOST": os.getenv("DB_HOST", "localhost"),
+            "PORT": os.getenv("DB_PORT", "5433"),
+            "ATOMIC_REQUESTS": True,
+            "CONN_MAX_AGE": 600,
+            "OPTIONS": {
+                # "sslmode": "require",  # Crucial for Azure PostgreSQL
+            },
+        }
+    }
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -135,14 +143,10 @@ MEDIA_ROOT = BASE_DIR / "media"
 # Default primary key field type
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# ============================================
 # Custom User Model
-# ============================================
 AUTH_USER_MODEL = "accounts.User"
 
-# ============================================
 # REST Framework Configuration
-# ============================================
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework_simplejwt.authentication.JWTAuthentication",
@@ -159,158 +163,41 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
-    "DEFAULT_THROTTLE_CLASSES": [],
 }
 
-# ============================================
-# JWT Configuration
-# ============================================
+# Simple JWT Configuration
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(
-        hours=int(os.getenv("JWT_EXPIRATION_HOURS", 24))
-    ),
-    "REFRESH_TOKEN_LIFETIME": timedelta(
-        days=int(os.getenv("JWT_REFRESH_EXPIRATION_DAYS", 7))
-    ),
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
+    "UPDATE_LAST_LOGIN": True,
     "ALGORITHM": "HS256",
     "SIGNING_KEY": SECRET_KEY,
-    "VERIFYING_KEY": None,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+    "AUTH_HEADER_NAME": "HTTP_AUTHORIZATION",
     "USER_ID_FIELD": "id",
     "USER_ID_CLAIM": "user_id",
-    "AUTH_TOKEN_CLASSES": ("rest_framework_simplejwt.tokens.AccessToken",),
-    "TOKEN_TYPE_CLAIM": "token_type",
 }
 
-# ============================================
 # CORS Configuration
-# ============================================
 CORS_ALLOWED_ORIGINS = os.getenv(
-    "CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
+    "CORS_ALLOWED_ORIGINS",
+    "http://localhost:3000,http://127.0.0.1:3000"
 ).split(",")
-
 CORS_ALLOW_CREDENTIALS = True
 
-# ============================================
-# DRF Spectacular Configuration
-# ============================================
+# Spectacular Settings (API Documentation)
 SPECTACULAR_SETTINGS = {
     "TITLE": "NeuralNomad API",
-    "DESCRIPTION": "AI-powered travel planning platform API",
+    "DESCRIPTION": "AI-Powered Travel Planning & Booking Platform API",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
-    "SERVE_PERMISSIONS": ["rest_framework.permissions.AllowAny"],
-    "SCHEMA_PATH_PREFIX": "/api/",
-    "AUTHENTICATION_WHITELIST": [
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
-    ],
 }
 
-# ============================================
-# Redis Configuration
-# ============================================
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-
-CACHES = {
+# Channels Configuration
+CHANNEL_LAYERS = {
     "default": {
-        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
-        "LOCATION": "neuralnomad-dev-cache",
-    }
-}
-
-# ============================================
-# Celery Configuration
-# ============================================
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/1")
-CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/2")
-CELERY_ACCEPT_CONTENT = ["json"]
-CELERY_TASK_SERIALIZER = "json"
-CELERY_RESULT_SERIALIZER = "json"
-CELERY_TIMEZONE = TIME_ZONE
-
-# ============================================
-# Email Configuration
-# ============================================
-EMAIL_BACKEND = os.getenv(
-    "EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
-)
-EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
-EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
-EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True").lower() == "true"
-EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
-EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@neuralnomad.com")
-
-# ============================================
-# Logging Configuration
-# ============================================
-LOGGING = {
-    "version": 1,
-    "disable_existing_loggers": False,
-    "formatters": {
-        "verbose": {
-            "format": "{levelname} {asctime} {module} {message}",
-            "style": "{",
-        },
-    },
-    "handlers": {
-        "console": {
-            "class": "logging.StreamHandler",
-            "formatter": "verbose",
-        },
-    },
-    "root": {
-        "handlers": ["console"],
-        "level": "INFO",
-    },
-    "loggers": {
-        "django": {
-            "handlers": ["console"],
-            "level": "INFO",
-            "propagate": False,
-        },
+        "BACKEND": "channels.layers.InMemoryChannelLayer",
     },
 }
-
-# ============================================
-# Security Settings
-# ============================================
-SECURE_SSL_REDIRECT = False
-SESSION_COOKIE_SECURE = False
-CSRF_COOKIE_SECURE = False
-SECURE_BROWSER_XSS_FILTER = True
-SECURE_CONTENT_SECURITY_POLICY = {
-    "DEFAULT_SRC": ["'self'"],
-}
-
-# ============================================
-# Sentry Configuration (Optional)
-# ============================================
-SENTRY_DSN = os.getenv("SENTRY_DSN", "")
-
-if SENTRY_DSN:
-    import sentry_sdk
-
-    sentry_sdk.init(
-        dsn=SENTRY_DSN,
-        environment=os.getenv("ENVIRONMENT", "development"),
-        traces_sample_rate=0.1,
-    )
-
-# ============================================
-# Google Places Configuration
-# ============================================
-GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY", "")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
-
-# ============================================
-# RapidAPI & Booking Providers Configuration
-# ============================================
-RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY", "")
-FLIGHT_PROVIDER = os.getenv("FLIGHT_PROVIDER", "sky_scrapper")
-HOTEL_PROVIDER = os.getenv("HOTEL_PROVIDER", "booking_com")
-BUS_PROVIDER = os.getenv("BUS_PROVIDER", "redbus")
-TRAIN_PROVIDER = os.getenv("TRAIN_PROVIDER", "live_train")
-CAB_PROVIDER = os.getenv("CAB_PROVIDER", "booking_taxi")

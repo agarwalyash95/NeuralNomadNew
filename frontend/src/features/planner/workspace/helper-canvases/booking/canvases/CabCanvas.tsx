@@ -175,10 +175,11 @@ export default function CabCanvas({ onClose, tripContext, onAddToPlan }: CabCanv
                       <p className="text-sm font-semibold text-slate-900">{cab.title}</p>
                       <p className="text-xs text-slate-500">{cab.origin} • {cab.duration}</p>
                       <div className="mt-2 flex flex-wrap gap-1">
-                        {cab.cabTypes?.map((t: any) => (
-                          <span key={t.type} className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">{t.type}</span>
+                        {cab.cabTypes?.map((t: any, tIdx: number) => (
+                          <span key={`${t.type || 'type'}-${tIdx}`} className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">{t.type}</span>
                         ))}
                       </div>
+
                     </div>
                     <div className="ml-4 text-right shrink-0">
                       <p className="text-xl font-bold text-slate-900">₹{cab.price.toLocaleString()}</p>

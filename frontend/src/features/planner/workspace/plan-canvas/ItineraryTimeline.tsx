@@ -321,21 +321,24 @@ export default function ItineraryTimeline({
                       // Distance calculation to next node
                       let distPill = null;
                       if (nextItem) {
-                        const dist = calculateHaversineDistanceKm(item.latitude, item.longitude, nextItem.latitude, nextItem.longitude);
+                        const dist = calculateHaversineDistanceKm(item.latitude, item.longitude, nextItem.latitude, nextItem.longitude, item, nextItem);
                         const mins = estimateTransitMins(dist);
-                        distPill = (
-                          <div key={`dist-${item.id}-${nextItem.id}`} className="relative py-2 pl-[144px]">
-                            <div className="absolute bottom-0 left-[38px] top-0 w-1 bg-slate-800" />
-                            <div className="absolute bottom-1/2 left-[120px] top-0 w-[1.5px] bg-slate-200" />
-                            <div className="ml-[-0.75rem] flex items-center gap-1.5 rounded-full border border-slate-200/90 bg-slate-100/90 px-2.5 py-0.5 text-[10px] font-bold text-slate-600 shadow-2xs backdrop-blur-xs">
-                              <span>🚘</span>
-                              <span>{dist} km</span>
-                              <span className="text-slate-400">•</span>
-                              <span>~{mins} mins transit</span>
+                        if (dist > 0.3) {
+                          distPill = (
+                            <div key={`dist-${item.id}-${nextItem.id}`} className="relative py-2 pl-[144px]">
+                              <div className="absolute bottom-0 left-[38px] top-0 w-1 bg-slate-800" />
+                              <div className="absolute bottom-1/2 left-[120px] top-0 w-[1.5px] bg-slate-200" />
+                              <div className="ml-[-0.75rem] flex items-center gap-1.5 rounded-full border border-slate-200/90 bg-slate-100/90 px-2.5 py-0.5 text-[10px] font-bold text-slate-600 shadow-2xs backdrop-blur-xs">
+                                <span>🚘</span>
+                                <span>{dist} km</span>
+                                <span className="text-slate-400">•</span>
+                                <span>~{mins} mins transit</span>
+                              </div>
                             </div>
-                          </div>
-                        );
+                          );
+                        }
                       }
+
 
                       // Build the NodeClickPayload for this item
                       const clickPayload: NodeClickPayload = {

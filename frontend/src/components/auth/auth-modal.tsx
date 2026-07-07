@@ -58,22 +58,27 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
     onSuccess: async (codeResponse) => {
       setIsLoading(true);
       try {
-        const response = await authService.googleLogin(codeResponse.access_token);
+        const token = codeResponse.access_token || (codeResponse as any).credential || (codeResponse as any).code;
+        if (!token) {
+          throw new Error('Google did not return a valid authentication token.');
+        }
+        const response = await authService.googleLogin(token);
         useAuthStore.getState().setTokens(response.tokens);
         useAuthStore.getState().setUser(response.user);
         useAuthStore.getState().setIsAuthenticated(true);
         onClose();
         window.location.reload();
-      } catch (error) {
-        console.error('Google login failed', error);
-        const errorMessage = (error as any)?.message || 'Please try again.';
-        alert(`Google Sign-In failed: ${errorMessage}`);
+      } catch (error: any) {
+        const payloadMsg = error?.message || error?.error || (typeof error === 'string' ? error : 'Google Authentication Failed');
+        console.error('Google login error payload:', payloadMsg);
+        alert(`Google Sign-In failed: ${payloadMsg}`);
       } finally {
         setIsLoading(false);
       }
     },
-    onError: (error) => console.log('Google Login Failed:', error),
+    onError: (error) => console.log('Google Login Popup Cancelled or Failed:', error),
   });
+
 
   return (
     <AnimatePresence>

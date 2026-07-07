@@ -217,7 +217,7 @@ class ExtractedTripData(BaseModel):
             "'next month' → first day of next month, "
             "'in August' → 2026-08-01, "
             "'on 15th July' → 2026-07-15. "
-            "Null if no date info at all."
+            "CRITICAL: Set to null if the user does NOT explicitly mention any date or timeline. Do NOT guess or hallucinate a date."
         ),
     )
     end_date: Optional[str] = Field(
@@ -226,7 +226,7 @@ class ExtractedTripData(BaseModel):
             "ISO format end date (YYYY-MM-DD). Calculate from duration if given: "
             "'5 days' from start → start + 5 days. "
             "'next weekend' → Sunday of that weekend. "
-            "Null if cannot be determined."
+            "CRITICAL: Set to null if cannot be determined from user input. Do NOT hallucinate an end date."
         ),
     )
     adults: Optional[int] = Field(
@@ -251,7 +251,7 @@ class ExtractedTripData(BaseModel):
             "Departure or origin city if mentioned. "
             "'from Mumbai to Goa' → 'Mumbai'. "
             "'Delhi to Agra train' → 'Delhi'. "
-            "Null if not mentioned."
+            "CRITICAL: Set to null if not EXPLICITLY mentioned. Do NOT guess or hallucinate the origin."
         ),
     )
     extra_preferences: Optional[ExtraPreferences] = Field(
@@ -355,7 +355,8 @@ class ConversationEngine:
             detected_intent = ai_data.detected_intent or detected_intent
 
             # Merge AI extractions into draft (includes context_updates)
-            self._merge_ai_data(draft, ai_data)
+            self._merge_ai_data(draft, ai_data, message)
+
 
             # Compute deterministic confidence score (overrides AI estimate)
             confidence_score, confidence_explanation = self._calculate_confidence(draft)
@@ -617,13 +618,21 @@ and you speak to clients like a trusted friend who happens to know everything ab
 Today is {today_str}.
 
 --- PERSONA RULES ---
-1. Sound like a knowledgeable friend, NOT a chatbot.
-2. Proactively share insights, seasonal tips, and price estimates the user didn't ask for.
-3. Name specific trains/airlines/hotels when you know the route.
-4. For transit intents: give a fare/duration estimate the moment you know origin + destination.
-5. For honeymoon: be romantic. For business: be efficient. For hometown: be warm and personal.
-6. Never use corporate phrases like "Certainly!", "Of course!", "Absolutely!", "I'd be happy to help".
-7. NEVER ask two questions at once. One natural conversational question maximum per turn.
+1. RESPECT USER INTENT STRICTLY:
+   - If user asks for a FLIGHT (flight_only): Focus 100% on flights! Recommend specific flight routes (airlines, direct vs connecting, departure windows, cabin class). DO NOT assume a 4-day full trip or ask about hotels/sightseeing unless asked.
+   - If user asks for a HOTEL (hotel_only): Focus 100% on stays, resort amenities, and check-in times.
+   - If user asks for a TRAIN (train_only): Focus 100% on train routes, Vande Bharat/Express options, and IRCTC seat classes.
+   - Only plan multi-day hotel/tour itineraries if the user explicitly requested a full trip (full_trip).
+2. HIGH-QUALITY RECOMMENDATIONS & CONVERSATIONAL QUESTIONS:
+   - Always pair your questions with helpful, proactive expert recommendations.
+   - Example: "IndiGo 6E-2401 departs at 08:15 AM (direct, 1h 45m) while AirIndia has an afternoon flex slot with 25kg luggage included. Would a morning or afternoon departure work better for you?"
+3. Sound like a knowledgeable friend, NOT a chatbot.
+4. Proactively share route insights, seasonal tips, and price estimates.
+5. Name specific trains/airlines/hotels when you know the route.
+6. For transit intents: give a fare/duration estimate the moment you know origin + destination.
+7. For honeymoon: be romantic. For business: be efficient. For hometown: be warm and personal.
+8. Never use corporate phrases like "Certainly!", "Of course!", "Absolutely!", "I'd be happy to help".
+9. NEVER ask two questions at once. One natural conversational question maximum per turn.
 
 --- EXTRACTION ---
 Read the user's message and populate JSON output fields:
@@ -877,10 +886,18 @@ When the optional form is next:
     # Draft Merging
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _merge_ai_data(self, draft, ai_data):
+    def _merge_ai_data(self, draft, ai_data, message=""):
         """Merge AI extractions into the draft. Respects existing values + handles context_updates."""
         if ai_data.detected_intent:
-            draft.intent = ai_data.detected_intent
+            user_msg_lower = (message or "").lower()
+            if not draft.intent:
+                draft.intent = ai_data.detected_intent
+            elif ai_data.detected_intent != INTENT_FULL_TRIP:
+                draft.intent = ai_data.detected_intent
+            elif any(kw in user_msg_lower for kw in ["full trip", "complete trip", "entire trip", "whole trip", "all-in-one", "full itinerary"]):
+                draft.intent = INTENT_FULL_TRIP
+            # Otherwise, keep established single-service intent (e.g. flight_only, hotel_only)
+
 
         if ai_data.destination_text and not draft.destination_text:
             city = City.objects.select_related("country").filter(
@@ -902,8 +919,9 @@ When the optional form is next:
             if parsed:
                 draft.end_date = parsed
 
-        if ai_data.adults and not draft.adults:
+        if ai_data.adults:
             draft.adults = ai_data.adults
+
 
         if ai_data.budget_tier and not draft.budget_tier:
             draft.budget_tier = ai_data.budget_tier
@@ -927,7 +945,15 @@ When the optional form is next:
 
         # NEW: Handle context_updates — silently update changed slots
         if ai_data.context_updates:
-            for field, value in ai_data.context_updates.items():
+            updates_dict = {}
+            if hasattr(ai_data.context_updates, "model_dump"):
+                updates_dict = ai_data.context_updates.model_dump(exclude_none=True)
+            elif hasattr(ai_data.context_updates, "dict"):
+                updates_dict = ai_data.context_updates.dict(exclude_none=True)
+            elif isinstance(ai_data.context_updates, dict):
+                updates_dict = ai_data.context_updates
+
+            for field, value in updates_dict.items():
                 if value is None:
                     continue
                 if field == "adults":
@@ -952,6 +978,7 @@ When the optional form is next:
                     "bus_type", "transmission",
                 ]:
                     draft.metadata[field] = str(value)
+
 
         # Persist extra preferences from AI extraction
         if ai_data.extra_preferences:

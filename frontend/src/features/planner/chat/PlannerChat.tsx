@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { plannerService } from '@/services/planner.service';
 import type { ChatMessage, PlannerWorkspace } from '@/services/planner.types';
 import { ChatWidget } from './ChatWidgets';
+import PlanLoadingScreen from './PlanLoadingScreen';
 
 export interface PlannerChatProps {
   workspaceId?: string | null;
@@ -38,6 +39,7 @@ export default function PlannerChat({ workspaceId, onModeChange }: PlannerChatPr
   const [readyForPlan, setReadyForPlan] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [isCreatingPlan, setIsCreatingPlan] = useState(false);
+  const [isBackendReady, setIsBackendReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openExplanations, setOpenExplanations] = useState<Record<string, boolean>>({});
   const [detectedIntent, setDetectedIntent] = useState<string | null>(null);
@@ -198,17 +200,59 @@ export default function PlannerChat({ workspaceId, onModeChange }: PlannerChatPr
   const handleCreatePlan = async () => {
     if (!workspace || !readyForPlan || isCreatingPlan) return;
     setIsCreatingPlan(true);
+    setIsBackendReady(false);
     setError(null);
     try {
       await plannerService.createPlan(workspace.id);
-      onModeChange?.('plan', workspace.id);
-      window.dispatchEvent(new CustomEvent('planner:toggle-sidebar', { detail: false }));
+      setIsBackendReady(true);
     } catch {
       setError('The plan could not be created yet.');
-    } finally {
       setIsCreatingPlan(false);
     }
   };
+
+  const handleLoadingComplete = () => {
+    if (workspace) {
+      onModeChange?.('plan', workspace.id);
+      window.dispatchEvent(new CustomEvent('planner:toggle-sidebar', { detail: false }));
+    }
+    setIsCreatingPlan(false);
+  };
+
+  // Draft trip parameters for loading screen visualization
+  const rawDest = workspace?.draft_state?.destination_city || workspace?.draft_state?.destination_text || 'Goa, India';
+  const destination = typeof rawDest === 'string' ? rawDest : ((rawDest as any)?.name || (rawDest as any)?.destination_city || 'Goa, India');
+  const getTravelersCount = (): number => {
+    if (workspace?.draft_state) {
+      const adults = workspace.draft_state.adults;
+      const children = workspace.draft_state.children || 0;
+      if (typeof adults === 'number' && adults > 1) {
+        return adults + children;
+      }
+      const metaTravelers = (workspace.draft_state.metadata as any)?.travelers || (workspace.draft_state.metadata as any)?.passengers;
+      if (typeof metaTravelers === 'number' && metaTravelers > 0) {
+        return Number(metaTravelers);
+      }
+      if (adults === 1 && children > 0) {
+        return adults + children;
+      }
+    }
+    return 2;
+  };
+  const travelersCount = getTravelersCount();
+
+  let durationDays = 4;
+  if (workspace?.draft_state?.start_date && workspace?.draft_state?.end_date) {
+    const start = new Date(workspace.draft_state.start_date);
+    const end = new Date(workspace.draft_state.end_date);
+    const diffTime = Math.abs(end.getTime() - start.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    if (diffDays > 0) durationDays = diffDays;
+  }
+
+  const budgetText = workspace?.draft_state?.budget_amount
+    ? `${workspace.draft_state.budget_currency || '₹'}${Number(workspace.draft_state.budget_amount).toLocaleString()}`
+    : '₹45,000';
 
   const suggestions = [
     { icon: <MapPin size={18} />, title: 'Plan a weekend in Kyoto', desc: 'Temples, tea houses, and easy rail routes' },
@@ -234,19 +278,24 @@ export default function PlannerChat({ workspaceId, onModeChange }: PlannerChatPr
 
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(26,86,219,0.08),_transparent_32%),linear-gradient(180deg,#fbfaf7_0%,#f6f4ef_100%)]">
-      <div className="flex flex-1 flex-col items-center overflow-y-auto px-4 pb-52 pt-16">
-        {/* Hero header */}
-        <div className="mb-10 mt-8 flex w-full max-w-4xl flex-col items-center text-center">
-          <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl border border-[#cfe0ff] bg-white text-blue-600 shadow-sm">
-            <Plane size={32} strokeWidth={2} />
+      <div className={cn(
+        "flex flex-1 flex-col items-center overflow-y-auto px-4 transition-all duration-300",
+        messages.length === 0 ? "pb-48 pt-12" : "pb-36 pt-6"
+      )}>
+        {/* Hero header — only shown on landing empty state */}
+        {messages.length === 0 && (
+          <div className="mb-10 mt-6 flex w-full max-w-4xl flex-col items-center text-center">
+            <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl border border-[#cfe0ff] bg-white text-blue-600 shadow-sm">
+              <Plane size={32} strokeWidth={2} />
+            </div>
+            <h1 className="mb-3 text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl">
+              Build your next trip with intent
+            </h1>
+            <p className="max-w-2xl text-base text-slate-600 sm:text-lg">
+              Tell me what you need — a flight, hotel, train, or full itinerary — and I&apos;ll take care of the rest.
+            </p>
           </div>
-          <h1 className="mb-3 text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl">
-            Build your next trip with intent
-          </h1>
-          <p className="max-w-2xl text-base text-slate-600 sm:text-lg">
-            Tell me what you need — a flight, hotel, train, or full itinerary — and I&apos;ll take care of the rest.
-          </p>
-        </div>
+        )}
 
         {messages.length === 0 ? (
           /* Suggestion grid */
@@ -460,6 +509,20 @@ export default function PlannerChat({ workspaceId, onModeChange }: PlannerChatPr
           </button>
         </div>
       </div>
+
+      {/* Full-Screen Rolling Plan Loading Overlay */}
+      <AnimatePresence>
+        {isCreatingPlan && (
+          <PlanLoadingScreen
+            destination={destination}
+            durationDays={durationDays}
+            travelersCount={travelersCount}
+            budgetText={budgetText}
+            isBackendReady={isBackendReady}
+            onComplete={handleLoadingComplete}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

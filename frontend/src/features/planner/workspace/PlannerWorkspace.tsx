@@ -7,9 +7,10 @@ import jsPDF from 'jspdf';
 import { Sparkles } from 'lucide-react';
 
 // ── Plan Canvas Components & Utilities ─────────────────────────────────────
-import PlanStreamerLoader from './plan-canvas/PlanStreamerLoader';
-import { prefetchWorkspaceData } from './utils/workspacePrefetch';
+import PlanLoadingScreen from '../chat/PlanLoadingScreen';
 import { recommendOptimalSlot, SlotRecommendationResult } from './plan-canvas/utils/routeOptimizer';
+import { prefetchWorkspaceData } from './utils/workspacePrefetch';
+import FloatingChat from '../chat/FloatingChat';
 
 
 // ── Helper Canvases — new paths ──────────────────────────────────────────────
@@ -25,7 +26,7 @@ import ForexCanvas from './helper-canvases/travel-prep/forex/ForexCanvas';
 import VisaCanvas from './helper-canvases/travel-prep/visa/VisaCanvas';
 
 // ── Plan Canvas — new path ──────────────────────────────────────────────────
-import { mockTripData, MockTripData, ItineraryCity, ItineraryItem } from './plan-canvas/mockData';
+import { MockTripData, ItineraryCity, ItineraryItem } from './plan-canvas/mockData';
 import PlannerMap from './plan-canvas/PlannerMap';
 import AIInsightsPanel from './plan-canvas/AIInsightsPanel';
 import PlannerHeader from './plan-canvas/PlannerHeader';
@@ -58,8 +59,6 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
   const [activeCityId, setActiveCityId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  // ── AI Command Bar State ────────────────────────────────────────────────
-  const [aiPrompt, setAiPrompt] = useState('');
   const [isSavingCloud, setIsSavingCloud] = useState(false);
 
 
@@ -179,14 +178,18 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
       try {
         const trip = await plannerService.getPlan(workspaceId);
         if (!isMounted) return;
-        setPlanData(transformTripData(trip));
-        setIsLoading(false);
-      } catch (err) {
-        if (!isMounted) return;
-        console.error('Failed to fetch plan:', err);
-        setPlanData(mockTripData);
-        setIsLoading(false);
+        if (trip && trip.cities && trip.cities.length > 0) {
+          setPlanData(transformTripData(trip));
+          setIsLoading(false);
+          return;
+        }
+      } catch {
+        // Expected fallback when plan is in draft mode
       }
+
+      if (!isMounted) return;
+      setPlanData(null);
+      setIsLoading(false);
     };
 
     setIsLoading(true);
@@ -348,9 +351,32 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
 
   // ── Render ───────────────────────────────────────────────────────────────
 
-  if (isLoading || !planData) {
+  if (isLoading) {
     return (
-      <PlanStreamerLoader destination={planData?.cities?.[0]?.cityName || 'Manali'} />
+      <PlanLoadingScreen
+        destination={planData?.cities?.[0]?.cityName || 'your destination'}
+        durationDays={planData?.cities?.[0]?.days?.length || 1}
+        travelersCount={2}
+        budgetText={'Calculating...'}
+        isBackendReady={false}
+      />
+    );
+  }
+
+  if (!planData) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-slate-50 p-8">
+        <div className="flex flex-col items-center max-w-md text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50 text-3xl mb-4">
+            🌍
+          </div>
+          <h2 className="text-xl font-black text-slate-900 mb-2">Awaiting Trip Details</h2>
+          <p className="text-sm font-medium text-slate-500 mb-6">
+            Your workspace is ready. Tell the AI what kind of trip you want to plan, and we'll generate the perfect itinerary for you here.
+          </p>
+          <div className="h-1 w-12 rounded-full bg-blue-200"></div>
+        </div>
+      </div>
     );
   }
 
@@ -358,6 +384,13 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
 
   return (
     <div ref={containerRef} className="relative flex h-full w-full overflow-hidden bg-[#f6f4ef]">
+      {workspaceId && (
+        <FloatingChat 
+          workspaceId={workspaceId} 
+          onOpenHelper={(panel) => setActivePanel(panel as any)} 
+        />
+      )}
+
       {/* Smart Position Recommendation Modal */}
       <AnimatePresence>
         {pendingRecommendation && (
@@ -493,46 +526,35 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
             )}
           </div>
 
-          {/* Workspace AI Command Bar (Magic Bar) */}
-          <div className="mt-2 flex w-full flex-col gap-1.5 pt-1.5 border-t border-slate-200/60">
-            <div className="relative flex w-full items-center">
-              <Sparkles size={14} className="absolute left-3 text-indigo-600 pointer-events-none" />
-              <input
-                type="text"
-                value={aiPrompt}
-                onChange={(e) => setAiPrompt(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && aiPrompt.trim()) {
-                    // Quick workspace prompt trigger
-                    setAiPrompt('');
-                  }
-                }}
-                placeholder="Ask AI to refine workspace (e.g. 'Make Day 2 more relaxed', 'Find dinner in Old Manali')..."
-                className="w-full rounded-xl border border-slate-200/90 bg-white/90 py-1.5 pl-8 pr-8 text-xs font-medium text-slate-800 placeholder-slate-400 shadow-2xs transition-all focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-              />
-            </div>
-
-            {/* Prompt Action Chips */}
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+            {/* Multi-Canvas Quick Navigation Bar */}
+            <div className="mt-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1.5 border-t border-slate-200/60">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 shrink-0 mr-1">Canvases:</span>
               {[
-                { label: '⚡ Optimize Routes', prompt: 'Optimize daily activity routes for distance' },
-                { label: '💰 Budget Options', prompt: 'Show budget-friendly alternatives' },
-                { label: '🍽️ Local Foodie Spots', prompt: 'Add top authentic local dining spots' },
-                { label: '🌧️ Rainy Day Backup', prompt: 'Suggest indoor alternatives' },
-              ].map((chip) => (
+                { id: 'flight', label: '✈️ Flights', panel: 'flight' },
+                { id: 'hotel', label: '🏨 Stays', panel: 'hotel' },
+                { id: 'cab', label: '🚘 Airport/City Cab', panel: 'cab' },
+                { id: 'train', label: '🚆 Trains', panel: 'train' },
+                { id: 'restaurants', label: '🍽️ Dining', panel: 'restaurants' },
+                { id: 'activities', label: '🏄 Activities', panel: 'activities' },
+                { id: 'forex', label: '💳 Forex/Funds', panel: 'forex' },
+                { id: 'visa', label: '🛂 Visa/Permit', panel: 'visa' },
+              ].map((nav) => (
                 <button
-                  key={chip.label}
-                  onClick={() => {
-                    setAiPrompt(chip.prompt);
-                  }}
-                  className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[10px] font-bold text-slate-600 shadow-2xs hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600 transition-all cursor-pointer whitespace-nowrap shrink-0"
+                  key={nav.id}
+                  onClick={() => setActivePanel(activePanel === nav.panel as any ? 'none' : nav.panel as any)}
+                  className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold shadow-2xs transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                    activePanel === nav.panel
+                      ? 'bg-blue-600 border-blue-700 text-white font-extrabold'
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600'
+                  }`}
                 >
-                  {chip.label}
+                  {nav.label}
                 </button>
               ))}
             </div>
           </div>
-        </div>
+
+
 
 
         {/* Scrollable Timeline */}
@@ -741,9 +763,11 @@ function transformTripData(trip: PlannerTrip): MockTripData {
         rating: (a as any).rating || (metadata.rating as number | undefined),
         image: (a as any).image || (a as any).image_url || (metadata.image as string | undefined),
         geoTag: (a as any).geoTag || (a as any).geo_tag || (metadata.geoTag as string | undefined) || targetCityName,
+        _aiInsights: (a as any)._aiInsights || (metadata._aiInsights as any),
         isInactive,
         _rawActivity: a,
       };
+
     }) || [];
 
     targetCity.days.push({

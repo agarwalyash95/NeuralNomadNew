@@ -30,6 +30,7 @@ export interface PlannerWorkspace {
 
 export interface TripDraftState {
   id: string;
+  intent?: string;
   destination_city: string | null;
   destination_text: string;
   start_date: string | null;

@@ -36,12 +36,25 @@ export default function AIInsightsPanel({ item, onSwapItem }: AIInsightsPanelPro
     );
   }
 
-  // Derive dynamic candidate alternatives for the item
-  const candidates: ItineraryItem[] = [
+  // Read pre-cached insights directly from DB item if present, or generate dynamic fallback
+  const cachedInsights = (item as any)?._aiInsights;
+
+  const candidates: ItineraryItem[] = cachedInsights?.candidates ? cachedInsights.candidates.map((c: any) => ({
+    id: c.id || `candidate-${c.title}-${item.id}`,
+    type: item.type,
+    title: c.title,
+    subtitle: c.subtitle || 'Top Recommended Choice',
+    price: c.price || item.price || 'INR 500',
+    rating: c.rating || 4.8,
+    status: 'Pending',
+    aiTip: c.aiTip || 'Great local choice.',
+    latitude: item.latitude ? item.latitude + 0.003 : undefined,
+    longitude: item.longitude ? item.longitude + 0.003 : undefined,
+  })) : [
     {
       id: `candidate-1-${item.id}`,
       type: item.type,
-      title: `${item.title} (Authentic Local Alternative)`,
+      title: `${item.title} (Authentic Choice)`,
       subtitle: item.subtitle || 'Top Local Pick',
       price: item.price ? `INR ${Math.round(parseInt(item.price.replace(/[^\d]/g, '') || '500', 10) * 0.85)}` : 'INR 450',
       rating: 4.8,
@@ -63,6 +76,7 @@ export default function AIInsightsPanel({ item, onSwapItem }: AIInsightsPanelPro
       longitude: item.longitude ? item.longitude - 0.004 : undefined,
     },
   ];
+
 
   // Derive styles and icons based on item type
   const getCategoryTheme = () => {

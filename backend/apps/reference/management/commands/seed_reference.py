@@ -25,13 +25,13 @@ class Command(BaseCommand):
         tokyo, _ = City.objects.get_or_create(country=japan, name="Tokyo", latitude=35.6762, longitude=139.6503)
         dubai, _ = City.objects.get_or_create(country=uae, name="Dubai", latitude=25.2048, longitude=55.2708)
 
-        # 4. Airports
-        Airport.objects.get_or_create(city=mumbai, name="Chhatrapati Shivaji Maharaj International Airport", iata_code="BOM")
-        Airport.objects.get_or_create(city=blr, name="Kempegowda International Airport", iata_code="BLR")
-        Airport.objects.get_or_create(city=delhi, name="Indira Gandhi International Airport", iata_code="DEL")
-        Airport.objects.get_or_create(city=tokyo, name="Haneda Airport", iata_code="HND")
-        Airport.objects.get_or_create(city=tokyo, name="Narita International Airport", iata_code="NRT")
-        Airport.objects.get_or_create(city=dubai, name="Dubai International Airport", iata_code="DXB")
+        # 4. Airports (Handled by seed_all_bulk.py)
+        # Airport.objects.get_or_create(city=mumbai, name="Chhatrapati Shivaji Maharaj International Airport", iata_code="BOM")
+        # Airport.objects.get_or_create(city=blr, name="Kempegowda International Airport", iata_code="BLR")
+        # Airport.objects.get_or_create(city=delhi, name="Indira Gandhi International Airport", iata_code="DEL")
+        # Airport.objects.get_or_create(city=tokyo, name="Haneda Airport", iata_code="HND")
+        # Airport.objects.get_or_create(city=tokyo, name="Narita International Airport", iata_code="NRT")
+        # Airport.objects.get_or_create(city=dubai, name="Dubai International Airport", iata_code="DXB")
 
         # 5. Airlines
         Airline.objects.get_or_create(name="Air India", iata_code="AI")

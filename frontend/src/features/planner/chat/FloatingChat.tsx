@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, X, ArrowUp, Loader2 } from 'lucide-react';
+import { MessageSquare, X, ArrowUp, Loader2, Sparkles, Bot } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { plannerService } from '@/services/planner.service';
 import type { ChatMessage } from '@/services/planner.types';
@@ -10,9 +10,10 @@ import { ChatWidget } from './ChatWidgets';
 
 export interface FloatingChatProps {
   workspaceId: string | null;
+  onOpenHelper?: (type: string) => void;
 }
 
-export default function FloatingChat({ workspaceId }: FloatingChatProps) {
+export default function FloatingChat({ workspaceId, onOpenHelper }: FloatingChatProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -76,38 +77,66 @@ export default function FloatingChat({ workspaceId }: FloatingChatProps) {
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0, opacity: 0 }}
             onClick={() => setIsOpen(true)}
-            className="group absolute bottom-6 right-6 z-50 flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-800/10 bg-slate-900 text-white shadow-lg transition-colors hover:bg-slate-800"
+            className="group fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 text-white shadow-xl transition-all hover:scale-105 hover:shadow-indigo-500/30"
           >
-            <MessageSquare size={22} className="transition-transform group-hover:scale-110" />
+            <Sparkles size={24} className="transition-transform group-hover:scale-110" />
           </motion.button>
         )}
       </AnimatePresence>
 
       <AnimatePresence>
         {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.95 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-            className="absolute bottom-6 right-6 z-50 flex h-[80vh] max-h-[600px] w-[380px] flex-col overflow-hidden rounded-[28px] border border-[#d9d4c7] bg-[#fbfaf7]/95 shadow-2xl backdrop-blur-xl"
-          >
-            <div className="flex items-center justify-between border-b border-[#e5dfd2] bg-white/70 px-5 py-4">
+            <motion.div
+              initial={{ opacity: 0, y: 20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.95 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+              className="fixed bottom-24 right-6 z-50 flex h-[80vh] max-h-[600px] w-[380px] flex-col overflow-hidden rounded-[32px] border border-white/50 bg-white/40 shadow-2xl backdrop-blur-2xl ring-1 ring-black/5"
+            >
+            <div className="flex items-center justify-between border-b border-white/30 bg-white/30 px-5 py-3.5">
               <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-600 text-white">
-                  <MessageSquare size={16} />
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white shadow-md">
+                  <Bot size={18} />
                 </div>
-                <h3 className="font-semibold text-slate-800">NeuralNomad</h3>
+                <div>
+                  <h3 className="font-bold text-xs text-slate-800">NeuralNomad AI</h3>
+                  <p className="text-[10px] text-slate-500 font-medium">Trip Refinement & Assistant</p>
+                </div>
               </div>
               <button
                 onClick={() => setIsOpen(false)}
-                className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                className="rounded-xl p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
-            <div className="custom-scrollbar flex-1 space-y-4 overflow-y-auto bg-[linear-gradient(180deg,#fbfaf7_0%,#f8f6f0_100%)] p-5">
+            {/* Top Quick Refine Actions Strip */}
+            <div className="border-b border-white/30 bg-white/20 px-3 py-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+              {[
+                { label: '⚡ Optimize Routes', prompt: 'Optimize daily activity routes for distance' },
+                { label: '🍽️ Local Foodie Spots', panel: 'restaurants' },
+                { label: '🏄 Add Activities', panel: 'activities' },
+                { label: '🏨 Change Hotel', panel: 'hotel' },
+              ].map((chip) => (
+                <button
+                  key={chip.label}
+                  onClick={() => {
+                    if (chip.panel && onOpenHelper) {
+                      onOpenHelper(chip.panel);
+                      setIsOpen(false);
+                    } else if (chip.prompt) {
+                      handleSubmit(chip.prompt);
+                    }
+                  }}
+                  className="rounded-full border border-indigo-200/70 bg-indigo-50/70 px-2.5 py-1 text-[10px] font-bold text-indigo-700 shadow-2xs hover:bg-indigo-600 hover:text-white hover:border-indigo-600 transition-all cursor-pointer whitespace-nowrap shrink-0"
+                >
+                  {chip.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="custom-scrollbar flex-1 space-y-4 overflow-y-auto p-5">
               {messages.length === 0 && !isSending && (
                 <div className="flex justify-start">
                   <div className="max-w-[85%] rounded-2xl rounded-tl-md border border-[#e5dfd2] bg-white px-4 py-3 shadow-sm">

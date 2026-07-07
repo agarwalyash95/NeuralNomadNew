@@ -608,7 +608,10 @@ function OptionalDetailsWidget({
     }
 
     const nextBtn = (
-      <div className="mt-4 flex justify-end">
+      <div className="mt-4 flex items-center justify-between gap-2">
+        <button onClick={handleNext} className="text-xs font-semibold text-slate-400 hover:text-slate-600 transition-colors">
+          Skip Step →
+        </button>
         <button onClick={handleNext} className="rounded-lg bg-slate-900 px-4 py-1.5 text-xs font-bold text-white transition-all hover:bg-slate-800">
           Next Step
         </button>
@@ -631,7 +634,7 @@ function OptionalDetailsWidget({
               {['Vacation', 'Business', 'Hometown', 'Family', 'Honeymoon', 'Solo'].map(p => (
                 <button
                   key={p}
-                  onClick={() => { setVisitPurpose(p.toLowerCase()); setTimeout(handleNext, 200); }}
+                  onClick={() => { setVisitPurpose(p.toLowerCase()); setTimeout(handleNext, 150); }}
                   className={`rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-all border flex items-center gap-1 ${
                     visitPurpose === p.toLowerCase() ? 'bg-indigo-600 text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                   }`}
@@ -640,6 +643,7 @@ function OptionalDetailsWidget({
                 </button>
               ))}
             </div>
+            {nextBtn}
           </div>
         )}
 
@@ -710,13 +714,14 @@ function OptionalDetailsWidget({
               {options.map(opt => (
                 <button
                   key={opt}
-                  onClick={() => { setChipVal(field, opt); setTimeout(handleNext, 200); }}
+                  onClick={() => { setChipVal(field, opt); setTimeout(handleNext, 150); }}
                   className={`rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-all border ${currentVal === opt ? 'bg-indigo-600 text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}
                 >
                   {opt}
                 </button>
               ))}
             </div>
+            {nextBtn}
           </div>
         )}
       </div>
@@ -742,18 +747,23 @@ function OptionalDetailsWidget({
         {fields.map((field, idx) => renderField(field, idx))}
       </div>
 
-      {isFormComplete && (
-        <div className="mt-2 pt-2 animate-in fade-in zoom-in duration-300 border-t border-slate-100">
-          <button
-            onClick={handleSubmit}
-            className="w-full rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 py-2.5 text-sm font-bold text-white shadow-sm transition-all hover:opacity-90 flex items-center justify-center gap-2"
-          >
-            <Check size={16} /> Confirm Preferences
-          </button>
-        </div>
-      )}
+      <div className="mt-2 pt-2 animate-in fade-in zoom-in duration-300 border-t border-slate-100 flex items-center justify-between gap-2">
+        <button
+          onClick={handleSubmit}
+          className="text-xs font-semibold text-slate-400 hover:text-slate-600 transition-colors"
+        >
+          Skip All & Create
+        </button>
+        <button
+          onClick={handleSubmit}
+          className="rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2 text-xs font-bold text-white shadow-sm transition-all hover:opacity-90 flex items-center justify-center gap-1.5"
+        >
+          <Check size={14} /> {isFormComplete ? 'Confirm Preferences' : 'Submit & Build'}
+        </button>
+      </div>
     </div>
   );
+
 }
 
 // ─────────────────────────────────────────────────────────────

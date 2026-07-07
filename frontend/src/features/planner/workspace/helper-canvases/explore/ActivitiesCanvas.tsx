@@ -234,7 +234,7 @@ export default function ActivitiesCanvas({ onClose, tripContext, onAddToPlan }: 
                             {/* Summary / Description */}
                             {data.editorial_summary && (
                               <div className="bg-white p-3 rounded-lg border border-slate-100 text-xs text-slate-700 italic">
-                                "{data.editorial_summary}"
+                                &quot;{data.editorial_summary}&quot;
                               </div>
                             )}
 

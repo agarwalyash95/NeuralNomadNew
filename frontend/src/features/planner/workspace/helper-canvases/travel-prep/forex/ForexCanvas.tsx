@@ -98,7 +98,7 @@ export default function ForexCanvas({ onClose, tripContext }: ForexCanvasProps) 
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100"><Info size={18} className="text-emerald-700" /></div>
               <div>
                 <h3 className="text-sm font-bold text-emerald-900">No currency exchange needed</h3>
-                <p className="mt-1 text-xs text-emerald-700">{tripContext.destination} is a domestic destination — you're all set with INR!</p>
+                <p className="mt-1 text-xs text-emerald-700">{tripContext.destination} is a domestic destination &mdash; you&apos;re all set with INR!</p>
               </div>
             </div>
           </div>

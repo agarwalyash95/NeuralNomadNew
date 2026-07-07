@@ -18,17 +18,52 @@ export interface SlotRecommendationResult {
 }
 
 /**
+ * Checks if two itinerary items are at the same location or represent connected transit (e.g. station -> cab pickup at station)
+ */
+export function isSameLocation(item1?: ItineraryItem | null, item2?: ItineraryItem | null): boolean {
+  if (!item1 || !item2) return false;
+  if (item1.id === item2.id) return true;
+
+  const t1 = (item1.title + ' ' + (item1.subtitle || '') + ' ' + ((item1 as any).location_name || '')).toLowerCase();
+  const t2 = (item2.title + ' ' + (item2.subtitle || '') + ' ' + ((item2 as any).location_name || '')).toLowerCase();
+
+  // Connected station/airport cab transition check
+  const isTransitConn = (item1.type === 'train' || item1.type === 'flight' || item1.type === 'bus') &&
+                        (item2.type === 'taxi' || t2.includes('pickup') || t2.includes('cab'));
+  
+  if (isTransitConn) {
+    // If station name or location is mentioned in both
+    const words1 = t1.split(/\s+/).filter(w => w.length > 3);
+    for (const w of words1) {
+      if (t2.includes(w)) return true;
+    }
+  }
+
+  // Exact title/subtitle match
+  if (item1.title.toLowerCase().trim() === item2.title.toLowerCase().trim()) return true;
+
+  return false;
+}
+
+
+/**
  * Calculates Great-Circle distance in kilometers between two lat/lng coordinates.
  */
 export function calculateHaversineDistanceKm(
   lat1?: number,
   lon1?: number,
   lat2?: number,
-  lon2?: number
+  lon2?: number,
+  item1?: ItineraryItem | null,
+  item2?: ItineraryItem | null
 ): number {
+  if (isSameLocation(item1, item2)) return 0;
+
   if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) {
-    return 3.5; // Default fallback city distance in km
+    return 0; // Return 0 instead of fake 3.5 km fallback
   }
+
+  if (lat1 === lat2 && lon1 === lon2) return 0;
 
   const R = 6371.0; // Radius of the Earth in km
   const dLat = (lat2 - lat1) * (Math.PI / 180);
@@ -40,8 +75,10 @@ export function calculateHaversineDistanceKm(
       Math.sin(dLon / 2) *
       Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return Math.round(R * c * 10) / 10;
+  const dist = Math.round(R * c * 10) / 10;
+  return dist < 0.3 ? 0 : dist;
 }
+
 
 /**
  * Estimates driving/transit duration in minutes based on distance in km.

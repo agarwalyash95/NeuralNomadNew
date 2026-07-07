@@ -340,7 +340,7 @@ class ConversationService:
 Intent: {draft.intent}
 Destination: {draft.destination_text}
 Dates: {draft.start_date} to {draft.end_date}
-Travelers: {draft.adults} Adults, {draft.children} Children
+Travelers: {draft.adults} Adults, {draft.children} Children (TOTAL: {draft.adults + draft.children} travelers)
 Budget: {draft.budget_tier}
 Interests: {draft.interests}
 {metadata_str}
@@ -349,10 +349,11 @@ Interests: {draft.interests}
 
 Instructions:
 {intent_instructions}
-4. Include realistic estimated costs in an appropriate currency (e.g. USD, EUR, INR) based on standard international travel or the destination. Use the same currency across the trip.
+4. Include realistic estimated costs reflecting EXACTLY {draft.adults + draft.children} travelers ({draft.adults} Adults, {draft.children} Children). All activity costs, meal budgets, and transport tickets MUST be calculated for {draft.adults + draft.children} travelers, NOT just 1 person.
 5. Provide helpful notes for each activity.
 6. Make sure the dates in 'days' match the trip dates sequentially (unless it's a single-day overview for a specific intent).
 7. If this is a multi-city trip (e.g. Darjeeling and Gangtok), make sure to generate activities and cities sequentially. List all cities visited in the cities array, specifying nights spent in each, and assign the correct 'city' name to each Day.
+
 """
         
         try:
@@ -475,22 +476,24 @@ Instructions:
             # Fallback to empty days
             return self._skeleton_fallback(draft)
 
-    def _get_fallback_content(self, destination: str, intent: str, budget_tier: str, currency_code: str):
+    def _get_fallback_content(self, destination: str, intent: str, budget_tier: str, currency_code: str, travelers: int = 1):
         dest_lower = (destination or "").lower().strip()
-        
+        travelers_count = max(travelers, 1)
+
         # Determine some values based on budget tier and currency
         is_inr = currency_code == "INR" or "india" in dest_lower or "kolkata" in dest_lower or "mumbai" in dest_lower or "bengaluru" in dest_lower or "delhi" in dest_lower
         currency = "INR" if is_inr else currency_code or "USD"
         
-        # Scale pricing based on currency and budget tier
+        # Scale pricing based on currency, budget tier, and traveler count
         if currency == "INR":
-            h_cost = 3500 if budget_tier == "budget" else (8500 if budget_tier == "mid_range" else 18000)
-            f_cost = 1200 if budget_tier == "budget" else (3000 if budget_tier == "mid_range" else 7000)
-            a_cost = 150 if budget_tier == "budget" else (500 if budget_tier == "mid_range" else 1500)
+            h_cost = (3500 if budget_tier == "budget" else (8500 if budget_tier == "mid_range" else 18000))
+            f_cost = (1200 if budget_tier == "budget" else (3000 if budget_tier == "mid_range" else 7000)) * travelers_count
+            a_cost = (150 if budget_tier == "budget" else (500 if budget_tier == "mid_range" else 1500)) * travelers_count
         else:
-            h_cost = 60 if budget_tier == "budget" else (150 if budget_tier == "mid_range" else 350)
-            f_cost = 25 if budget_tier == "budget" else (60 if budget_tier == "mid_range" else 120)
-            a_cost = 10 if budget_tier == "budget" else (25 if budget_tier == "mid_range" else 75)
+            h_cost = (60 if budget_tier == "budget" else (150 if budget_tier == "mid_range" else 350))
+            f_cost = (25 if budget_tier == "budget" else (60 if budget_tier == "mid_range" else 120)) * travelers_count
+            a_cost = (10 if budget_tier == "budget" else (25 if budget_tier == "mid_range" else 75)) * travelers_count
+
 
         # Database of popular cities fallback
         fallback_cities = {
@@ -642,9 +645,9 @@ Instructions:
         destination = draft.destination_text or "Kolkata"
         intent = draft.intent or "full_trip"
         budget_tier = draft.budget_tier or "mid_range"
-        currency_code = draft.budget_currency or "INR"
-        
-        fallback = self._get_fallback_content(destination, intent, budget_tier, currency_code)
+        travelers = max((draft.adults or 1) + (draft.children or 0), 1)
+        fallback = self._get_fallback_content(destination, intent, budget_tier, currency_code, travelers)
+
         currency = fallback["currency"]
         
         days = []
@@ -658,44 +661,75 @@ Instructions:
         current = start
         day_number = 1
         
+        single_day_intents = {"hotel_only", "flight_only", "train_only", "bus_only", "cab_only", "transit_only", "food_and_dining"}
+        
         # If it's hotel_only or single-day intent
-        if intent == "hotel_only":
-            # Just create Day 1 with hotel suggestions
+        if intent in single_day_intents:
             activities = []
-            for idx, h in enumerate(fallback["hotels"]):
-                activities.append({
-                    "id": str(uuid.uuid4()),
-                    "category": "hotel",
-                    "title": f"Stay Recommendation: {h['name']}",
-                    "location_name": f"{destination}",
-                    "start_time": "02:00 PM" if idx == 0 else "N/A",
-                    "end_time": "12:00 PM" if idx == 0 else "N/A",
-                    "estimated_cost": float(fallback["hotel_cost"]),
-                    "currency_code": currency,
-                    "status": "pending",
-                    "notes": h["notes"] if idx == 0 else f"Alternative option. {h['notes']}"
-                })
             
-            # Add one attraction just for reference
-            if fallback["attractions"]:
+            if intent == "hotel_only":
+                for idx, h in enumerate(fallback["hotels"]):
+                    activities.append({
+                        "id": str(uuid.uuid4()),
+                        "category": "hotel",
+                        "title": f"Stay Recommendation: {h['name']}",
+                        "location_name": f"{destination}",
+                        "start_time": "02:00 PM" if idx == 0 else "N/A",
+                        "end_time": "12:00 PM" if idx == 0 else "N/A",
+                        "estimated_cost": float(fallback["hotel_cost"]),
+                        "currency_code": currency,
+                        "status": "pending",
+                        "notes": h["notes"] if idx == 0 else f"Alternative option. {h['notes']}"
+                    })
+                
+                # Add one attraction just for reference
+                if fallback["attractions"]:
+                    activities.append({
+                        "id": str(uuid.uuid4()),
+                        "category": "activity",
+                        "title": f"Explore Nearby: {fallback['attractions'][0]['name']}",
+                        "location_name": f"{destination}",
+                        "start_time": "04:00 PM",
+                        "end_time": "06:00 PM",
+                        "estimated_cost": 0.0,
+                        "currency_code": currency,
+                        "status": "pending",
+                        "notes": fallback["attractions"][0]["notes"]
+                    })
+            elif intent in {"flight_only", "train_only", "bus_only", "cab_only", "transit_only"}:
+                cat_map = {"flight_only": "flight", "transit_only": "flight", "train_only": "train", "bus_only": "bus", "cab_only": "cab"}
                 activities.append({
                     "id": str(uuid.uuid4()),
-                    "category": "activity",
-                    "title": f"Explore Nearby: {fallback['attractions'][0]['name']}",
+                    "category": cat_map.get(intent, "flight"),
+                    "title": f"Transport Options to {destination}",
                     "location_name": f"{destination}",
-                    "start_time": "04:00 PM",
-                    "end_time": "06:00 PM",
-                    "estimated_cost": 0.0,
+                    "start_time": "10:00 AM",
+                    "end_time": "12:00 PM",
+                    "estimated_cost": float(fallback["hotel_cost"] * 1.5),
                     "currency_code": currency,
                     "status": "pending",
-                    "notes": fallback["attractions"][0]["notes"]
+                    "notes": f"Recommended travel options for your trip."
                 })
+            elif intent == "food_and_dining":
+                for idx, r in enumerate(fallback["restaurants"]):
+                    activities.append({
+                        "id": str(uuid.uuid4()),
+                        "category": "food",
+                        "title": f"Dining Recommendation: {r['name']}",
+                        "location_name": f"{destination}",
+                        "start_time": "07:00 PM",
+                        "end_time": "09:00 PM",
+                        "estimated_cost": float(fallback["food_cost"]),
+                        "currency_code": currency,
+                        "status": "pending",
+                        "notes": r["notes"]
+                    })
                 
             days.append({
                 "day_number": 1,
                 "date": start.isoformat(),
-                "title": f"Hotel Stay & Area Guide in {destination}",
-                "day_type": "relaxation",
+                "title": f"Recommendations for {destination}",
+                "day_type": "exploration",
                 "activities": activities
             })
         else:
@@ -980,9 +1014,33 @@ Instructions:
         activity["longitude"] = lng
         activity["rating"] = rating or 4.5
         activity["image_url"] = img
-        activity["ai_tip"] = f"A superb travel option in {city_obj.name}. This is highly recommended based on your budget, rating ({rating or 4.5}/5.0), and optimal geographical coordinates."
+        activity["ai_tip"] = f"A superb travel option in {city_obj.name}. Highly recommended based on rating ({rating or 4.5}/5.0)."
         if addr:
             activity["location_name"] = addr
+        activity["_aiInsights"] = {
+            "localTip": f"Highly recommended spot in {city_obj.name}. Arrive 15 mins early for the best experience.",
+            "aiTip": activity.get("ai_tip") or f"Top pick in {city_obj.name}.",
+            "logistics": "Accessible by taxi or walk. Free cancellation up to 24h prior.",
+            "candidates": [
+                {
+                    "id": f"cand-1-{activity.get('id', '1')}",
+                    "title": f"Top Alternative: {city_obj.name} Local Choice",
+                    "subtitle": f"Recommended spot in {city_obj.name}",
+                    "price": f"INR {int(float(activity.get('estimated_cost', 500) or 500) * 0.9)}",
+                    "rating": 4.8,
+                    "aiTip": "Loved by locals for authentic experience and shorter waiting times."
+                },
+                {
+                    "id": f"cand-2-{activity.get('id', '2')}",
+                    "title": f"Boutique Option: {city_obj.name} Special",
+                    "subtitle": f"Premium experience in {city_obj.name}",
+                    "price": f"INR {int(float(activity.get('estimated_cost', 500) or 500) * 1.1)}",
+                    "rating": 4.7,
+                    "aiTip": "Great alternative venue nearby."
+                }
+            ]
+        }
+
 
     def _call_external_place_details_api(self, name, city_name):
         from google import genai
