@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { RotateCcw } from 'lucide-react';
-import { ItineraryItem } from '../mockData';
+import { ItineraryItem } from '../types';
 
 interface DeletingNodeProps {
   item: ItineraryItem;
@@ -12,19 +12,17 @@ export default function DeletingNode({ item, onUndo, onExpire }: DeletingNodePro
   const [secondsLeft, setSecondsLeft] = useState(5);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setSecondsLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          onExpire();
-          return 0;
-        }
-        return prev - 1;
-      });
+    if (secondsLeft <= 0) {
+      onExpire();
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setSecondsLeft((prev) => prev - 1);
     }, 1000);
 
-    return () => clearInterval(timer);
-  }, [onExpire]);
+    return () => clearTimeout(timer);
+  }, [secondsLeft, onExpire]);
 
   return (
     <div className="relative my-2 pl-[70px] pr-4">

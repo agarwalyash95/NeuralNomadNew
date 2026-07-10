@@ -1,14 +1,13 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { motion } from 'framer-motion';
 import { 
   Compass, 
   Loader2,
   Map as MapIcon,
   Globe
 } from 'lucide-react';
-import { MockTripData, ItineraryItem } from './mockData';
+import { MockTripData, ItineraryItem } from './types';
 
 interface PlannerMapProps {
   planData: MockTripData;
@@ -31,7 +30,135 @@ interface MapPinNode {
   dayId: string;
 }
 
-const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "AIzaSyDV-Iz869XNnqx17Ou39MiZoSn977EymoM";
+// No fallback key on purpose: a missing NEXT_PUBLIC_GOOGLE_MAPS_API_KEY must
+// fail visibly (map error state) rather than silently bill a shared key.
+const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
+
+// Fallback images based on node category types
+function getFallbackImageUrl(type: string): string {
+  if (type === 'hotel') {
+    return 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=80&h=80&fit=crop';
+  }
+  if (type === 'food') {
+    return 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=80&h=80&fit=crop';
+  }
+  if (['flight', 'train', 'bus', 'cab', 'transit'].includes(type)) {
+    return 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=80&h=80&fit=crop';
+  }
+  return 'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=80&h=80&fit=crop';
+}
+
+// Synchronous placeholder canvas
+function getPlaceholderPin(type: string, isHovered: boolean) {
+  let color = '#64748b';
+  if (type === 'hotel') color = '#6366f1';
+  else if (type === 'food') color = '#f97316';
+  else if (type === 'activity' || type === 'attraction') color = '#f43f5e';
+  else if (['flight', 'train', 'bus', 'cab', 'transit'].includes(type)) color = '#3b82f6';
+
+  const size = isHovered ? 44 : 32;
+  const canvas = document.createElement('canvas');
+  canvas.width = size + 6;
+  canvas.height = size + 6;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return '';
+
+  const radius = size / 2;
+  const centerX = radius + 3;
+  const centerY = radius + 3;
+
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+  ctx.shadowBlur = 4;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 2;
+
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+
+  ctx.shadowColor = 'transparent';
+
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius - 2.5, 0, 2 * Math.PI);
+  ctx.fillStyle = color;
+  ctx.fill();
+
+  return canvas.toDataURL();
+}
+
+// Asynchronous circular thumbnail image renderer
+function createCircularMarkerImage(imageUrl: string, isHovered: boolean, callback: (dataUrl: string) => void) {
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.src = imageUrl;
+
+  const size = isHovered ? 44 : 32;
+  const canvas = document.createElement('canvas');
+  canvas.width = size + 6;
+  canvas.height = size + 6;
+  const ctx = canvas.getContext('2d');
+
+  const drawFallback = () => {
+    if (!ctx) return;
+    const radius = size / 2;
+    const centerX = radius + 3;
+    const centerY = radius + 3;
+
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 2;
+
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+
+    ctx.shadowColor = 'transparent';
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius - 2.5, 0, 2 * Math.PI);
+    ctx.fillStyle = '#3b82f6';
+    ctx.fill();
+
+    callback(canvas.toDataURL());
+  };
+
+  img.onload = () => {
+    if (!ctx) {
+      drawFallback();
+      return;
+    }
+    const radius = size / 2;
+    const centerX = radius + 3;
+    const centerY = radius + 3;
+
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 2;
+
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+
+    ctx.shadowColor = 'transparent';
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius - 2.5, 0, 2 * Math.PI);
+    ctx.clip();
+    ctx.drawImage(img, centerX - radius, centerY - radius, size, size);
+    ctx.restore();
+
+    callback(canvas.toDataURL());
+  };
+
+  img.onerror = () => {
+    drawFallback();
+  };
+}
 
 export default function PlannerMap({ planData, hoveredItem, focusedDayId, onPinClick }: PlannerMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -40,7 +167,8 @@ export default function PlannerMap({ planData, hoveredItem, focusedDayId, onPinC
   const polylineRef = useRef<any>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [mapTheme, setMapTheme] = useState<MapTheme>('roadmap');
-  const [selectedPin, setSelectedPin] = useState<MapPinNode | null>(null);
+  const [clickedPin, setClickedPin] = useState<MapPinNode | null>(null);
+  const [isRouteView, setIsRouteView] = useState(false);
 
   // 1. Load Google Maps JS API script
   useEffect(() => {
@@ -86,7 +214,7 @@ export default function PlannerMap({ planData, hoveredItem, focusedDayId, onPinC
     planData.cities.forEach((city) => {
       let itemIdx = 0;
       city.days.forEach((day) => {
-        if (focusedDayId && day.id !== focusedDayId) return;
+        if (!isRouteView && focusedDayId && day.id !== focusedDayId) return;
 
         day.items.forEach((item) => {
           if (item.isInactive || item.isDeleting) return;
@@ -109,7 +237,7 @@ export default function PlannerMap({ planData, hoveredItem, focusedDayId, onPinC
       });
     });
     return list;
-  }, [planData, focusedDayId]);
+  }, [planData, focusedDayId, isRouteView]);
 
   // 3. Initialize Google Map instance & Geocode destination city
   useEffect(() => {
@@ -163,26 +291,58 @@ export default function PlannerMap({ planData, hoveredItem, focusedDayId, onPinC
     const bounds = new win.google.maps.LatLngBounds();
     const pathCoordinates: any[] = [];
 
-    pins.forEach((pin, index) => {
+    pins.forEach((pin) => {
       const pos = { lat: pin.latitude, lng: pin.longitude };
       bounds.extend(pos);
       pathCoordinates.push(pos);
 
-      // Create Google Marker
+      // Create Google Marker with circular placeholder
+      const placeholderIcon = getPlaceholderPin(pin.type, false);
       const marker = new win.google.maps.Marker({
         position: pos,
         map: mapInstanceRef.current,
         title: pin.title,
-        label: {
-          text: `${index + 1}`,
-          color: '#ffffff',
-          fontWeight: 'bold',
-          fontSize: '11px',
+        icon: {
+          url: placeholderIcon,
+          size: new win.google.maps.Size(38, 38),
+          scaledSize: new win.google.maps.Size(38, 38),
+          anchor: new win.google.maps.Point(19, 19),
         },
       });
 
+      (marker as any).pinId = pin.id;
+      (marker as any).pinType = pin.type;
+      (marker as any).imageUrl = pin.item.image || getFallbackImageUrl(pin.type);
+      (marker as any).standardIconUrl = placeholderIcon;
+      (marker as any).hoveredIconUrl = getPlaceholderPin(pin.type, true);
+
+      // Pre-load place image circular data URLs (standard and hovered)
+      const targetImgUrl = (marker as any).imageUrl;
+      createCircularMarkerImage(targetImgUrl, false, (stdUrl) => {
+        (marker as any).standardIconUrl = stdUrl;
+        if (hoveredItem?.id !== pin.id) {
+          marker.setIcon({
+            url: stdUrl,
+            size: new win.google.maps.Size(38, 38),
+            scaledSize: new win.google.maps.Size(38, 38),
+            anchor: new win.google.maps.Point(19, 19),
+          });
+        }
+      });
+      createCircularMarkerImage(targetImgUrl, true, (hovUrl) => {
+        (marker as any).hoveredIconUrl = hovUrl;
+        if (hoveredItem?.id === pin.id) {
+          marker.setIcon({
+            url: hovUrl,
+            size: new win.google.maps.Size(54, 54),
+            scaledSize: new win.google.maps.Size(54, 54),
+            anchor: new win.google.maps.Point(27, 27),
+          });
+        }
+      });
+
       marker.addListener('click', () => {
-        setSelectedPin(pin);
+        setClickedPin(pin);
         onPinClick?.(pin.item);
       });
 
@@ -210,13 +370,44 @@ export default function PlannerMap({ planData, hoveredItem, focusedDayId, onPinC
     }
   }, [isLoaded, pins, onPinClick]);
 
-  // 6. Pan to Hovered Item
+  // 6. Highlight, Pan, and Auto-Overlay Hovered Item (Synchronous Icon Swaps)
   useEffect(() => {
-    if (!isLoaded || !mapInstanceRef.current || !hoveredItem) return;
-    if (hoveredItem.latitude && hoveredItem.longitude) {
-      mapInstanceRef.current.panTo({ lat: hoveredItem.latitude, lng: hoveredItem.longitude });
-    }
-  }, [hoveredItem, isLoaded]);
+    if (!isLoaded || !mapInstanceRef.current) return;
+    const win = window as any;
+    if (!win.google?.maps) return;
+
+
+
+    markersRef.current.forEach((marker) => {
+      const isHovered = hoveredItem && marker.pinId === hoveredItem.id;
+      if (isHovered) {
+        marker.setAnimation(win.google.maps.Animation.BOUNCE);
+        marker.setZIndex(9999);
+        if (marker.hoveredIconUrl) {
+          marker.setIcon({
+            url: marker.hoveredIconUrl,
+            size: new win.google.maps.Size(54, 54),
+            scaledSize: new win.google.maps.Size(54, 54),
+            anchor: new win.google.maps.Point(27, 27),
+          });
+        }
+        if (hoveredItem.latitude && hoveredItem.longitude) {
+          mapInstanceRef.current.panTo({ lat: hoveredItem.latitude, lng: hoveredItem.longitude });
+        }
+      } else {
+        marker.setAnimation(null);
+        marker.setZIndex(1);
+        if (marker.standardIconUrl) {
+          marker.setIcon({
+            url: marker.standardIconUrl,
+            size: new win.google.maps.Size(38, 38),
+            scaledSize: new win.google.maps.Size(38, 38),
+            anchor: new win.google.maps.Point(19, 19),
+          });
+        }
+      }
+    });
+  }, [hoveredItem, isLoaded, pins, clickedPin]);
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-slate-900">
@@ -256,35 +447,21 @@ export default function PlannerMap({ planData, hoveredItem, focusedDayId, onPinC
         >
           <Compass size={13} /> Hybrid
         </button>
-      </div>
 
-      {/* Active Pin Info Card Overlay */}
-      {selectedPin && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="absolute bottom-6 left-6 z-10 w-72 rounded-2xl border border-slate-700 bg-slate-900/90 p-4 text-white shadow-2xl backdrop-blur-md"
+        <div className="h-4 w-[1px] bg-white/20 mx-1" />
+
+        <button
+          onClick={() => setIsRouteView(!isRouteView)}
+          className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-extrabold transition-all border ${
+            isRouteView 
+              ? 'bg-indigo-600 border-indigo-700 text-white shadow-xs' 
+              : 'border-transparent text-slate-300 hover:text-white'
+          }`}
+          title={isRouteView ? "Click to focus map on the active day's timeline items" : "Click to display all pins and routes across the entire trip"}
         >
-          <div className="flex items-start justify-between">
-            <div>
-              <span className="rounded-md bg-blue-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-blue-400">
-                {selectedPin.type}
-              </span>
-              <h4 className="mt-1 font-bold text-white text-sm">{selectedPin.title}</h4>
-              <p className="text-xs text-slate-400">{selectedPin.cityName} • Day {selectedPin.dayNumber}</p>
-            </div>
-            <button
-              onClick={() => setSelectedPin(null)}
-              className="text-slate-400 hover:text-white text-xs font-bold"
-            >
-              ✕
-            </button>
-          </div>
-          {selectedPin.item.price && (
-            <p className="mt-2 text-xs font-semibold text-emerald-400">{selectedPin.item.price}</p>
-          )}
-        </motion.div>
-      )}
+          🌍 {isRouteView ? 'Entire Trip' : 'Focused Day'}
+        </button>
+      </div>
     </div>
   );
 }

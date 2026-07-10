@@ -13,6 +13,8 @@ interface ReplaceConfirmBarProps {
   tripContext?: TripContext;
   /** Accent color for the confirm button (e.g. "bg-blue-600 hover:bg-blue-700") */
   confirmColor?: string;
+  /** Confirm button copy (default "Yes, Replace") */
+  confirmLabel?: string;
   onCancel: () => void;
   onConfirm: () => void;
 }
@@ -28,6 +30,7 @@ export default function ReplaceConfirmBar({
   newItemPrice,
   tripContext,
   confirmColor = 'bg-blue-600 hover:bg-blue-700',
+  confirmLabel = 'Yes, Replace',
   onCancel,
   onConfirm,
 }: ReplaceConfirmBarProps) {
@@ -68,7 +71,7 @@ export default function ReplaceConfirmBar({
           onClick={onConfirm}
           className={`flex-1 rounded-xl py-2 text-xs font-semibold text-white transition-colors ${confirmColor}`}
         >
-          Yes, Replace
+          {confirmLabel}
           <ArrowRight size={12} className="ml-1 inline" />
         </button>
       </div>

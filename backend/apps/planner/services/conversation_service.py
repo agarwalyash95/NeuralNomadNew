@@ -4,7 +4,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.planner.models import (
-    PlannerChatMessage, PlannerIntentFlow, PlannerTrip,
+    PlannerChatMessage, PlannerIntentFlow, PlannerTrip, PlannerTripOriginal,
     PlannerWorkspace, TripDraftState,
 )
 # pyrefly: ignore [missing-import]
@@ -171,13 +171,58 @@ class ConversationService:
         workspace.title = trip.title  # Update workspace title to match the trip name
         workspace.save(update_fields=["status", "mode", "last_activity_at", "updated_at", "title"])
 
+        # Create copy of pristine starting plan in PlannerTripOriginal
+        PlannerTripOriginal.objects.get_or_create(
+            workspace=workspace,
+            defaults={
+                "title": trip.title,
+                "summary": trip.summary,
+                "cities": trip.cities,
+                "days": trip.days,
+                "metadata": trip.metadata,
+            }
+        )
+
         # Record this successful conversation as a learned flow
         try:
             self._record_successful_flow(workspace, draft)
         except Exception as e:
             print(f"[ConversationService] Flow recording error (non-fatal): {e}")
 
+        # Traveler memory: record durable facts from this plan (provenance:
+        # inferred — the profile page shows them, the user can delete them,
+        # and nothing applies silently without citing itself)
+        try:
+            self._record_traveler_facts(workspace, draft)
+        except Exception as e:
+            print(f"[ConversationService] Traveler fact recording error (non-fatal): {e}")
+
         return trip
+
+    def _record_traveler_facts(self, workspace, draft):
+        from apps.planner.models import TravelerProfile
+
+        profile, _ = TravelerProfile.objects.get_or_create(user=workspace.user)
+
+        origin = (draft.metadata or {}).get("origin_text") or (draft.metadata or {}).get("origin")
+        if origin:
+            profile.upsert_fact("home_origin", origin, source_trip=workspace.id)
+
+        party = draft.adults + draft.children
+        if party > 0:
+            profile.upsert_fact("typical_party_size", party, source_trip=workspace.id)
+
+        if draft.budget_tier:
+            profile.upsert_fact("budget_tier", draft.budget_tier, source_trip=workspace.id)
+        if draft.budget_amount:
+            profile.upsert_fact(
+                "recent_trip_budget",
+                {"amount": float(draft.budget_amount), "currency": draft.budget_currency},
+                source_trip=workspace.id,
+            )
+
+        if draft.interests:
+            profile.upsert_fact("interests", draft.interests, source_trip=workspace.id)
 
     def _create_workspace(self, user, message):
         return PlannerWorkspace.objects.create(
@@ -297,7 +342,7 @@ class ConversationService:
             intent_instructions = "The user ONLY wants dining options. Generate a schedule focusing strictly on restaurants, cafes, and food tours. DO NOT generate flights or hotels."
         else:
             intent_instructions = """1. Generate realistic flight/bus/train options for arriving on day 1 and departing on the last day. Set category to 'flight', 'bus', or 'train'.
-2. Generate a realistic hotel booking spanning the trip for each city visited. Place the hotel check-in activity on the first day of that city. Category: 'hotel'.
+2. Generate a realistic hotel booking spanning the trip for each city visited. Place the hotel check-in activity on the first day of that city. IMPORTANT: Check-in at the hotel MUST be the very first activity scheduled on Day 1 (immediately after arrival transit), before any sightseeing, dining, or other activities are visited. Category: 'hotel'.
 3. For each day, generate 2-4 activities (category: 'activity', 'food', 'cab')."""
 
         nearby_cities = draft.metadata.get("nearby_cities", []) if draft.metadata else []
@@ -353,12 +398,13 @@ Instructions:
 5. Provide helpful notes for each activity.
 6. Make sure the dates in 'days' match the trip dates sequentially (unless it's a single-day overview for a specific intent).
 7. If this is a multi-city trip (e.g. Darjeeling and Gangtok), make sure to generate activities and cities sequentially. List all cities visited in the cities array, specifying nights spent in each, and assign the correct 'city' name to each Day.
+8. CRITICAL FOR MULTI-CITY EXCURSIONS: If nearby cities/excursions are provided in the preferences (e.g. Hakone), you MUST treat this as a multi-city trip. Distribute the days between the main destination (e.g. Tokyo) and the nearby cities (e.g. Hakone). List both cities in the 'cities' array, set the correct 'city' name for each day, and include a transit activity (e.g., train or cab) on the day of transition from the previous city to the next.
 
 """
         
         try:
             response = client.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemini-2.5-pro',
                 contents=prompt,
                 config=genai.types.GenerateContentConfig(
                     response_mime_type="application/json",
@@ -404,6 +450,28 @@ Instructions:
                     )
                 city_cache[name_clean] = city_obj
                 return city_obj
+
+            # Reconcile cities from days if cities array is missing or incomplete
+            days_cities = []
+            for d in getattr(data, "days", []):
+                if d.city and d.city.strip().title() not in days_cities:
+                    days_cities.append(d.city.strip().title())
+                    
+            if not hasattr(data, "cities") or not data.cities:
+                data.cities = []
+                
+            existing_city_names = [c.name.strip().title() for c in data.cities]
+            
+            for dc in days_cities:
+                if dc not in existing_city_names:
+                    nights_count = sum(1 for d in data.days if d.city and d.city.strip().lower() == dc.lower())
+                    class CustomCityVisit:
+                        def __init__(self, name, nights):
+                            self.name = name
+                            self.nights = nights
+                            self.arrival_date = None
+                            self.departure_date = None
+                    data.cities.append(CustomCityVisit(dc, max(nights_count, 1)))
 
             # Process cities
             cities_out = []
@@ -463,6 +531,9 @@ Instructions:
                     "activities": activities_out
                 })
             
+            # Sort days chronologically to ensure they are returned in order
+            days_out.sort(key=lambda x: int(x["day_number"]) if x.get("day_number") is not None else 999)
+
             return {
                 "title": data.title,
                 "summary": data.summary,
@@ -646,7 +717,7 @@ Instructions:
         intent = draft.intent or "full_trip"
         budget_tier = draft.budget_tier or "mid_range"
         travelers = max((draft.adults or 1) + (draft.children or 0), 1)
-        fallback = self._get_fallback_content(destination, intent, budget_tier, currency_code, travelers)
+        fallback = self._get_fallback_content(destination, intent, budget_tier, draft.budget_currency, travelers)
 
         currency = fallback["currency"]
         
@@ -686,7 +757,7 @@ Instructions:
                 if fallback["attractions"]:
                     activities.append({
                         "id": str(uuid.uuid4()),
-                        "category": "activity",
+                        "category": "attraction",
                         "title": f"Explore Nearby: {fallback['attractions'][0]['name']}",
                         "location_name": f"{destination}",
                         "start_time": "04:00 PM",
@@ -772,7 +843,7 @@ Instructions:
                     if fallback["attractions"]:
                         activities.append({
                             "id": str(uuid.uuid4()),
-                            "category": "activity",
+                            "category": "attraction",
                             "title": f"Evening Visit to {fallback['attractions'][0]['name']}",
                             "location_name": f"{destination}",
                             "start_time": "04:30 PM",
@@ -818,7 +889,7 @@ Instructions:
                     if fallback["attractions"]:
                         activities.append({
                             "id": str(uuid.uuid4()),
-                            "category": "activity",
+                            "category": "attraction",
                             "title": f"Sightseeing: {fallback['attractions'][att_idx]['name']}",
                             "location_name": f"{destination}",
                             "start_time": "10:00 AM",
@@ -850,7 +921,7 @@ Instructions:
                         att_idx_2 = (day_number) % len(fallback["attractions"])
                         activities.append({
                             "id": str(uuid.uuid4()),
-                            "category": "activity",
+                            "category": "attraction",
                             "title": f"Discover {fallback['attractions'][att_idx_2]['name']}",
                             "location_name": f"{destination}",
                             "start_time": "03:30 PM",
@@ -898,6 +969,7 @@ Instructions:
             
         found_ref = None
         lat, lng, rating, img, addr = None, None, None, None, None
+        enrich_data = None
         
         # 1. First, search local database reference tables
         if category == "hotel":
@@ -921,8 +993,15 @@ Instructions:
                 rating = float(ref.user_rating or 4.2)
                 img = ref.image_url
                 
-        elif category == "activity":
+        elif category == "attraction":
             ref = AttractionMaster.objects.filter(city=city_obj, name__icontains=query_name).first()
+            if ref:
+                found_ref = ref
+                rating = float(ref.user_rating or 4.4)
+                img = ref.image_url
+                
+        elif category == "activity":
+            ref = ActivityMaster.objects.filter(city=city_obj, name__icontains=query_name).first()
             if ref:
                 found_ref = ref
                 rating = float(ref.user_rating or 4.4)
@@ -981,7 +1060,7 @@ Instructions:
                                     user_rating=safe_user_rating,
                                     image_url=safe_img
                                 )
-                            elif category == "activity":
+                            elif category == "attraction":
                                 raw_category = enrich_data.get("details") or "Attraction"
                                 safe_category = str(raw_category)[:100]
                                 AttractionMaster.objects.create(
@@ -991,6 +1070,17 @@ Instructions:
                                     user_rating=safe_user_rating,
                                     image_url=safe_img,
                                     suggested_duration_mins=120
+                                )
+                            elif category == "activity":
+                                raw_category = enrich_data.get("details") or "Activity"
+                                safe_category = str(raw_category)[:100]
+                                ActivityMaster.objects.create(
+                                    city=city_obj,
+                                    name=safe_name,
+                                    category=safe_category,
+                                    user_rating=safe_user_rating,
+                                    image_url=safe_img,
+                                    suggested_duration="3-4 hours"
                                 )
                     except Exception as db_ex:
                         print(f"Database caching write failed for {query_name}, continuing smoothly: {db_ex}")
@@ -1014,13 +1104,26 @@ Instructions:
         activity["longitude"] = lng
         activity["rating"] = rating or 4.5
         activity["image_url"] = img
-        activity["ai_tip"] = f"A superb travel option in {city_obj.name}. Highly recommended based on rating ({rating or 4.5}/5.0)."
+        
+        # Determine dynamic tips
+        ai_tip = enrich_data.get("ai_tip") if (not found_ref and enrich_data) else None
+        local_tip = enrich_data.get("local_tip") if (not found_ref and enrich_data) else None
+        logistics = enrich_data.get("logistics") if (not found_ref and enrich_data) else None
+        
+        if not ai_tip:
+            ai_tip = self._generate_diverse_ai_tip(category, title, city_obj.name, rating or 4.5)
+        if not local_tip:
+            local_tip = self._generate_diverse_local_tip(category, title, city_obj.name)
+        if not logistics:
+            logistics = self._generate_diverse_logistics(category, title)
+            
+        activity["ai_tip"] = ai_tip
         if addr:
             activity["location_name"] = addr
         activity["_aiInsights"] = {
-            "localTip": f"Highly recommended spot in {city_obj.name}. Arrive 15 mins early for the best experience.",
-            "aiTip": activity.get("ai_tip") or f"Top pick in {city_obj.name}.",
-            "logistics": "Accessible by taxi or walk. Free cancellation up to 24h prior.",
+            "localTip": local_tip,
+            "aiTip": ai_tip,
+            "logistics": logistics,
             "candidates": [
                 {
                     "id": f"cand-1-{activity.get('id', '1')}",
@@ -1053,6 +1156,9 @@ Instructions:
             longitude: float = Field(description="Estimated geographical longitude coordinates of the place")
             address: str = Field(description="Detailed local address or street location")
             details: str = Field(description="Short description of cuisine, category, or specialties")
+            ai_tip: str = Field(description="A specific, helpful tip for travelers visiting this spot")
+            local_tip: str = Field(description="A localized secret tip or recommendation (e.g. best time/spot)")
+            logistics: str = Field(description="Logistical details like access mode, opening hours, or check-in rules")
             
         client = genai.Client()
         prompt = f"""Search and provide details for '{name}' located in '{city_name}'.
@@ -1078,6 +1184,9 @@ Instructions:
                 "longitude": data.longitude,
                 "address": data.address,
                 "details": data.details,
+                "ai_tip": data.ai_tip,
+                "local_tip": data.local_tip,
+                "logistics": data.logistics,
                 "image_url": img_url
             }
         except Exception as e:
@@ -1146,4 +1255,46 @@ Instructions:
         import hashlib
         idx = int(hashlib.md5(name.encode('utf-8')).hexdigest(), 16) % len(images[cat_key])
         return images[cat_key][idx]
+ 
+    def _generate_diverse_ai_tip(self, category, title, city_name, rating):
+        t_lower = title.lower()
+        if "trek" in t_lower or "hike" in t_lower:
+            return f"Ensure you wear sturdy shoes and carry enough water for the trek in {city_name}."
+        if "sunset" in t_lower or "sunrise" in t_lower:
+            return f"Arrive 30 minutes early to secure the best vantage point for the scenic views."
+        if "breakfast" in t_lower or "lunch" in t_lower or "dinner" in t_lower or "cafe" in t_lower:
+            return f"Popular spot in {city_name}. Try their signature dishes and local specialties."
+        if "market" in t_lower or "shop" in t_lower or "bazaar" in t_lower:
+            return f"Great place for local shopping. Don't hesitate to negotiate politely with vendors."
+        if category == "hotel":
+            return f"A highly rated stay in {city_name} with great access to nearby transit points."
+        if category == "food":
+            return f"Highly recommended dining option in {city_name}. Features local organic ingredients."
+        if category == "activity":
+            return f"An excellent sightseeing highlight in {city_name}. Rated {rating}/5.0 by travelers."
+        return f"A recommended travel option in {city_name}. Great ratings and reviews."
+ 
+    def _generate_diverse_local_tip(self, category, title, city_name):
+        t_lower = title.lower()
+        if "trek" in t_lower or "hike" in t_lower:
+            return "Start early in the morning to beat the heat and catch clear mountain skies."
+        if "sunset" in t_lower or "sunrise" in t_lower:
+            return "Stay for a few minutes after the sun goes down for the best colors in the sky."
+        if "breakfast" in t_lower or "lunch" in t_lower or "dinner" in t_lower or "cafe" in t_lower:
+            return "Ask the server for their fresh catch of the day or chef's secret recommendation."
+        if "museum" in t_lower or "fort" in t_lower or "temple" in t_lower:
+            return "Hire a local guide at the entrance to uncover the fascinating historical facts."
+        return "Ask a local vendor nearby for instructions on accessing the scenic shortcut path."
+ 
+    def _generate_diverse_logistics(self, category, title):
+        t_lower = title.lower()
+        if "flight" in t_lower:
+            return "Ensure check-in is done 2 hours prior to departure. Check baggage limit rules."
+        if "train" in t_lower:
+            return "Platform numbers can change; double-check the electronic display board upon arrival."
+        if category == "hotel":
+            return "Standard check-in is at 12 PM. Late check-in can be requested in advance."
+        if category == "food":
+            return "Walk-ins are welcome, but table reservations are recommended for peak weekend hours."
+        return "Easily accessible via local cabs or auto-rickshaws. Parking space is limited."
 

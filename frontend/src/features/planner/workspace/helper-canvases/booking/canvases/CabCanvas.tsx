@@ -10,7 +10,9 @@ import CanvasHeader from '../../shared/CanvasHeader';
 import SearchSummaryBar from '../../shared/SearchSummaryBar';
 import QuickFilterBar from '../../shared/QuickFilterBar';
 import ReplaceConfirmBar from '../../shared/ReplaceConfirmBar';
-import { ItineraryItem } from '../../../plan-canvas/mockData';
+import { ItineraryItem, CostProvenance } from '../../../plan-canvas/types';
+import { ProvenanceBadge } from '../../../../components/ProvenanceBadge';
+import CurrentlyBookedCard from '../../shared/CurrentlyBookedCard';
 
 interface CabCanvasProps {
   onClose?: () => void;
@@ -19,6 +21,21 @@ interface CabCanvasProps {
 }
 
 const QUICK_FILTER_TAGS = ['Full Day', 'Half Day', 'SUV', 'Sedan', 'Group (10 Seater)'];
+
+/** Search results are real inventory, but not yet price-locked — 'estimated'
+ *  until the traveler explicitly verifies via Verify Live Price on the block. */
+const RESULT_PROVENANCE: CostProvenance = { tier: 'estimated', source: 'Live search', basis: 'Not yet price-verified' };
+
+/** ₹/km rate card by vehicle class + base fare — used only when the real
+ *  road distance is known, so the fare states its own arithmetic. */
+const BASE_FARE = 300;
+const ratePerKm = (cabTypeLabel: string): number => {
+  const label = (cabTypeLabel || '').toLowerCase();
+  if (/suv|innova|ertiga/.test(label)) return 18;
+  if (/seater|tempo|traveller/.test(label)) return 26;
+  if (/sedan|dzire|etios|amaze/.test(label)) return 14;
+  return 16;
+};
 
 function buildInitialParams(ctx: TripContext): BookingSearchParams {
   let pickup = ctx.destination || 'Manali';
@@ -81,8 +98,45 @@ export default function CabCanvas({ onClose, tripContext, onAddToPlan }: CabCanv
   const [results, setResults] = useState<any[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>(['Full Day']);
   const [pendingItem, setPendingItem] = useState<any | null>(null);
+  /** Real road distance for pickup → drop, from /planner/distances/ (cached server-side) */
+  const [routeInfo, setRouteInfo] = useState<{ km: number; mins: number } | null>(null);
 
   useEffect(() => { setParams(buildInitialParams(tripContext)); }, [tripContext.tripId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setRouteInfo(null);
+    const pickup = params.pickup?.trim();
+    const drop = params.drop?.trim();
+    if (!pickup || !drop || pickup.toLowerCase() === drop.toLowerCase()) return;
+    import('@/services/distance.service').then(({ distanceService }) =>
+      distanceService.getBatchDistances([
+        { id: 'cab-route', origin: { name: pickup }, destination: { name: drop } },
+      ])
+    ).then((res) => {
+      const r = res['cab-route'];
+      if (!cancelled && r) setRouteInfo({ km: r.distance_km, mins: r.duration_mins });
+    }).catch(() => { /* fare falls back to provider price */ });
+    return () => { cancelled = true; };
+  }, [params.pickup, params.drop]);
+
+  /** Distance-based fare when the route is measured; provider price otherwise */
+  const fareFor = (cab: any): { price: number; provenance: CostProvenance; basisLabel: string } => {
+    if (routeInfo) {
+      const rate = ratePerKm(cab.cabTypes?.[0]?.type || '');
+      const price = Math.round(BASE_FARE + routeInfo.km * rate);
+      return {
+        price,
+        provenance: {
+          tier: 'estimated',
+          source: 'Distance-based estimate',
+          basis: `₹${rate}/km × ${routeInfo.km} km road distance + ₹${BASE_FARE} base`,
+        },
+        basisLabel: `₹${rate}/km × ${routeInfo.km} km`,
+      };
+    }
+    return { price: cab.price, provenance: RESULT_PROVENANCE, basisLabel: 'fixed rate' };
+  };
 
   const fetchCabs = async (searchParams: BookingSearchParams) => {
     setLoading(true);
@@ -118,24 +172,41 @@ export default function CabCanvas({ onClose, tripContext, onAddToPlan }: CabCanv
 
   const handleConfirmReplace = () => {
     if (!pendingItem || !onAddToPlan) return;
+    const fare = fareFor(pendingItem);
     const newItem: ItineraryItem = {
       id: `cab-${pendingItem.id}-${Date.now()}`,
       type: 'taxi',
       title: pendingItem.title,
-      subtitle: `${pendingItem.origin} • ${pendingItem.duration}`,
-      price: `₹${pendingItem.price.toLocaleString()}`,
+      subtitle: routeInfo
+        ? `${params.pickup} → ${params.drop} • ~${routeInfo.km} km`
+        : `${pendingItem.origin} • ${pendingItem.duration}`,
+      price: `₹${fare.price.toLocaleString()}`,
       status: 'Pending',
       details: pendingItem.cabTypes?.[0]?.type || 'SUV',
+      cost: { amount: fare.price, currency: 'INR', provenance: fare.provenance },
     };
     onAddToPlan(newItem);
     setPendingItem(null);
   };
+
+  const filteredResults = results.filter((cab: any) => {
+    if (selectedTags.length === 0) return true;
+    return selectedTags.every(tag => {
+      if (tag === 'Full Day') return (cab.duration || '').toLowerCase().includes('full');
+      if (tag === 'Half Day') return (cab.duration || '').toLowerCase().includes('half');
+      if (tag === 'SUV') return cab.cabTypes?.some((t: any) => (t.type || '').toLowerCase().includes('suv'));
+      if (tag === 'Sedan') return cab.cabTypes?.some((t: any) => (t.type || '').toLowerCase().includes('sedan'));
+      if (tag === 'Group (10 Seater)') return cab.cabTypes?.some((t: any) => (t.type || '').includes('10'));
+      return true;
+    });
+  });
 
   const searchSummary = `Cabs in ${params.pickup || tripContext.destination}`;
 
   return (
     <div className="flex h-full flex-col bg-white">
       <CanvasHeader icon={<Car size={18} />} iconColor="bg-amber-600" label="Cabs" title={searchSummary} tripContext={tripContext} onClose={onClose} />
+      <CurrentlyBookedCard tripContext={tripContext} nodeType={['taxi', 'cab']} />
       <div className="custom-scrollbar flex-1 overflow-y-auto">
         {!isSearchExpanded && (
           <SearchSummaryBar primary={searchSummary} secondary={[params.departureDate, `${params.travellers} pax`].filter(Boolean).join(' • ')}
@@ -166,32 +237,43 @@ export default function CabCanvas({ onClose, tripContext, onAddToPlan }: CabCanv
               <div className="mb-3 h-10 w-10 animate-spin rounded-full border-3 border-slate-200 border-t-amber-600" />
               <p className="text-sm font-semibold text-slate-600">Finding cabs...</p>
             </div>
-          ) : results.length > 0 ? (
+          ) : filteredResults.length > 0 ? (
             <div className="space-y-3">
-              {results.map((cab) => (
-                <div key={cab.id} className={`rounded-xl border bg-white p-4 transition-all hover:shadow-md ${pendingItem?.id === cab.id ? 'border-amber-400 ring-2 ring-amber-100' : 'border-slate-200 hover:border-amber-300'}`}>
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <p className="text-sm font-semibold text-slate-900">{cab.title}</p>
-                      <p className="text-xs text-slate-500">{cab.origin} • {cab.duration}</p>
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {cab.cabTypes?.map((t: any, tIdx: number) => (
-                          <span key={`${t.type || 'type'}-${tIdx}`} className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">{t.type}</span>
-                        ))}
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-500">{filteredResults.length} cabs found</p>
+                {routeInfo && (
+                  <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700" title="Measured road distance for this route">
+                    🛣 ~{routeInfo.km} km · {Math.round(routeInfo.mins / 60 * 10) / 10}h drive
+                  </span>
+                )}
+              </div>
+              {filteredResults.map((cab) => {
+                const fare = fareFor(cab);
+                return (
+                  <div key={cab.id} className={`rounded-xl border bg-white p-4 transition-all hover:shadow-md ${pendingItem?.id === cab.id ? 'border-amber-400 ring-2 ring-amber-100' : 'border-slate-200 hover:border-amber-300'}`}>
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-slate-900">{cab.title}</p>
+                        <p className="text-xs text-slate-500">{cab.origin} • {cab.duration}</p>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {cab.cabTypes?.map((t: any, tIdx: number) => (
+                            <span key={`${t.type || 'type'}-${tIdx}`} className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">{t.type}</span>
+                          ))}
+                        </div>
                       </div>
-
-                    </div>
-                    <div className="ml-4 text-right shrink-0">
-                      <p className="text-xl font-bold text-slate-900">₹{cab.price.toLocaleString()}</p>
-                      <p className="text-xs text-slate-500">fixed rate</p>
-                      <button onClick={() => setPendingItem(cab)}
-                        className={`mt-2 rounded-lg px-4 py-2 text-xs font-semibold transition-colors ${pendingItem?.id === cab.id ? 'bg-amber-700 text-white' : 'bg-amber-600 text-white hover:bg-amber-700'}`}>
-                        {pendingItem?.id === cab.id ? '✓ Selected' : 'Select'}
-                      </button>
+                      <div className="ml-4 text-right shrink-0">
+                        <p className="text-xl font-bold tabular-nums text-slate-900">₹{fare.price.toLocaleString()}</p>
+                        <p className="text-xs text-slate-500 mb-1">{fare.basisLabel}</p>
+                        <ProvenanceBadge provenance={fare.provenance} className="mb-1.5" />
+                        <button onClick={() => setPendingItem(cab)}
+                          className={`mt-2 rounded-lg px-4 py-2 text-xs font-semibold transition-colors ${pendingItem?.id === cab.id ? 'bg-amber-700 text-white' : 'bg-amber-600 text-white hover:bg-amber-700'}`}>
+                          {pendingItem?.id === cab.id ? '✓ Selected' : 'Select'}
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-8 text-center">
@@ -202,7 +284,7 @@ export default function CabCanvas({ onClose, tripContext, onAddToPlan }: CabCanv
         </div>
       </div>
       {pendingItem && onAddToPlan && (
-        <ReplaceConfirmBar newItemTitle={pendingItem.title} newItemPrice={`₹${pendingItem.price.toLocaleString()}`}
+        <ReplaceConfirmBar newItemTitle={pendingItem.title} newItemPrice={`₹${fareFor(pendingItem).price.toLocaleString()}`}
           tripContext={tripContext} confirmColor="bg-amber-600 hover:bg-amber-700"
           onCancel={() => setPendingItem(null)} onConfirm={handleConfirmReplace} />
       )}

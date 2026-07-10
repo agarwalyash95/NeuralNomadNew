@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { Star, MapPin, Trash2, Compass, Zap, Utensils, BedDouble, Camera } from 'lucide-react';
-import { ItineraryItem } from '../mockData';
+import { ItineraryItem } from '../types';
 import NodeWrapper from './NodeWrapper';
 import Image from 'next/image';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { formatConvertedPrice } from '../utils/routeOptimizer';
+import { ProvenanceBadge } from '@/features/planner/components/ProvenanceBadge';
 
 interface GenericNodeProps {
   item: ItineraryItem;
@@ -12,9 +14,10 @@ interface GenericNodeProps {
   onClick?: () => void;
   onRemove?: () => void;
   onHover?: (isHovered: boolean) => void;
+  onVerifyLivePrice?: (itemId: string) => void;
 }
 
-export default function GenericNode({ item, isLast, onClick, onRemove, onHover }: GenericNodeProps) {
+export default function GenericNode({ item, isLast, onClick, onRemove, onHover, onVerifyLivePrice }: GenericNodeProps) {
   const [isHovered, setIsHovered] = useState(false);
 
   // Derive gradient based on item type
@@ -56,9 +59,18 @@ export default function GenericNode({ item, isLast, onClick, onRemove, onHover }
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.4 : 1,
     zIndex: isDragging ? 10 : 1,
   };
+
+  if (isDragging) {
+    return (
+      <div 
+        ref={setNodeRef} 
+        style={{ ...style, opacity: 0.3 }} 
+        className="relative rounded-[16px] border-2 border-dashed border-slate-300 bg-slate-100/30 min-h-[109px] w-full mb-3"
+      />
+    );
+  }
 
   return (
     <div ref={setNodeRef} style={style} className="relative">
@@ -118,18 +130,77 @@ export default function GenericNode({ item, isLast, onClick, onRemove, onHover }
                   </div>
                   
                   {item.details ? <p className="mt-1.5 text-xs text-slate-500 line-clamp-2">{item.details}</p> : null}
+                  {item.aiTip && (
+                    <div className="mt-2 flex items-start gap-1.5 rounded-xl bg-blue-50/50 p-2 border border-blue-100/50 text-[11px] text-blue-800 font-medium">
+                      <span className="shrink-0 text-xs mt-0.5">💡</span>
+                      <p className="leading-normal">{item.aiTip}</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
 
             <div className="flex flex-col items-end justify-between shrink-0 pl-1">
               {item.price ? (
-                <p className="text-sm font-bold text-slate-950">{item.price}</p>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-slate-950">
+                    {item.status === 'Confirmed' ? item.price : `approx. ${item.price}`}
+                  </p>
+                  {(() => {
+                    const conv = formatConvertedPrice(item.price);
+                    return conv ? (
+                      <p className="text-[10px] font-bold text-slate-400 mt-0.5">
+                        {item.status === 'Confirmed' ? `(${conv})` : `approx. (${conv})`}
+                      </p>
+                    ) : null;
+                  })()}
+                  
+                  {/* Provenance: where this price actually came from */}
+                  <div className="mt-2 export-hidden flex flex-col items-end gap-1">
+                    <ProvenanceBadge provenance={item.cost?.provenance} />
+                    {['hotel', 'flight', 'train', 'bus', 'taxi'].includes(item.type) &&
+                      item.cost?.provenance?.tier !== 'verified' && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onVerifyLivePrice) {
+                              onVerifyLivePrice(item.id);
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 rounded-full bg-blue-50 hover:bg-blue-100 active:scale-95 transition-all px-2 py-0.5 text-[9px] font-bold text-blue-700 border border-blue-100 shadow-xs cursor-pointer"
+                        >
+                          Verify Price
+                        </button>
+                      )}
+                  </div>
+
+                  {(item.type === 'attraction' || item.type === 'activity') && (
+                    <div className="mt-2 export-hidden">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (onClick) {
+                            onClick();
+                          }
+                        }}
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[9px] font-bold active:scale-95 transition-all border shadow-xs cursor-pointer ${
+                          item.type === 'attraction'
+                            ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-250'
+                            : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-250'
+                        }`}
+                      >
+                        {item.type === 'attraction' ? '🔄 Change Attraction' : '🔄 Change Activity'}
+                      </button>
+                    </div>
+                  )}
+                </div>
               ) : <div />}
               
               <button 
                 onClick={(e) => { e.stopPropagation(); onRemove?.(); }}
-                className="mt-auto rounded-xl bg-rose-50 p-2 text-rose-500 border border-rose-100/80 shadow-xs hover:bg-rose-100 hover:text-rose-600 active:scale-95 transition-all cursor-pointer"
+                className="mt-auto rounded-xl bg-rose-50 p-2 text-rose-500 border border-rose-100/80 shadow-xs hover:bg-rose-100 hover:text-rose-600 active:scale-95 transition-all cursor-pointer export-hidden"
                 title="Delete Item"
               >
                 <Trash2 size={15} />
@@ -139,8 +210,8 @@ export default function GenericNode({ item, isLast, onClick, onRemove, onHover }
         </div>
 
         {item.distanceToNext && (
-          <div className="absolute -bottom-5 left-[71px] md:left-[79px] z-10 flex -translate-x-1/2 -translate-y-1/2 items-center bg-[#fbfaf7] py-1 px-1">
-            <div className="rounded-full border border-[#ddd7ca] bg-white px-2 py-0.5 text-[9px] font-semibold text-slate-500 shadow-sm">
+          <div className="absolute -bottom-5 left-[71px] md:left-[79px] z-10 flex -translate-x-1/2 -translate-y-1/2 items-center bg-paper-1 py-1 px-1">
+            <div className="rounded-full border border-line-strong bg-white px-2 py-0.5 text-[9px] font-semibold text-slate-500 shadow-sm">
               {item.distanceToNext}
             </div>
           </div>

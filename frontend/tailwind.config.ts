@@ -48,6 +48,34 @@ const config: Config = {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
+        // Planner warm-paper tokens (see globals.css)
+        paper: {
+          '0': 'rgb(var(--paper-0) / <alpha-value>)',
+          '1': 'rgb(var(--paper-1) / <alpha-value>)',
+          '2': 'rgb(var(--paper-2) / <alpha-value>)',
+        },
+        line: {
+          DEFAULT: 'rgb(var(--line) / <alpha-value>)',
+          strong: 'rgb(var(--line-strong) / <alpha-value>)',
+        },
+        ink: {
+          '900': 'rgb(var(--ink-900) / <alpha-value>)',
+          '700': 'rgb(var(--ink-700) / <alpha-value>)',
+          '500': 'rgb(var(--ink-500) / <alpha-value>)',
+          '400': 'rgb(var(--ink-400) / <alpha-value>)',
+        },
+        trust: {
+          verified: 'rgb(var(--trust-verified) / <alpha-value>)',
+          estimated: 'rgb(var(--trust-estimated) / <alpha-value>)',
+          suggested: 'rgb(var(--trust-suggested) / <alpha-value>)',
+        },
+        cat: {
+          transport: 'rgb(var(--cat-transport) / <alpha-value>)',
+          stay: 'rgb(var(--cat-stay) / <alpha-value>)',
+          food: 'rgb(var(--cat-food) / <alpha-value>)',
+          activity: 'rgb(var(--cat-activity) / <alpha-value>)',
+          attraction: 'rgb(var(--cat-attraction) / <alpha-value>)',
+        },
       },
       borderRadius: {
         lg: 'var(--radius)',

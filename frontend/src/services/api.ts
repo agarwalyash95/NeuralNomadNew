@@ -30,10 +30,28 @@ class ApiClient {
       return config;
     });
 
-    // Response interceptor - handle errors
+    // Response interceptor - refresh expired access tokens once, then retry
     this.client.interceptors.response.use(
       (response) => response,
       async (error: AxiosError) => {
+        const originalRequest = error.config as (typeof error.config & { _retried?: boolean }) | undefined;
+
+        if (
+          error.response?.status === 401 &&
+          originalRequest &&
+          !originalRequest._retried &&
+          this.getRefreshToken()
+        ) {
+          originalRequest._retried = true;
+          try {
+            const newAccessToken = await this.refreshAccessToken();
+            originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+            return this.client(originalRequest);
+          } catch {
+            // Refresh failed — fall through to forced re-auth below
+          }
+        }
+
         if (error.response?.status === 401) {
           // Only force login if they were previously authenticated
           if (this.getAccessToken()) {
@@ -48,9 +66,36 @@ class ApiClient {
     );
   }
 
+  // Single-flight token refresh — concurrent 401s share one refresh request
+  private refreshPromise: Promise<string> | null = null;
+
+  private refreshAccessToken(): Promise<string> {
+    if (!this.refreshPromise) {
+      this.refreshPromise = axios
+        .post<{ access: string }>(`${API_URL}/accounts/auth/token/refresh/`, {
+          refresh: this.getRefreshToken(),
+        })
+        .then((res) => {
+          const access = res.data.access;
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('accessToken', access);
+          }
+          return access;
+        })
+        .finally(() => {
+          this.refreshPromise = null;
+        });
+    }
+    return this.refreshPromise;
+  }
+
   // Authentication Methods
   private getAccessToken(): string | null {
     return typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+  }
+
+  private getRefreshToken(): string | null {
+    return typeof window !== 'undefined' ? localStorage.getItem('refreshToken') : null;
   }
 
   setTokens(accessToken: string, refreshToken: string): void {

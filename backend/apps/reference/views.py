@@ -1,9 +1,7 @@
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-import requests
 from django.conf import settings
-from django.db import transaction
 from django_filters.rest_framework import DjangoFilterBackend
 from .models import (
     Country, State, City, Airport, Airline, AirportRoute,
@@ -20,10 +18,149 @@ from .serializers import (
     CurrencySerializer, HolidayCalendarSerializer, WeatherNormalsSerializer,
     TravelSeasonSerializer, GooglePlaceCacheSerializer
 )
+from .services.places_explore import explore_places, extract_photos, extract_opening_hours, extract_editorial_summary
+from .services.suggestions import to_suggestion, to_suggestion_list
+
+
+def _parse_coords(request):
+    lat = request.query_params.get('lat')
+    lng = request.query_params.get('lng')
+    if lat and lng:
+        try:
+            return float(lat), float(lng)
+        except ValueError:
+            pass
+    return None, None
+
+
+# ── Google Places field mappers ──────────────────────────────────────────
+# Each maps a Places API result dict to the model-specific create() kwargs
+# (city/place_id are supplied by explore_places itself).
+
+def _map_restaurant(p, api_key):
+    price_map = {
+        "PRICE_LEVEL_FREE": 0, "PRICE_LEVEL_INEXPENSIVE": 1,
+        "PRICE_LEVEL_MODERATE": 2, "PRICE_LEVEL_EXPENSIVE": 3, "PRICE_LEVEL_VERY_EXPENSIVE": 4,
+    }
+    image_url, secondary_images = extract_photos(p.get('photos', []), api_key)
+    return dict(
+        name=p.get('displayName', {}).get('text', 'Unknown')[:250],
+        primary_type=p.get('primaryType', ''),
+        price_level=price_map.get(p.get('priceLevel', ''), None),
+        user_rating=p.get('rating'),
+        user_ratings_total=p.get('userRatingCount', 0),
+        address=p.get('formattedAddress', ''),
+        latitude=p.get('location', {}).get('latitude'),
+        longitude=p.get('location', {}).get('longitude'),
+        outdoor_seating=p.get('outdoorSeating'),
+        good_for_groups=p.get('goodForGroups'),
+        allows_dogs=p.get('allowsDogs'),
+        good_for_children=p.get('goodForChildren'),
+        menu_for_children=p.get('menuForChildren'),
+        serves_vegetarian_food=p.get('servesVegetarianFood'),
+        dine_in=p.get('dineIn'),
+        takeout=p.get('takeout'),
+        delivery=p.get('delivery'),
+        parking_options=p.get('parkingOptions', {}),
+        payment_options=p.get('paymentOptions', {}),
+        reviews=p.get('reviews', [])[:5],
+        opening_hours=extract_opening_hours(p),
+        national_phone_number=p.get('nationalPhoneNumber'),
+        website_uri=p.get('websiteUri'),
+        editorial_summary=extract_editorial_summary(p),
+        image_url=image_url,
+        secondary_images=secondary_images,
+    )
+
+
+def _map_attraction(p, api_key):
+    image_url, secondary_images = extract_photos(p.get('photos', []), api_key)
+    access_opts = p.get('accessibilityOptions', {})
+    return dict(
+        name=p.get('displayName', {}).get('text', 'Unknown')[:250],
+        primary_type=p.get('primaryType', 'tourist_attraction'),
+        category=p.get('primaryType', 'sightseeing'),
+        user_rating=p.get('rating'),
+        user_ratings_total=p.get('userRatingCount', 0),
+        address=p.get('formattedAddress', ''),
+        latitude=p.get('location', {}).get('latitude'),
+        longitude=p.get('location', {}).get('longitude'),
+        good_for_children=p.get('goodForChildren'),
+        wheelchair_accessible=access_opts.get('wheelchairAccessibleEntrance'),
+        good_for_groups=p.get('goodForGroups'),
+        reviews=p.get('reviews', [])[:5],
+        opening_hours=extract_opening_hours(p),
+        national_phone_number=p.get('nationalPhoneNumber'),
+        website_uri=p.get('websiteUri'),
+        editorial_summary=extract_editorial_summary(p),
+        image_url=image_url,
+        secondary_images=secondary_images,
+        # No real duration/ticket data from Places — honest gaps, not defaults
+        suggested_duration_mins=None,
+        ticket_price_estimate="",
+    )
+
+
+def _map_activity(p, api_key):
+    image_url, secondary_images = extract_photos(p.get('photos', []), api_key)
+    return dict(
+        name=p.get('displayName', {}).get('text', 'Unknown')[:250],
+        primary_type=p.get('primaryType', 'activity'),
+        category=p.get('primaryType', 'adventure'),
+        user_rating=p.get('rating'),
+        user_ratings_total=p.get('userRatingCount', 0),
+        address=p.get('formattedAddress', ''),
+        latitude=p.get('location', {}).get('latitude'),
+        longitude=p.get('location', {}).get('longitude'),
+        good_for_children=p.get('goodForChildren'),
+        good_for_groups=p.get('goodForGroups'),
+        # Google Places has no data for these — leave honest gaps rather
+        # than stamping invented specifics (guided_tour, price, difficulty).
+        guided_tour=None,
+        equipment_included=None,
+        reviews=p.get('reviews', [])[:5],
+        opening_hours=extract_opening_hours(p),
+        national_phone_number=p.get('nationalPhoneNumber'),
+        website_uri=p.get('websiteUri'),
+        editorial_summary=extract_editorial_summary(p),
+        image_url=image_url,
+        secondary_images=secondary_images,
+        price_estimate=None,
+        suggested_duration="",
+        difficulty_level="",
+    )
+
+
+def _map_hotel(p, api_key):
+    price_map = {
+        "PRICE_LEVEL_FREE": '', "PRICE_LEVEL_INEXPENSIVE": '$',
+        "PRICE_LEVEL_MODERATE": '$$', "PRICE_LEVEL_EXPENSIVE": '$$$', "PRICE_LEVEL_VERY_EXPENSIVE": '$$$$',
+    }
+    image_url, secondary_images = extract_photos(p.get('photos', []), api_key)
+    return dict(
+        name=p.get('displayName', {}).get('text', 'Unknown')[:250],
+        primary_type=p.get('primaryType', 'lodging'),
+        price_range=price_map.get(p.get('priceLevel', ''), None),
+        user_rating=p.get('rating'),
+        user_ratings_total=p.get('userRatingCount', 0),
+        address=p.get('formattedAddress', ''),
+        latitude=p.get('location', {}).get('latitude'),
+        longitude=p.get('location', {}).get('longitude'),
+        parking_options=p.get('parkingOptions', {}),
+        payment_options=p.get('paymentOptions', {}),
+        reviews=p.get('reviews', [])[:5],
+        opening_hours=extract_opening_hours(p),
+        national_phone_number=p.get('nationalPhoneNumber'),
+        website_uri=p.get('websiteUri'),
+        editorial_summary=extract_editorial_summary(p),
+        image_url=image_url,
+        secondary_images=secondary_images,
+    )
+
 
 class BaseReferenceViewSet(viewsets.ReadOnlyModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    
+
 class CountryViewSet(BaseReferenceViewSet):
     queryset = Country.objects.all()
     serializer_class = CountrySerializer
@@ -93,6 +230,37 @@ class HotelMasterViewSet(BaseReferenceViewSet):
     search_fields = ['name', 'address']
     filterset_fields = ['city', 'star_rating']
 
+    @action(detail=False, methods=['get'])
+    def explore(self, request):
+        location = request.query_params.get('location', '')
+        if not location:
+            return Response({'error': 'Location is required'}, status=status.HTTP_400_BAD_REQUEST)
+        lat_val, lng_val = _parse_coords(request)
+
+        field_mask = (
+            "places.id,places.displayName,places.primaryType,places.rating,places.userRatingCount,"
+            "places.priceLevel,places.formattedAddress,places.location,places.parkingOptions,"
+            "places.paymentOptions,places.reviews,places.regularOpeningHours,places.nationalPhoneNumber,"
+            "places.websiteUri,places.editorialSummary,places.photos"
+        )
+        source, places, error = explore_places(
+            model=HotelMaster,
+            location=location,
+            lat_val=lat_val, lng_val=lng_val,
+            google_query=f"hotels in {location}",
+            included_type="lodging",
+            field_mask=field_mask,
+            field_mapper=_map_hotel,
+        )
+        if error and not places:
+            return Response({'error': error}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response({'source': source, 'results': to_suggestion_list(places, 'hotel')})
+
+    @action(detail=True, methods=['get'])
+    def details(self, request, pk=None):
+        hotel = self.get_object()
+        return Response({'source': 'database', 'data': to_suggestion(hotel, 'hotel')})
+
 class RestaurantMasterViewSet(BaseReferenceViewSet):
     queryset = RestaurantMaster.objects.all()
     serializer_class = RestaurantMasterSerializer
@@ -104,118 +272,33 @@ class RestaurantMasterViewSet(BaseReferenceViewSet):
         location = request.query_params.get('location', '')
         if not location:
             return Response({'error': 'Location is required'}, status=status.HTTP_400_BAD_REQUEST)
-            
-        city_name = location.split(',')[0].strip()
-        
-        city_obj = City.objects.filter(name__iexact=city_name).first()
-        if not city_obj:
-            country_obj = Country.objects.first()
-            if not country_obj:
-                country_obj = Country.objects.create(name="India", code="IN")
-            city_obj = City.objects.create(name=city_name.capitalize(), country=country_obj)
+        lat_val, lng_val = _parse_coords(request)
 
-        cached_places = RestaurantMaster.objects.filter(city=city_obj)
-        if cached_places.count() >= 5:
-            serializer = self.get_serializer(cached_places, many=True)
-            return Response({'source': 'cache', 'results': serializer.data})
-            
-        api_key = getattr(settings, 'GOOGLE_PLACES_API_KEY', '')
-        if not api_key:
-            return Response({'error': 'Google API key missing'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            
-        url = "https://places.googleapis.com/v1/places:searchText"
-        headers = {
-            "X-Goog-Api-Key": api_key,
-            "X-Goog-FieldMask": "places.id,places.displayName,places.primaryType,places.rating,places.userRatingCount,places.priceLevel,places.formattedAddress,places.location,places.outdoorSeating,places.goodForGroups,places.allowsDogs,places.goodForChildren,places.menuForChildren,places.servesVegetarianFood,places.dineIn,places.takeout,places.delivery,places.parkingOptions,places.paymentOptions,places.reviews,places.regularOpeningHours,places.nationalPhoneNumber,places.websiteUri,places.editorialSummary,places.photos",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "textQuery": f"best restaurants in {location}",
-            "includedType": "restaurant",
-            "maxResultCount": 15
-        }
-        
-        try:
-            resp = requests.post(url, headers=headers, json=payload, timeout=5)
-            data = resp.json()
-            places = data.get('places', [])
-            
-            price_map = {
-                "PRICE_LEVEL_FREE": 0, "PRICE_LEVEL_INEXPENSIVE": 1,
-                "PRICE_LEVEL_MODERATE": 2, "PRICE_LEVEL_EXPENSIVE": 3, "PRICE_LEVEL_VERY_EXPENSIVE": 4
-            }
-            
-            for p in places:
-                place_id = p.get('id')
-                if not RestaurantMaster.objects.filter(place_id=place_id).exists():
-                    try:
-                        with transaction.atomic():
-                            pl_str = p.get('priceLevel', '')
-                            pl_int = price_map.get(pl_str, None)
-                            
-                            image_url = ''
-                            secondary_images = []
-                            photos = p.get('photos', [])
-                            if photos:
-                                first_photo = photos[0].get('name')
-                                if first_photo:
-                                    image_url = f"https://places.googleapis.com/v1/{first_photo}/media?maxHeightPx=800&maxWidthPx=800&key={api_key}"
-                                for sp in photos[1:6]:
-                                    spname = sp.get('name')
-                                    if spname:
-                                        secondary_images.append(f"https://places.googleapis.com/v1/{spname}/media?maxHeightPx=800&maxWidthPx=800&key={api_key}")
-
-                            hours = p.get('regularOpeningHours', {})
-                            opening_hours = hours.get('weekdayDescriptions', [])
-                            
-                            summary = p.get('editorialSummary', {})
-                            editorial_summary = summary.get('text', '')
-
-                            RestaurantMaster.objects.create(
-                                city=city_obj,
-                                place_id=place_id,
-                                name=p.get('displayName', {}).get('text', 'Unknown')[:250],
-                                primary_type=p.get('primaryType', ''),
-                                price_level=pl_int,
-                                user_rating=p.get('rating'),
-                                user_ratings_total=p.get('userRatingCount', 0),
-                                address=p.get('formattedAddress', ''),
-                                latitude=p.get('location', {}).get('latitude'),
-                                longitude=p.get('location', {}).get('longitude'),
-                                outdoor_seating=p.get('outdoorSeating'),
-                                good_for_groups=p.get('goodForGroups'),
-                                allows_dogs=p.get('allowsDogs'),
-                                good_for_children=p.get('goodForChildren'),
-                                menu_for_children=p.get('menuForChildren'),
-                                serves_vegetarian_food=p.get('servesVegetarianFood'),
-                                dine_in=p.get('dineIn'),
-                                takeout=p.get('takeout'),
-                                delivery=p.get('delivery'),
-                                parking_options=p.get('parkingOptions', {}),
-                                payment_options=p.get('paymentOptions', {}),
-                                reviews=p.get('reviews', [])[:5],
-                                opening_hours=opening_hours,
-                                national_phone_number=p.get('nationalPhoneNumber'),
-                                website_uri=p.get('websiteUri'),
-                                editorial_summary=editorial_summary,
-                                image_url=image_url,
-                                secondary_images=secondary_images
-                            )
-                    except Exception as e:
-                        print("Error saving place", e)
-                        
-            final_places = RestaurantMaster.objects.filter(city=city_obj).order_by('-user_rating')
-            serializer = self.get_serializer(final_places, many=True)
-            return Response({'source': 'google_places', 'results': serializer.data})
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        field_mask = (
+            "places.id,places.displayName,places.primaryType,places.rating,places.userRatingCount,"
+            "places.priceLevel,places.formattedAddress,places.location,places.outdoorSeating,"
+            "places.goodForGroups,places.allowsDogs,places.goodForChildren,places.menuForChildren,"
+            "places.servesVegetarianFood,places.dineIn,places.takeout,places.delivery,"
+            "places.parkingOptions,places.paymentOptions,places.reviews,places.regularOpeningHours,"
+            "places.nationalPhoneNumber,places.websiteUri,places.editorialSummary,places.photos"
+        )
+        source, places, error = explore_places(
+            model=RestaurantMaster,
+            location=location,
+            lat_val=lat_val, lng_val=lng_val,
+            google_query=f"best restaurants in {location}",
+            included_type="restaurant",
+            field_mask=field_mask,
+            field_mapper=_map_restaurant,
+        )
+        if error and not places:
+            return Response({'error': error}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response({'source': source, 'results': to_suggestion_list(places, 'restaurant')})
 
     @action(detail=True, methods=['get'])
     def details(self, request, pk=None):
-        # Now details only returns data from DB since it was fully fetched during explore
         restaurant = self.get_object()
-        serializer = self.get_serializer(restaurant)
-        return Response({'source': 'database', 'data': serializer.data})
+        return Response({'source': 'database', 'data': to_suggestion(restaurant, 'restaurant')})
 
 class AttractionMasterViewSet(BaseReferenceViewSet):
     queryset = AttractionMaster.objects.all()
@@ -228,104 +311,31 @@ class AttractionMasterViewSet(BaseReferenceViewSet):
         location = request.query_params.get('location', '')
         if not location:
             return Response({'error': 'Location is required'}, status=status.HTTP_400_BAD_REQUEST)
+        lat_val, lng_val = _parse_coords(request)
 
-        city_name = location.split(',')[0].strip()
-
-        city_obj = City.objects.filter(name__iexact=city_name).first()
-        if not city_obj:
-            country_obj = Country.objects.first()
-            if not country_obj:
-                country_obj = Country.objects.create(name="India", code="IN")
-            city_obj = City.objects.create(name=city_name.capitalize(), country=country_obj)
-
-        cached_places = AttractionMaster.objects.filter(city=city_obj)
-        if cached_places.count() >= 5:
-            serializer = self.get_serializer(cached_places, many=True)
-            return Response({'source': 'cache', 'results': serializer.data})
-
-        api_key = getattr(settings, 'GOOGLE_PLACES_API_KEY', '')
-        if not api_key:
-            return Response({'error': 'Google API key missing'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-        url = "https://places.googleapis.com/v1/places:searchText"
-        headers = {
-            "X-Goog-Api-Key": api_key,
-            "X-Goog-FieldMask": "places.id,places.displayName,places.primaryType,places.rating,places.userRatingCount,places.formattedAddress,places.location,places.goodForChildren,places.goodForGroups,places.accessibilityOptions,places.reviews,places.regularOpeningHours,places.nationalPhoneNumber,places.websiteUri,places.editorialSummary,places.photos",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "textQuery": f"top tourist attractions, heritage sites and landmarks in {location}",
-            "includedType": "tourist_attraction",
-            "maxResultCount": 15
-        }
-
-        try:
-            resp = requests.post(url, headers=headers, json=payload, timeout=5)
-            data = resp.json()
-            places = data.get('places', [])
-
-            for p in places:
-                place_id = p.get('id')
-                if not AttractionMaster.objects.filter(place_id=place_id).exists():
-                    try:
-                        with transaction.atomic():
-                            image_url = ''
-                            secondary_images = []
-                            photos = p.get('photos', [])
-                            if photos:
-                                first_photo = photos[0].get('name')
-                                if first_photo:
-                                    image_url = f"https://places.googleapis.com/v1/{first_photo}/media?maxHeightPx=800&maxWidthPx=800&key={api_key}"
-                                for sp in photos[1:6]:
-                                    spname = sp.get('name')
-                                    if spname:
-                                        secondary_images.append(f"https://places.googleapis.com/v1/{spname}/media?maxHeightPx=800&maxWidthPx=800&key={api_key}")
-
-                            hours = p.get('regularOpeningHours', {})
-                            opening_hours = hours.get('weekdayDescriptions', [])
-
-                            summary = p.get('editorialSummary', {})
-                            editorial_summary = summary.get('text', '')
-                            access_opts = p.get('accessibilityOptions', {})
-
-                            AttractionMaster.objects.create(
-                                city=city_obj,
-                                place_id=place_id,
-                                name=p.get('displayName', {}).get('text', 'Unknown')[:250],
-                                primary_type=p.get('primaryType', 'tourist_attraction'),
-                                category=p.get('primaryType', 'sightseeing'),
-                                user_rating=p.get('rating'),
-                                user_ratings_total=p.get('userRatingCount', 0),
-                                address=p.get('formattedAddress', ''),
-                                latitude=p.get('location', {}).get('latitude'),
-                                longitude=p.get('location', {}).get('longitude'),
-                                good_for_children=p.get('goodForChildren'),
-                                wheelchair_accessible=access_opts.get('wheelchairAccessibleEntrance'),
-                                good_for_groups=p.get('goodForGroups'),
-                                reviews=p.get('reviews', [])[:5],
-                                opening_hours=opening_hours,
-                                national_phone_number=p.get('nationalPhoneNumber'),
-                                website_uri=p.get('websiteUri'),
-                                editorial_summary=editorial_summary,
-                                image_url=image_url,
-                                secondary_images=secondary_images,
-                                suggested_duration_mins=120,
-                                ticket_price_estimate="Free / Entry Fee Applies"
-                            )
-                    except Exception as e:
-                        print("Error saving attraction place", e)
-
-            final_places = AttractionMaster.objects.filter(city=city_obj).order_by('-user_rating')
-            serializer = self.get_serializer(final_places, many=True)
-            return Response({'source': 'google_places', 'results': serializer.data})
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        field_mask = (
+            "places.id,places.displayName,places.primaryType,places.rating,places.userRatingCount,"
+            "places.formattedAddress,places.location,places.goodForChildren,places.goodForGroups,"
+            "places.accessibilityOptions,places.reviews,places.regularOpeningHours,"
+            "places.nationalPhoneNumber,places.websiteUri,places.editorialSummary,places.photos"
+        )
+        source, places, error = explore_places(
+            model=AttractionMaster,
+            location=location,
+            lat_val=lat_val, lng_val=lng_val,
+            google_query=f"top tourist attractions, heritage sites and landmarks in {location}",
+            included_type="tourist_attraction",
+            field_mask=field_mask,
+            field_mapper=_map_attraction,
+        )
+        if error and not places:
+            return Response({'error': error}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response({'source': source, 'results': to_suggestion_list(places, 'attraction')})
 
     @action(detail=True, methods=['get'])
     def details(self, request, pk=None):
         attraction = self.get_object()
-        serializer = self.get_serializer(attraction)
-        return Response({'source': 'database', 'data': serializer.data})
+        return Response({'source': 'database', 'data': to_suggestion(attraction, 'attraction')})
 
 class ActivityMasterViewSet(BaseReferenceViewSet):
     queryset = ActivityMaster.objects.all()
@@ -338,104 +348,31 @@ class ActivityMasterViewSet(BaseReferenceViewSet):
         location = request.query_params.get('location', '')
         if not location:
             return Response({'error': 'Location is required'}, status=status.HTTP_400_BAD_REQUEST)
+        lat_val, lng_val = _parse_coords(request)
 
-        city_name = location.split(',')[0].strip()
-
-        city_obj = City.objects.filter(name__iexact=city_name).first()
-        if not city_obj:
-            country_obj = Country.objects.first()
-            if not country_obj:
-                country_obj = Country.objects.create(name="India", code="IN")
-            city_obj = City.objects.create(name=city_name.capitalize(), country=country_obj)
-
-        cached_places = ActivityMaster.objects.filter(city=city_obj)
-        if cached_places.count() >= 5:
-            serializer = self.get_serializer(cached_places, many=True)
-            return Response({'source': 'cache', 'results': serializer.data})
-
-        api_key = getattr(settings, 'GOOGLE_PLACES_API_KEY', '')
-        if not api_key:
-            return Response({'error': 'Google API key missing'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-        url = "https://places.googleapis.com/v1/places:searchText"
-        headers = {
-            "X-Goog-Api-Key": api_key,
-            "X-Goog-FieldMask": "places.id,places.displayName,places.primaryType,places.rating,places.userRatingCount,places.formattedAddress,places.location,places.goodForChildren,places.goodForGroups,places.reviews,places.regularOpeningHours,places.nationalPhoneNumber,places.websiteUri,places.editorialSummary,places.photos",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "textQuery": f"top adventure activities, outdoor sports and tours in {location}",
-            "maxResultCount": 15
-        }
-
-        try:
-            resp = requests.post(url, headers=headers, json=payload, timeout=5)
-            data = resp.json()
-            places = data.get('places', [])
-
-            for p in places:
-                place_id = p.get('id')
-                if not ActivityMaster.objects.filter(place_id=place_id).exists():
-                    try:
-                        with transaction.atomic():
-                            image_url = ''
-                            secondary_images = []
-                            photos = p.get('photos', [])
-                            if photos:
-                                first_photo = photos[0].get('name')
-                                if first_photo:
-                                    image_url = f"https://places.googleapis.com/v1/{first_photo}/media?maxHeightPx=800&maxWidthPx=800&key={api_key}"
-                                for sp in photos[1:6]:
-                                    spname = sp.get('name')
-                                    if spname:
-                                        secondary_images.append(f"https://places.googleapis.com/v1/{spname}/media?maxHeightPx=800&maxWidthPx=800&key={api_key}")
-
-                            hours = p.get('regularOpeningHours', {})
-                            opening_hours = hours.get('weekdayDescriptions', [])
-
-                            summary = p.get('editorialSummary', {})
-                            editorial_summary = summary.get('text', '')
-
-                            ActivityMaster.objects.create(
-                                city=city_obj,
-                                place_id=place_id,
-                                name=p.get('displayName', {}).get('text', 'Unknown')[:250],
-                                primary_type=p.get('primaryType', 'activity'),
-                                category=p.get('primaryType', 'adventure'),
-                                user_rating=p.get('rating'),
-                                user_ratings_total=p.get('userRatingCount', 0),
-                                address=p.get('formattedAddress', ''),
-                                latitude=p.get('location', {}).get('latitude'),
-                                longitude=p.get('location', {}).get('longitude'),
-                                good_for_children=p.get('goodForChildren'),
-                                good_for_groups=p.get('goodForGroups'),
-                                guided_tour=True,
-                                equipment_included=True,
-                                reviews=p.get('reviews', [])[:5],
-                                opening_hours=opening_hours,
-                                national_phone_number=p.get('nationalPhoneNumber'),
-                                website_uri=p.get('websiteUri'),
-                                editorial_summary=editorial_summary,
-                                image_url=image_url,
-                                secondary_images=secondary_images,
-                                price_estimate=1200.00,
-                                suggested_duration="3-4 hours",
-                                difficulty_level="Moderate"
-                            )
-                    except Exception as e:
-                        print("Error saving activity place", e)
-
-            final_places = ActivityMaster.objects.filter(city=city_obj).order_by('-user_rating')
-            serializer = self.get_serializer(final_places, many=True)
-            return Response({'source': 'google_places', 'results': serializer.data})
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        field_mask = (
+            "places.id,places.displayName,places.primaryType,places.rating,places.userRatingCount,"
+            "places.formattedAddress,places.location,places.goodForChildren,places.goodForGroups,"
+            "places.reviews,places.regularOpeningHours,places.nationalPhoneNumber,places.websiteUri,"
+            "places.editorialSummary,places.photos"
+        )
+        source, places, error = explore_places(
+            model=ActivityMaster,
+            location=location,
+            lat_val=lat_val, lng_val=lng_val,
+            google_query=f"top adventure activities, outdoor sports and tours in {location}",
+            included_type=None,
+            field_mask=field_mask,
+            field_mapper=_map_activity,
+        )
+        if error and not places:
+            return Response({'error': error}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response({'source': source, 'results': to_suggestion_list(places, 'activity')})
 
     @action(detail=True, methods=['get'])
     def details(self, request, pk=None):
         activity = self.get_object()
-        serializer = self.get_serializer(activity)
-        return Response({'source': 'database', 'data': serializer.data})
+        return Response({'source': 'database', 'data': to_suggestion(activity, 'activity')})
 
 class VisaRequirementViewSet(BaseReferenceViewSet):
     queryset = VisaRequirement.objects.all()
@@ -467,3 +404,77 @@ class GooglePlaceCacheViewSet(BaseReferenceViewSet):
     queryset = GooglePlaceCache.objects.all()
     serializer_class = GooglePlaceCacheSerializer
     search_fields = ['name', 'place_id']
+
+
+from rest_framework.views import APIView
+from rest_framework.permissions import AllowAny
+from datetime import datetime
+from django.db.models import Q
+from .models import TravelPriceHistory
+
+class LivePriceView(APIView):
+    """
+    Thin HTTP wrapper over the shared live-price lookup service.
+
+    Note: there is deliberately NO "any record of this service type" fallback.
+    If no price exists for the requested route/date, we say so — an unrelated
+    price presented as this item's price is a trust violation, not a feature.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        service_type = request.query_params.get('service_type')
+        date_str = request.query_params.get('date')
+
+        if not service_type or not date_str:
+            return Response({"error": "service_type and date are required"}, status=400)
+
+        from apps.reference.services.live_price import lookup_live_price
+
+        result = lookup_live_price(
+            service_type=service_type,
+            date_str=date_str,
+            provider=request.query_params.get('provider', ''),
+            code=request.query_params.get('code', ''),
+            origin=request.query_params.get('origin', ''),
+            destination=request.query_params.get('destination', ''),
+        )
+
+        if result is None:
+            return Response({"error": "No price record found"}, status=404)
+        return Response(result)
+
+
+class PlaceDetailsView(APIView):
+    """
+    Unified place resolver for plan blocks: one URL, any category.
+    GET /reference/places/details/?place_id=…[&category=hotel]
+    Returns the same Suggestion envelope the explore endpoints use, so the
+    rich hover card and the canvases read one shape.
+    """
+    permission_classes = [AllowAny]
+
+    _MODELS = {
+        "hotel": HotelMaster,
+        "restaurant": RestaurantMaster,
+        "attraction": AttractionMaster,
+        "activity": ActivityMaster,
+    }
+
+    def get(self, request):
+        place_id = request.query_params.get("place_id")
+        if not place_id:
+            return Response({"error": "place_id is required"}, status=400)
+
+        category_param = request.query_params.get("category", "").lower().strip()
+        # A block's UI type maps onto the master-table category
+        category_alias = {"food": "restaurant", "stay": "hotel"}
+        category_param = category_alias.get(category_param, category_param)
+
+        categories = [category_param] if category_param in self._MODELS else list(self._MODELS)
+        for category in categories:
+            instance = self._MODELS[category].objects.filter(place_id=place_id).first()
+            if instance is not None:
+                return Response({"source": "database", "data": to_suggestion(instance, category)})
+
+        return Response({"error": "No place found for this place_id"}, status=404)

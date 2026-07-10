@@ -1,15 +1,16 @@
 import React from 'react';
 import { ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
-import { ItineraryDay } from '../mockData';
+import { ItineraryDay } from '../types';
 
 interface DayHeaderNodeProps {
   day: ItineraryDay;
   isCollapsed?: boolean;
   onToggle?: () => void;
   onOptimizeRoute?: () => void;
+  timeSavedText?: string;
 }
 
-export default function DayHeaderNode({ day, isCollapsed, onToggle, onOptimizeRoute }: DayHeaderNodeProps) {
+export default function DayHeaderNode({ day, isCollapsed, onToggle, onOptimizeRoute, timeSavedText }: DayHeaderNodeProps) {
   return (
     <div className="relative py-6 pl-[70px]">
       {/* Main Spine passing through */}
@@ -20,6 +21,11 @@ export default function DayHeaderNode({ day, isCollapsed, onToggle, onOptimizeRo
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-extrabold uppercase tracking-widest text-slate-900">Day {day.dayNumber}</h3>
             <span className="text-sm font-semibold text-slate-500">{day.dateStr}</span>
+            {day.weather && (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 border border-slate-200/80 shadow-3xs" title="Seasonal average from historical data — not a live forecast">
+                {day.weather}
+              </span>
+            )}
           </div>
           <p className="text-xs font-semibold text-slate-500">{day.title}</p>
         </div>
@@ -31,17 +37,21 @@ export default function DayHeaderNode({ day, isCollapsed, onToggle, onOptimizeRo
                 e.stopPropagation();
                 onOptimizeRoute();
               }}
-              title="Re-order activities by shortest distance to eliminate back-and-forth travel"
-              className="flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50/80 px-2.5 py-1 text-[11px] font-bold text-blue-700 shadow-2xs hover:bg-blue-100 hover:border-blue-300 transition-all cursor-pointer"
+              title={timeSavedText ? `Optimizing route will save ${timeSavedText} of transit travel time` : "Re-order activities by shortest distance to eliminate back-and-forth travel"}
+              className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-extrabold shadow-2xs border transition-all cursor-pointer export-hidden ${
+                timeSavedText
+                  ? 'bg-gradient-to-r from-amber-500 to-amber-600 border-amber-600 text-white animate-pulse'
+                  : 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100 hover:border-blue-300'
+              }`}
             >
-              <Sparkles size={12} className="text-blue-600" />
-              <span>Optimize Route</span>
+              <Sparkles size={12} className={timeSavedText ? 'text-white' : 'text-blue-600'} />
+              <span>{timeSavedText ? `Optimize Route (${timeSavedText})` : 'Optimize Route'}</span>
             </button>
           )}
 
           <button 
             onClick={onToggle}
-            className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+            className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors export-hidden"
           >
             {isCollapsed ? <ChevronRight size={18} /> : <ChevronDown size={18} />}
           </button>

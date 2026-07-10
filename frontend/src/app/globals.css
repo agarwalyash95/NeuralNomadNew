@@ -38,6 +38,30 @@
 
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
+
+    /* ── Planner design tokens (warm-paper system) ──
+       RGB triplets so Tailwind alpha modifiers (bg-paper-1/95) keep working. */
+    --paper-0: 246 244 239;   /* page shell      #f6f4ef */
+    --paper-1: 251 250 247;   /* panels          #fbfaf7 */
+    --paper-2: 255 255 255;   /* cards           #ffffff */
+    --line: 226 221 210;      /* hairline        #e2ddd2 */
+    --line-strong: 221 215 202; /* borders       #ddd7ca */
+    --ink-900: 30 30 26;      /* headings        #1e1e1a */
+    --ink-700: 68 64 58;      /* body            #44403a */
+    --ink-500: 140 133 123;   /* muted           #8c857b */
+    --ink-400: 156 149 123;   /* faint labels    #9c957b */
+
+    /* Trust grammar — every price wears one of these */
+    --trust-verified: 5 150 105;    /* emerald-600 */
+    --trust-estimated: 217 119 6;   /* amber-600   */
+    --trust-suggested: 124 58 237;  /* violet-600  */
+
+    /* Block category accents */
+    --cat-transport: 2 132 199;   /* sky-600    */
+    --cat-stay: 79 70 229;        /* indigo-600 */
+    --cat-food: 234 88 12;        /* orange-600 */
+    --cat-activity: 5 150 105;    /* emerald-600 */
+    --cat-attraction: 124 58 237; /* violet-600 */
   }
 
   .dark {
@@ -82,6 +106,15 @@
   }
 }
 
+/* Planner type scale — one ramp for the whole feature */
+@layer utilities {
+  .text-display { @apply text-[22px] leading-7 font-semibold tracking-tight text-ink-900; }
+  .text-title   { @apply text-[15px] leading-[22px] font-semibold text-ink-900; }
+  .text-body    { @apply text-[13px] leading-5 text-ink-700; }
+  .text-caption { @apply text-[11.5px] leading-4 text-ink-500; }
+  .text-micro   { @apply text-[10px] leading-[14px] font-bold uppercase tracking-wider text-ink-500; }
+}
+
 /* Animations */
 @layer utilities {
   .animate-in {
@@ -99,4 +132,9 @@
       opacity: 1;
     }
   }
+}
+
+/* PDF Export Printing helper to hide UI control buttons during snapshots */
+.is-exporting-pdf .export-hidden {
+  display: none !important;
 }

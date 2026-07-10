@@ -1,5 +1,6 @@
 import { apiClient } from './api';
 import { Airport, City, Country, TrainStation, Currency, PaginatedResponse } from './planner.types';
+import type { Suggestion } from '@/features/planner/workspace/plan-canvas/types';
 
 export const referenceService = {
   searchAirports: async (query: string) => {
@@ -37,33 +38,70 @@ export const referenceService = {
     return Array.isArray(res) ? res : res.results;
   },
 
-  exploreRestaurants: async (location: string) => {
-    const res = await apiClient.get<any>(`/reference/restaurants/explore/?location=${encodeURIComponent(location)}`);
-    return res.results || res.data || res;
+  /**
+   * Unified place resolver for plan blocks — one URL, any category.
+   * Returns the same Suggestion envelope the explore endpoints use.
+   */
+  getPlaceDetails: async (placeId: string, category?: string): Promise<Suggestion> => {
+    let url = `/reference/places/details/?place_id=${encodeURIComponent(placeId)}`;
+    if (category) url += `&category=${encodeURIComponent(category)}`;
+    const res = await apiClient.get<{ data: Suggestion }>(url);
+    return res.data;
   },
 
-  getRestaurantDetails: async (id: string | number) => {
-    const res = await apiClient.get<any>(`/reference/restaurants/${id}/details/`);
-    return res.data || res;
+  exploreRestaurants: async (location: string, lat?: number, lng?: number): Promise<Suggestion[]> => {
+    let url = `/reference/restaurants/explore/?location=${encodeURIComponent(location)}`;
+    if (lat !== undefined && lng !== undefined) {
+      url += `&lat=${lat}&lng=${lng}`;
+    }
+    const res = await apiClient.get<{ results: Suggestion[] }>(url);
+    return res.results || [];
   },
 
-  exploreAttractions: async (location: string) => {
-    const res = await apiClient.get<any>(`/reference/attractions/explore/?location=${encodeURIComponent(location)}`);
-    return res.results || res.data || res;
+  getRestaurantDetails: async (id: string | number): Promise<Suggestion> => {
+    const res = await apiClient.get<{ data: Suggestion }>(`/reference/restaurants/${id}/details/`);
+    return res.data;
   },
 
-  getAttractionDetails: async (id: string | number) => {
-    const res = await apiClient.get<any>(`/reference/attractions/${id}/details/`);
-    return res.data || res;
+  exploreAttractions: async (location: string, lat?: number, lng?: number): Promise<Suggestion[]> => {
+    let url = `/reference/attractions/explore/?location=${encodeURIComponent(location)}`;
+    if (lat !== undefined && lng !== undefined) {
+      url += `&lat=${lat}&lng=${lng}`;
+    }
+    const res = await apiClient.get<{ results: Suggestion[] }>(url);
+    return res.results || [];
   },
 
-  exploreActivities: async (location: string) => {
-    const res = await apiClient.get<any>(`/reference/activities/explore/?location=${encodeURIComponent(location)}`);
-    return res.results || res.data || res;
+  getAttractionDetails: async (id: string | number): Promise<Suggestion> => {
+    const res = await apiClient.get<{ data: Suggestion }>(`/reference/attractions/${id}/details/`);
+    return res.data;
   },
 
-  getActivityDetails: async (id: string | number) => {
-    const res = await apiClient.get<any>(`/reference/activities/${id}/details/`);
-    return res.data || res;
+  exploreActivities: async (location: string, lat?: number, lng?: number): Promise<Suggestion[]> => {
+    let url = `/reference/activities/explore/?location=${encodeURIComponent(location)}`;
+    if (lat !== undefined && lng !== undefined) {
+      url += `&lat=${lat}&lng=${lng}`;
+    }
+    const res = await apiClient.get<{ results: Suggestion[] }>(url);
+    return res.results || [];
+  },
+
+  getActivityDetails: async (id: string | number): Promise<Suggestion> => {
+    const res = await apiClient.get<{ data: Suggestion }>(`/reference/activities/${id}/details/`);
+    return res.data;
+  },
+
+  exploreHotels: async (location: string, lat?: number, lng?: number): Promise<Suggestion[]> => {
+    let url = `/reference/hotels/explore/?location=${encodeURIComponent(location)}`;
+    if (lat !== undefined && lng !== undefined) {
+      url += `&lat=${lat}&lng=${lng}`;
+    }
+    const res = await apiClient.get<{ results: Suggestion[] }>(url);
+    return res.results || [];
+  },
+
+  getHotelDetails: async (id: string | number): Promise<Suggestion> => {
+    const res = await apiClient.get<{ data: Suggestion }>(`/reference/hotels/${id}/details/`);
+    return res.data;
   },
 };

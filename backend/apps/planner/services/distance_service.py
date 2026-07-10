@@ -4,6 +4,7 @@ import logging
 import urllib.request
 import urllib.parse
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from django.conf import settings
 from apps.planner.models import LocationDistanceCache
 
@@ -93,61 +94,75 @@ class DistanceService:
         if not missing_pairs:
             return results
 
-        # 2. Fetch missing pairs using Google Maps Distance Matrix API
+        # 2. Fetch missing pairs from the Google Maps Distance Matrix API.
+        # One request per pair: a combined origins|...&destinations|... call
+        # returns (and bills) the full N x N matrix when we only need the
+        # N diagonal elements, and misindexing the matrix silently mispairs
+        # results. Per-pair requests bill exactly one element each.
         api_key = getattr(settings, "GOOGLE_PLACES_API_KEY", None) or os.getenv("GOOGLE_PLACES_API_KEY")
 
-        if api_key and len(missing_pairs) > 0:
-            try:
-                origins_str = "|".join([
-                    f"{p[1].get('lat')},{p[1].get('lng')}" if p[1].get('lat') else p[1].get('name', '')
-                    for p in missing_pairs
-                ])
-                dests_str = "|".join([
-                    f"{p[2].get('lat')},{p[2].get('lng')}" if p[2].get('lat') else p[2].get('name', '')
-                    for p in missing_pairs
-                ])
+        if api_key and missing_pairs:
+            fetched = []
 
-                url = f"https://maps.googleapis.com/maps/api/distancematrix/json?origins={urllib.parse.quote(origins_str)}&destinations={urllib.parse.quote(dests_str)}&mode={mode}&key={api_key}"
+            def _fetch_pair(pair):
+                pair_id, orig, dest, orig_key, dest_key = pair
+                origin_param = (
+                    f"{orig.get('lat')},{orig.get('lng')}" if orig.get('lat') else orig.get('name', '')
+                )
+                dest_param = (
+                    f"{dest.get('lat')},{dest.get('lng')}" if dest.get('lat') else dest.get('name', '')
+                )
+                url = (
+                    "https://maps.googleapis.com/maps/api/distancematrix/json"
+                    f"?origins={urllib.parse.quote(origin_param)}"
+                    f"&destinations={urllib.parse.quote(dest_param)}"
+                    f"&mode={mode}&key={api_key}"
+                )
                 req = urllib.request.Request(url, headers={"User-Agent": "NeuralNomad/1.0"})
-
                 with urllib.request.urlopen(req, timeout=5) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
 
-                if data.get("status") == "OK" and "rows" in data:
-                    rows = data["rows"]
-                    new_cache_objects = []
+                if data.get("status") != "OK":
+                    return None
+                element = data["rows"][0]["elements"][0]
+                if element.get("status") != "OK":
+                    return None
 
-                    for idx, (pair_id, orig, dest, orig_key, dest_key) in enumerate(missing_pairs):
-                        if idx < len(rows) and "elements" in rows[idx] and idx < len(rows[idx]["elements"]):
-                            element = rows[idx]["elements"][idx] if idx < len(rows[idx]["elements"]) else rows[idx]["elements"][0]
-                            if element.get("status") == "OK":
-                                dist_meters = element.get("distance", {}).get("value", 0)
-                                dur_secs = element.get("duration", {}).get("value", 0)
+                dist_km = round(element["distance"]["value"] / 1000.0, 2)
+                dur_mins = max(int(element["duration"]["value"] / 60.0), 3)
+                return pair_id, orig_key, dest_key, dist_km, dur_mins
 
-                                dist_km = round(dist_meters / 1000.0, 2)
-                                dur_mins = max(int(dur_secs / 60.0), 3)
-
-                                results[pair_id] = {
-                                    "distance_km": dist_km,
-                                    "duration_mins": dur_mins,
-                                    "cached": False,
-                                    "source": "google_maps"
-                                }
-
-                                new_cache_objects.append(LocationDistanceCache(
-                                    origin_key=orig_key,
-                                    destination_key=dest_key,
-                                    mode=mode,
-                                    distance_km=dist_km,
-                                    duration_mins=dur_mins
-                                ))
-                                continue
-
-                    if new_cache_objects:
-                        LocationDistanceCache.objects.bulk_create(new_cache_objects, ignore_conflicts=True)
-
+            try:
+                with ThreadPoolExecutor(max_workers=min(8, len(missing_pairs))) as pool:
+                    futures = {pool.submit(_fetch_pair, p): p for p in missing_pairs}
+                    for future in as_completed(futures):
+                        try:
+                            row = future.result()
+                            if row:
+                                fetched.append(row)
+                        except Exception as e:
+                            logger.warning(f"Distance Matrix pair fetch failed: {e}")
             except Exception as e:
-                logger.warning(f"Google Maps Distance API call failed, falling back to Haversine: {e}")
+                logger.warning(f"Google Maps Distance API batch failed, falling back to Haversine: {e}")
+
+            if fetched:
+                # DB writes stay on the request thread; workers only do HTTP.
+                new_cache_objects = []
+                for pair_id, orig_key, dest_key, dist_km, dur_mins in fetched:
+                    results[pair_id] = {
+                        "distance_km": dist_km,
+                        "duration_mins": dur_mins,
+                        "cached": False,
+                        "source": "google_maps"
+                    }
+                    new_cache_objects.append(LocationDistanceCache(
+                        origin_key=orig_key,
+                        destination_key=dest_key,
+                        mode=mode,
+                        distance_km=dist_km,
+                        duration_mins=dur_mins
+                    ))
+                LocationDistanceCache.objects.bulk_create(new_cache_objects, ignore_conflicts=True)
 
         # 3. Haversine fallback for remaining missing pairs
         for pair_id, orig, dest, orig_key, dest_key in missing_pairs:

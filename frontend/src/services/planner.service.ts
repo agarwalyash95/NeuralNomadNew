@@ -6,15 +6,14 @@
 import { apiClient } from './api';
 import type {
   PlannerWorkspace,
-  PlannerMemory,
-  WorkspaceContext,
   ChatMessage,
   ChatResponse,
   PlannerTrip,
-  Recommendation,
-  CanvasInstance,
-  BookingOrder,
-  SavedPlace,
+  PlanProposal,
+  CommitmentStatus,
+  TripLedger,
+  TravelerFact,
+  GenerationJobStatus,
 } from './planner.types';
 
 const BASE = '/planner/workspaces';
@@ -43,26 +42,7 @@ export const plannerService = {
   deleteWorkspace: (id: string) =>
     apiClient.delete(`${BASE}/${id}/`),
 
-  getWorkspaceSummary: (id: string) =>
-    apiClient.get<Record<string, unknown>>(`${BASE}/${id}/summary/`),
-
-  // â”€â”€â”€ Memory â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-  getMemory: (workspaceId: string) =>
-    apiClient.get<PlannerMemory>(`${BASE}/${workspaceId}/memory/`),
-
-  updateMemory: (workspaceId: string, data: Partial<PlannerMemory>) =>
-    apiClient.patch<PlannerMemory>(`${BASE}/${workspaceId}/memory/`, data),
-
-  // â”€â”€â”€ Context â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-  getContext: (workspaceId: string) =>
-    apiClient.get<WorkspaceContext>(`${BASE}/${workspaceId}/context/`),
-
-  updateContext: (workspaceId: string, data: Partial<WorkspaceContext>) =>
-    apiClient.patch<WorkspaceContext>(`${BASE}/${workspaceId}/context/`, data),
-
-  // â”€â”€â”€ Chat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Chat ────────────────────────────────────────────────
 
   listMessages: (workspaceId: string) =>
     apiClient.get<ChatMessage[]>(`${BASE}/${workspaceId}/chat/`),
@@ -70,13 +50,18 @@ export const plannerService = {
   sendMessage: (workspaceId: string, message: string, structured_value?: any) =>
     apiClient.post<ChatResponse>(`${BASE}/${workspaceId}/chat/`, { message, structured_value }),
 
+  /** Kicks off background generation — returns 202 with the job to poll */
   createPlan: (workspaceId: string) =>
-    apiClient.post<PlannerTrip>(`${BASE}/${workspaceId}/plan/`),
+    apiClient.post<GenerationJobStatus>(`${BASE}/${workspaceId}/plan/`),
+
+  /** Real generation progress — poll ~1s while the loading screen shows */
+  getPlanStatus: (workspaceId: string) =>
+    apiClient.get<GenerationJobStatus>(`${BASE}/${workspaceId}/plan/status/`),
 
   // â”€â”€â”€ Plan â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   getPlan: (workspaceId: string) => {
-    if (typeof window !== 'undefined') {
+    if (process.env.NODE_ENV !== 'production' && typeof window !== 'undefined') {
       const mockScenario = localStorage.getItem('DEV_mockScenario');
       if (mockScenario && mockScenario !== 'none') {
         return apiClient.get<PlannerTrip>(`/planner/debug/scenario/${mockScenario}/`);
@@ -88,32 +73,99 @@ export const plannerService = {
   updatePlan: (workspaceId: string, data: Partial<PlannerTrip>) =>
     apiClient.patch<PlannerTrip>(`${BASE}/${workspaceId}/plan/`, data),
 
-  // â”€â”€â”€ Recommendations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Plan lifecycle: Recent → Saved → Booked ─────────────
 
-  getRecommendations: (workspaceId: string) =>
-    apiClient.get<Recommendation[]>(`${BASE}/${workspaceId}/recommendations/`),
+  /** Save the plan — workspace moves to the Saved bucket until modified again */
+  saveWorkspacePlan: (workspaceId: string) =>
+    apiClient.post<PlannerWorkspace>(`${BASE}/${workspaceId}/save/`),
 
-  // â”€â”€â”€ Canvases â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  /**
+   * Book the whole trip. 409 with {blocking_blocks} when costed blocks lack
+   * booked commitments — drive those through transitionBlocks first.
+   */
+  bookWorkspace: (workspaceId: string, options?: { allow_partial?: boolean }) =>
+    apiClient.post<{ workspace: PlannerWorkspace; trip?: PlannerTrip; blocking_blocks?: { block_id: string; title: string; status: string }[] }>(
+      `${BASE}/${workspaceId}/book/`,
+      options ?? {}
+    ),
 
-  listCanvases: (workspaceId: string) =>
-    apiClient.get<CanvasInstance[]>(`${BASE}/${workspaceId}/canvases/`),
+  /**
+   * Verify a block's price against real data. The server writes cost +
+   * provenance atomically and returns the updated block. 404 = honest miss.
+   */
+  verifyBlock: (
+    workspaceId: string,
+    blockId: string,
+    context: {
+      service_type: string;
+      date: string;
+      provider?: string;
+      code?: string;
+      origin?: string;
+      destination?: string;
+    }
+  ) =>
+    apiClient.post<{ verified: boolean; block: any; price: any }>(
+      `${BASE}/${workspaceId}/blocks/${blockId}/verify/`,
+      context
+    ),
 
-  createCanvas: (workspaceId: string, data: Partial<CanvasInstance>) =>
-    apiClient.post<CanvasInstance>(`${BASE}/${workspaceId}/canvases/`, data),
+  // ─── Commitments & Ledger ────────────────────────────────
 
-  // â”€â”€â”€ Cart â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  /** Move blocks up the commitment ladder: priced → held → booked → ticketed */
+  transitionBlocks: (
+    workspaceId: string,
+    data: {
+      to: CommitmentStatus;
+      block_ids: string[];
+      quote?: { amount: number; currency?: string; expires_at?: string };
+      refundable_until?: string;
+      provider_ref?: string;
+    }
+  ) =>
+    apiClient.post<{ transitioned: string[]; errors: Record<string, string>; trip: PlannerTrip }>(
+      `${BASE}/${workspaceId}/blocks/transition/`,
+      data
+    ),
 
-  listCart: (workspaceId: string) =>
-    apiClient.get<BookingOrder[]>(`${BASE}/${workspaceId}/cart/`),
+  getLedger: (workspaceId: string) =>
+    apiClient.get<TripLedger>(`${BASE}/${workspaceId}/ledger/`),
 
-  addToCart: (workspaceId: string, data: Partial<BookingOrder>) =>
-    apiClient.post<BookingOrder>(`${BASE}/${workspaceId}/cart/`, data),
+  // ─── Traveler memory (inspectable, deletable) ────────────
 
-  // â”€â”€â”€ Saved Places â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  getTravelerProfile: () =>
+    apiClient.get<{ facts: TravelerFact[] }>(`/planner/profile/`),
 
-  listPlaces: (workspaceId: string) =>
-    apiClient.get<SavedPlace[]>(`${BASE}/${workspaceId}/places/`),
+  deleteTravelerFact: (key: string) =>
+    apiClient.delete<{ deleted: number }>(`/planner/profile/?key=${encodeURIComponent(key)}`),
 
-  savePlace: (workspaceId: string, data: Partial<SavedPlace>) =>
-    apiClient.post<SavedPlace>(`${BASE}/${workspaceId}/places/`, data),
+  // ─── Price watches — standing tasks; findings arrive as proposals ──
+
+  watchBlock: (workspaceId: string, blockId: string, thresholdAmount?: number) =>
+    apiClient.post<{ watching: boolean; block_id: string }>(
+      `${BASE}/${workspaceId}/blocks/${blockId}/watch/`,
+      thresholdAmount !== undefined ? { threshold_amount: thresholdAmount } : {}
+    ),
+
+  unwatchBlock: (workspaceId: string, blockId: string) =>
+    apiClient.delete<{ watching: boolean }>(`${BASE}/${workspaceId}/blocks/${blockId}/watch/`),
+
+  // ─── Proposals — AI proposes, the traveler decides ──────
+
+  listProposals: (workspaceId: string) =>
+    apiClient.get<PlanProposal[]>(`${BASE}/${workspaceId}/proposals/`),
+
+  createProposal: (workspaceId: string, data: Partial<PlanProposal>) =>
+    apiClient.post<PlanProposal>(`${BASE}/${workspaceId}/proposals/`, data),
+
+  acceptProposal: (workspaceId: string, proposalId: string) =>
+    apiClient.post<{ status: string; proposal: PlanProposal; trip: PlannerTrip }>(
+      `${BASE}/${workspaceId}/proposals/${proposalId}/accept/`
+    ),
+
+  rejectProposal: (workspaceId: string, proposalId: string, reason?: string) =>
+    apiClient.post<{ status: string; proposal: PlanProposal }>(
+      `${BASE}/${workspaceId}/proposals/${proposalId}/reject/`,
+      { reason }
+    ),
 };

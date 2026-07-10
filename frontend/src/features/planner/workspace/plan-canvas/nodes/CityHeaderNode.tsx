@@ -1,5 +1,5 @@
 import { MoreVertical, CloudSun, ChevronDown } from 'lucide-react';
-import { ItineraryCity } from '../mockData';
+import { ItineraryCity } from '../types';
 
 interface CityHeaderNodeProps {
   city: ItineraryCity;
@@ -27,8 +27,12 @@ export default function CityHeaderNode({ city, isCollapsed, onToggle }: CityHead
             <span>{city.nights} Nights</span>
             <span className="text-slate-300">•</span>
             <span>{city.dateRange}</span>
-            <span className="text-slate-300">•</span>
-            <span className="flex items-center gap-1"><CloudSun size={12} /> {city.weather}</span>
+            {city.weather && (
+              <>
+                <span className="text-slate-300">•</span>
+                <span className="flex items-center gap-1"><CloudSun size={12} /> {city.weather}</span>
+              </>
+            )}
           </div>
         </div>
 

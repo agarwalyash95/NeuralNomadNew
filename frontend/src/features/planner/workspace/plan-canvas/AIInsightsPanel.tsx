@@ -18,17 +18,21 @@ import {
   Bus
 } from 'lucide-react';
 
-import { ItineraryItem } from './mockData';
+import { ItineraryItem } from './types';
+import { ProvenanceBadge } from '@/features/planner/components/ProvenanceBadge';
+import RichHoverCard from './RichHoverCard';
 
 interface AIInsightsPanelProps {
   item: ItineraryItem | null;
   onSwapItem?: (newItem: ItineraryItem) => void;
+  /** Opens the matching Helper Canvas to search real alternatives */
+  onExplore?: (item: ItineraryItem) => void;
 }
 
-export default function AIInsightsPanel({ item, onSwapItem }: AIInsightsPanelProps) {
+export default function AIInsightsPanel({ item, onSwapItem, onExplore }: AIInsightsPanelProps) {
   if (!item) {
     return (
-      <div className="flex h-full w-full flex-col items-center justify-center p-6 text-center bg-[#fbfaf7]">
+      <div className="flex h-full w-full flex-col items-center justify-center p-6 text-center bg-paper-1">
         <Compass size={40} className="text-slate-300 animate-pulse mb-3" />
         <h4 className="text-sm font-bold text-slate-800 uppercase tracking-widest">No Item Selected</h4>
         <p className="mt-1 max-w-xs text-xs text-slate-400">Hover over any itinerary item on the left to instantly reveal smart AI insights and coordinates details.</p>
@@ -36,46 +40,23 @@ export default function AIInsightsPanel({ item, onSwapItem }: AIInsightsPanelPro
     );
   }
 
-  // Read pre-cached insights directly from DB item if present, or generate dynamic fallback
+  // Only real, pre-computed insights are shown — we never invent alternatives
   const cachedInsights = (item as any)?._aiInsights;
 
-  const candidates: ItineraryItem[] = cachedInsights?.candidates ? cachedInsights.candidates.map((c: any) => ({
-    id: c.id || `candidate-${c.title}-${item.id}`,
-    type: item.type,
-    title: c.title,
-    subtitle: c.subtitle || 'Top Recommended Choice',
-    price: c.price || item.price || 'INR 500',
-    rating: c.rating || 4.8,
-    status: 'Pending',
-    aiTip: c.aiTip || 'Great local choice.',
-    latitude: item.latitude ? item.latitude + 0.003 : undefined,
-    longitude: item.longitude ? item.longitude + 0.003 : undefined,
-  })) : [
-    {
-      id: `candidate-1-${item.id}`,
-      type: item.type,
-      title: `${item.title} (Authentic Choice)`,
-      subtitle: item.subtitle || 'Top Local Pick',
-      price: item.price ? `INR ${Math.round(parseInt(item.price.replace(/[^\d]/g, '') || '500', 10) * 0.85)}` : 'INR 450',
-      rating: 4.8,
-      status: 'Pending',
-      aiTip: 'Highly recommended by local guides for authentic atmosphere and shorter waiting times.',
-      latitude: item.latitude ? item.latitude + 0.005 : undefined,
-      longitude: item.longitude ? item.longitude + 0.005 : undefined,
-    },
-    {
-      id: `candidate-2-${item.id}`,
-      type: item.type,
-      title: `Boutique ${item.title} Experience`,
-      subtitle: 'Scenic Viewspot',
-      price: item.price ? `INR ${Math.round(parseInt(item.price.replace(/[^\d]/g, '') || '500', 10) * 1.25)}` : 'INR 1,200',
-      rating: 4.9,
-      status: 'Pending',
-      aiTip: 'Offers panoramic sunset views and premium service quality.',
-      latitude: item.latitude ? item.latitude - 0.004 : undefined,
-      longitude: item.longitude ? item.longitude - 0.004 : undefined,
-    },
-  ];
+  const candidates: ItineraryItem[] = cachedInsights?.candidates
+    ? cachedInsights.candidates.map((c: any) => ({
+        id: c.id || `candidate-${c.title}-${item.id}`,
+        type: item.type,
+        title: c.title,
+        subtitle: c.subtitle || '',
+        price: c.price,
+        rating: c.rating,
+        status: 'Pending',
+        aiTip: c.aiTip,
+        latitude: c.latitude,
+        longitude: c.longitude,
+      }))
+    : [];
 
 
   // Derive styles and icons based on item type
@@ -160,7 +141,7 @@ export default function AIInsightsPanel({ item, onSwapItem }: AIInsightsPanelPro
   const theme = getCategoryTheme();
 
   return (
-    <div className="flex h-full w-full flex-col bg-[#fbfaf7] overflow-y-auto custom-scrollbar border-t border-[#e2ddd2] lg:border-t-0 p-4 lg:p-6 select-none">
+    <div className="flex h-full w-full flex-col bg-paper-1 overflow-y-auto custom-scrollbar border-t border-line lg:border-t-0 p-4 lg:p-6 select-none">
       <AnimatePresence mode="wait">
         <motion.div
           key={item.id}
@@ -202,9 +183,12 @@ export default function AIInsightsPanel({ item, onSwapItem }: AIInsightsPanelPro
             </div>
 
             {item.price && (
-              <div className="text-right shrink-0">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest block">Est. Cost</span>
+              <div className="flex flex-col items-end shrink-0">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest block">
+                  {item.cost?.provenance?.tier === 'verified' ? 'Cost' : 'Est. Cost'}
+                </span>
                 <span className="text-lg font-black text-slate-900">{item.price}</span>
+                <ProvenanceBadge provenance={item.cost?.provenance} className="mt-1" />
               </div>
             )}
           </div>
@@ -225,18 +209,23 @@ export default function AIInsightsPanel({ item, onSwapItem }: AIInsightsPanelPro
             </div>
           )}
 
+          {/* B2. Rich place facts — photos/hours/phone/website from reference data */}
+          <RichHoverCard item={item} />
+
           {/* C. AI Insights Cards Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {/* 1. Main AI Recommendation/Tip */}
-            <div className={`col-span-1 md:col-span-2 rounded-[18px] border p-3.5 bg-white/70 shadow-2xs backdrop-blur-xs ${theme.cardBorder}`}>
-              <div className="flex items-center gap-2 text-indigo-700">
-                <Sparkles size={15} className="text-indigo-500 fill-indigo-200 animate-pulse" />
-                <h4 className="text-[11px] font-extrabold uppercase tracking-widest text-indigo-950">AI Smart Recommendation</h4>
+            {/* 1. Main AI Recommendation/Tip — only rendered when a real tip exists */}
+            {item.aiTip && (
+              <div className={`col-span-1 md:col-span-2 rounded-[18px] border p-3.5 bg-white/70 shadow-2xs backdrop-blur-xs ${theme.cardBorder}`}>
+                <div className="flex items-center gap-2 text-indigo-700">
+                  <Sparkles size={15} className="text-indigo-500 fill-indigo-200" />
+                  <h4 className="text-[11px] font-extrabold uppercase tracking-widest text-indigo-950">AI Smart Recommendation</h4>
+                </div>
+                <p className="mt-1.5 text-xs font-semibold leading-relaxed text-slate-800 italic">
+                  &quot;{item.aiTip}&quot;
+                </p>
               </div>
-              <p className="mt-1.5 text-xs font-semibold leading-relaxed text-slate-800 italic">
-                &quot;{item.aiTip || `Excellent plan to kickstart your travel phase! We suggest coordinating your timings with local daylight hours and keeping weather conditions in mind.`}&quot;
-              </p>
-            </div>
+            )}
 
             {/* 2. Local Indian Context */}
             <div className="rounded-[18px] border border-slate-200/80 p-3 bg-white/60 shadow-2xs">
@@ -274,46 +263,63 @@ export default function AIInsightsPanel({ item, onSwapItem }: AIInsightsPanelPro
             </div>
           </div>
 
-          {/* D. AI 1-Click Candidate Alternatives */}
+          {/* D. Alternatives — real cached candidates, or an honest path to search */}
           <div className="mt-1 flex flex-col gap-2 border-t border-slate-200/80 pt-3">
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-slate-800">
                 <Sparkles size={13} className="text-blue-600" />
-                AI Smart Alternatives
+                Alternatives
               </span>
-              <span className="text-[10px] font-semibold text-slate-400">1-Click Swap</span>
+              {candidates.length > 0 && (
+                <span className="text-[10px] font-semibold text-slate-400">1-Click Swap</span>
+              )}
             </div>
 
-            <div className="grid grid-cols-1 gap-2">
-              {candidates.map((cand) => (
-                <div
-                  key={cand.id}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-2.5 shadow-2xs transition-all hover:border-blue-300 hover:shadow-xs"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h5 className="text-xs font-bold text-slate-900 truncate">{cand.title}</h5>
-                      {cand.rating && (
-                        <span className="flex items-center gap-0.5 rounded-full bg-amber-50 px-1.5 py-0.2 text-[9px] font-bold text-amber-700">
-                          <Star size={10} className="fill-amber-400 text-amber-400" /> {cand.rating}
-                        </span>
-                      )}
+            {candidates.length > 0 ? (
+              <div className="grid grid-cols-1 gap-2">
+                {candidates.map((cand) => (
+                  <div
+                    key={cand.id}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-2.5 shadow-2xs transition-all hover:border-blue-300 hover:shadow-xs"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h5 className="text-xs font-bold text-slate-900 truncate">{cand.title}</h5>
+                        {cand.rating && (
+                          <span className="flex items-center gap-0.5 rounded-full bg-amber-50 px-1.5 py-0.2 text-[9px] font-bold text-amber-700">
+                            <Star size={10} className="fill-amber-400 text-amber-400" /> {cand.rating}
+                          </span>
+                        )}
+                      </div>
+                      {cand.aiTip && <p className="text-[10px] text-slate-500 truncate">{cand.aiTip}</p>}
                     </div>
-                    <p className="text-[10px] text-slate-500 truncate">{cand.aiTip}</p>
-                  </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-xs font-black text-slate-800">{cand.price}</span>
-                    <button
-                      onClick={() => onSwapItem?.(cand)}
-                      className="rounded-lg bg-blue-600 px-2.5 py-1 text-[10px] font-bold text-white shadow-2xs hover:bg-blue-700 transition-colors cursor-pointer"
-                    >
-                      Swap
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {cand.price && <span className="text-xs font-black text-slate-800">{cand.price}</span>}
+                      <button
+                        onClick={() => onSwapItem?.(cand)}
+                        className="rounded-lg bg-blue-600 px-2.5 py-1 text-[10px] font-bold text-white shadow-2xs hover:bg-blue-700 transition-colors cursor-pointer"
+                      >
+                        Swap
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col items-start gap-2 rounded-xl border border-dashed border-slate-300 bg-white/50 p-3">
+                <p className="text-[11px] font-medium leading-relaxed text-slate-500">
+                  I don&apos;t have verified alternatives for this yet. Want me to search
+                  real options nearby?
+                </p>
+                <button
+                  onClick={() => onExplore?.(item)}
+                  className="rounded-lg bg-blue-600 px-3 py-1.5 text-[11px] font-bold text-white shadow-2xs transition-colors hover:bg-blue-700 cursor-pointer"
+                >
+                  Search real alternatives
+                </button>
+              </div>
+            )}
           </div>
         </motion.div>
       </AnimatePresence>

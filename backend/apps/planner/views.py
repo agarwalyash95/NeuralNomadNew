@@ -4,12 +4,13 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from apps.planner.models import PlannerWorkspace, TripDraftState
+from apps.planner.models import PlannerWorkspace, PlanProposal, TripDraftState
 from apps.planner.serializers import (
     ChatResponseSerializer,
     PlannerChatMessageSerializer,
     PlannerTripSerializer,
     PlannerWorkspaceSerializer,
+    PlanProposalSerializer,
     TripDraftStateSerializer,
 )
 from apps.planner.services.conversation_service import ConversationService
@@ -88,11 +89,36 @@ class PlannerWorkspaceViewSet(viewsets.ModelViewSet):
         service = ConversationService()
 
         if request.method == "POST":
-            try:
-                trip = service.create_plan(workspace)
-            except ValueError as exc:
-                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-            return Response(PlannerTripSerializer(trip).data, status=status.HTTP_201_CREATED)
+            # ?sync=1 keeps the old blocking single-request path (tests,
+            # rollback valve). Default is the background pipeline + polling.
+            if request.query_params.get("sync") == "1":
+                try:
+                    trip = service.create_plan(workspace)
+                except ValueError as exc:
+                    return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(PlannerTripSerializer(trip).data, status=status.HTTP_201_CREATED)
+
+            draft = getattr(workspace, "draft_state", None)
+            if draft is None or not draft.is_ready_for_plan:
+                return Response(
+                    {"detail": "Destination and travel dates are required before creating a plan."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            from django.db import transaction as db_transaction
+
+            from apps.planner.services.plan_generation import (
+                serialize_job,
+                spawn_generation_thread,
+                start_generation_job,
+            )
+
+            job, created = start_generation_job(workspace)
+            if created:
+                # ATOMIC_REQUESTS wraps this view — the thread must not start
+                # before the job row is committed and visible to it.
+                db_transaction.on_commit(lambda: spawn_generation_thread(job.id))
+            return Response(serialize_job(job), status=status.HTTP_202_ACCEPTED)
 
         if not hasattr(workspace, "trip"):
             return Response({"detail": "Plan has not been created yet."}, status=status.HTTP_404_NOT_FOUND)
@@ -101,9 +127,475 @@ class PlannerWorkspaceViewSet(viewsets.ModelViewSet):
             serializer = PlannerTripSerializer(workspace.trip, data=request.data, partial=True)
             serializer.is_valid(raise_exception=True)
             serializer.save()
+            workspace.is_modified = True
+            workspace.save(update_fields=["is_modified", "updated_at"])
             return Response(serializer.data)
 
         return Response(PlannerTripSerializer(workspace.trip).data)
+
+    @action(detail=True, methods=["get"], url_path="plan/status")
+    def plan_status(self, request, pk=None):
+        """Real generation progress — the loading screen polls this ~1s."""
+        workspace = self.get_object()
+
+        from apps.planner.services.plan_generation import serialize_job
+
+        job = workspace.generation_jobs.filter(is_deleted=False).order_by("-created_at").first()
+        if job is None:
+            return Response({"detail": "No generation job for this workspace."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(serialize_job(job))
+
+    # ── Plan lifecycle: Recent → Saved → Booked ──────────────────────────────
+
+    @action(detail=True, methods=["post"], url_path="save")
+    def save_plan(self, request, pk=None):
+        """
+        Save the current plan: the workspace leaves the Recent bucket and
+        appears under Saved until it's modified again. The pristine generated
+        snapshot (PlannerTripOriginal) is untouched — save records intent,
+        not history.
+        """
+        workspace = self.get_object()
+        if not hasattr(workspace, "trip"):
+            return Response({"detail": "Plan has not been created yet."}, status=status.HTTP_404_NOT_FOUND)
+
+        from django.utils import timezone
+
+        trip = workspace.trip
+        trip.metadata = {**(trip.metadata or {}), "saved_snapshot_at": timezone.now().isoformat()}
+        # Only metadata: bumping trip.updated_at here would expire open
+        # proposals via the staleness guard even though the plan didn't change.
+        trip.save(update_fields=["metadata"])
+
+        workspace.status = PlannerWorkspace.STATUS_SAVED
+        workspace.is_modified = False
+        workspace.save(update_fields=["status", "is_modified", "updated_at"])
+        return Response(PlannerWorkspaceSerializer(workspace).data)
+
+    @action(detail=True, methods=["post"], url_path="book")
+    def book(self, request, pk=None):
+        """
+        Book the whole trip. Strict by default: every active block that has a
+        cost must already hold a booked/ticketed commitment — otherwise 409
+        with the blocking blocks so Checkout can drive them through
+        blocks/transition/ first. {"allow_partial": true} acknowledges the
+        gaps without marking the trip booked.
+        """
+        workspace = self.get_object()
+        if not hasattr(workspace, "trip"):
+            return Response({"detail": "Plan has not been created yet."}, status=status.HTTP_404_NOT_FOUND)
+
+        from apps.planner.models import PlanBlockCommitment
+        from apps.planner.services.block_schema import upcast_activity
+        from apps.planner.services.commitments import _iter_active_blocks
+
+        trip = workspace.trip
+        booked_ids = set(
+            workspace.commitments.filter(
+                is_deleted=False,
+                status__in=[PlanBlockCommitment.STATUS_BOOKED, PlanBlockCommitment.STATUS_TICKETED],
+            ).values_list("block_id", flat=True)
+        )
+
+        blocking = []
+        for block in _iter_active_blocks(trip):
+            upcast_activity(block, trip.currency_code or "INR")
+            # Costless blocks (free attractions, walks) never gate booking
+            if (block.get("cost") or {}).get("amount") is None:
+                continue
+            if str(block.get("id")) not in booked_ids:
+                blocking.append({
+                    "block_id": str(block.get("id")),
+                    "title": block.get("title", ""),
+                    "status": block.get("block_status", "planned"),
+                })
+
+        if blocking:
+            if request.data.get("allow_partial"):
+                return Response({
+                    "detail": "Committed blocks are booked; trip stays un-booked until all items are.",
+                    "blocking_blocks": blocking,
+                    "workspace": PlannerWorkspaceSerializer(workspace).data,
+                })
+            return Response(
+                {"detail": "Some items are not booked yet.", "blocking_blocks": blocking},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        workspace.status = PlannerWorkspace.STATUS_BOOKED
+        workspace.is_modified = False
+        workspace.save(update_fields=["status", "is_modified", "updated_at"])
+        return Response({
+            "workspace": PlannerWorkspaceSerializer(workspace).data,
+            "trip": PlannerTripSerializer(trip).data,
+        })
+
+    @action(detail=True, methods=["post"], url_path=r"blocks/(?P<block_id>[^/]+)/verify")
+    def verify_block(self, request, pk=None, block_id=None):
+        """
+        Check a block's price against real data and record provenance.
+
+        The client supplies search context (service_type, origin, destination,
+        date, provider, code) because the view model owns display context;
+        the server owns the write. A miss returns 404 and the block keeps its
+        current tier — an honest "couldn't verify" is a valid outcome.
+        """
+        workspace = self.get_object()
+        if not hasattr(workspace, "trip"):
+            return Response({"detail": "Plan has not been created yet."}, status=status.HTTP_404_NOT_FOUND)
+
+        from apps.planner.services.block_schema import apply_price_result, find_block
+        from apps.reference.services.live_price import lookup_live_price
+
+        trip = workspace.trip
+        block, _day = find_block(trip, block_id)
+        if block is None:
+            return Response({"detail": "Block not found in this plan."}, status=status.HTTP_404_NOT_FOUND)
+
+        service_type = request.data.get("service_type") or (block.get("category") or "").lower()
+        if service_type == "taxi":
+            service_type = "cab"
+        date_str = request.data.get("date") or ""
+        if not date_str:
+            return Response({"detail": "date is required to verify a price."}, status=status.HTTP_400_BAD_REQUEST)
+
+        result = lookup_live_price(
+            service_type=service_type,
+            date_str=date_str,
+            provider=request.data.get("provider", block.get("title", "")),
+            code=request.data.get("code", ""),
+            origin=request.data.get("origin", ""),
+            destination=request.data.get("destination", ""),
+        )
+
+        if result is None:
+            return Response(
+                {"detail": "No live or historical price found for this item.", "verified": False},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        apply_price_result(block, result, default_currency=trip.currency_code)
+        trip.save()
+
+        return Response({"verified": True, "block": block, "price": result})
+
+    # ── Commitments — money state machine + the ledger ──────────────────────
+
+    @action(detail=True, methods=["post"], url_path="blocks/transition")
+    def transition_blocks(self, request, pk=None):
+        """
+        Move blocks up the commitment ladder: priced → held → booked → ticketed.
+        Body: {to, block_ids: [...], quote?, refundable_until?, provider_ref?}
+        Invalid jumps fail per-block instead of silently corrupting money state.
+        """
+        workspace = self.get_object()
+        to = request.data.get("to")
+        block_ids = request.data.get("block_ids") or []
+        if not to or not block_ids:
+            return Response({"detail": "to and block_ids are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        from apps.planner.services.commitments import TransitionError, transition_blocks
+
+        try:
+            updated, errors = transition_blocks(
+                workspace,
+                block_ids,
+                to,
+                quote=request.data.get("quote"),
+                refundable_until=request.data.get("refundable_until"),
+                provider_ref=request.data.get("provider_ref", ""),
+            )
+        except TransitionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({
+            "transitioned": [c.block_id for c in updated],
+            "errors": errors,
+            "trip": PlannerTripSerializer(workspace.trip).data,
+        })
+
+    @action(detail=True, methods=["get"], url_path="ledger")
+    def ledger(self, request, pk=None):
+        """One honest home for money: committed vs planned vs budget, by tier."""
+        workspace = self.get_object()
+
+        from apps.planner.services.commitments import compute_ledger
+
+        ledger = compute_ledger(workspace)
+        if ledger is None:
+            return Response({"detail": "Plan has not been created yet."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(ledger)
+
+    # ── Proposals — every agent/tool change flows through accept/reject ──────
+
+    @action(detail=True, methods=["get", "post"], url_path="proposals")
+    def proposals(self, request, pk=None):
+        workspace = self.get_object()
+
+        if request.method == "GET":
+            qs = workspace.proposals.filter(is_deleted=False)[:20]
+            return Response(PlanProposalSerializer(qs, many=True).data)
+
+        if not hasattr(workspace, "trip"):
+            return Response({"detail": "Plan has not been created yet."}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = PlanProposalSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        proposal = serializer.save(
+            workspace=workspace,
+            base_trip_updated_at=workspace.trip.updated_at,
+        )
+        return Response(PlanProposalSerializer(proposal).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path=r"proposals/(?P<proposal_id>[^/]+)/accept")
+    def accept_proposal(self, request, pk=None, proposal_id=None):
+        """
+        Apply a proposal's diff atomically. If the plan changed since the
+        proposal was computed, it expires instead of mis-merging — the user
+        sees "plan changed since this was suggested", never a corrupted merge.
+        """
+        workspace = self.get_object()
+        try:
+            proposal = workspace.proposals.get(id=proposal_id, is_deleted=False)
+        except PlanProposal.DoesNotExist:
+            return Response({"detail": "Proposal not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if proposal.status != PlanProposal.STATUS_OPEN:
+            return Response({"detail": f"Proposal is already {proposal.status}."}, status=status.HTTP_409_CONFLICT)
+        if not hasattr(workspace, "trip"):
+            return Response({"detail": "Plan has not been created yet."}, status=status.HTTP_404_NOT_FOUND)
+
+        from django.utils import timezone
+
+        trip = workspace.trip
+
+        # Staleness guard
+        if proposal.base_trip_updated_at and trip.updated_at > proposal.base_trip_updated_at:
+            proposal.status = PlanProposal.STATUS_EXPIRED
+            proposal.resolved_at = timezone.now()
+            proposal.save(update_fields=["status", "resolved_at", "updated_at"])
+            return Response(
+                {"detail": "The plan changed since this was suggested.", "status": "expired"},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        from apps.planner.services.block_schema import upcast_trip_payload
+
+        after_days = (proposal.diff or {}).get("after", {}).get("days", [])
+        if not after_days:
+            return Response({"detail": "Proposal has no applicable diff."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Replace affected days by day_number, atomically
+        days_by_number = {str(d.get("day_number")): d for d in after_days}
+        new_days = [
+            days_by_number.get(str(day.get("day_number")), day)
+            for day in (trip.days or [])
+        ]
+        payload = upcast_trip_payload(
+            {"currency_code": trip.currency_code, "days": new_days, "cities": trip.cities or []},
+            default_currency=trip.currency_code or "INR",
+        )
+        trip.days = payload["days"]
+        trip.save()
+
+        workspace.is_modified = True
+        workspace.save(update_fields=["is_modified", "updated_at"])
+
+        proposal.status = PlanProposal.STATUS_ACCEPTED
+        proposal.resolved_at = timezone.now()
+        proposal.save(update_fields=["status", "resolved_at", "updated_at"])
+
+        return Response({
+            "status": "accepted",
+            "proposal": PlanProposalSerializer(proposal).data,
+            "trip": PlannerTripSerializer(trip).data,
+        })
+
+    @action(detail=True, methods=["post"], url_path=r"proposals/(?P<proposal_id>[^/]+)/reject")
+    def reject_proposal(self, request, pk=None, proposal_id=None):
+        """Rejections carry the reason — the agent must never re-propose rejected ideas."""
+        workspace = self.get_object()
+        try:
+            proposal = workspace.proposals.get(id=proposal_id, is_deleted=False)
+        except PlanProposal.DoesNotExist:
+            return Response({"detail": "Proposal not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if proposal.status != PlanProposal.STATUS_OPEN:
+            return Response({"detail": f"Proposal is already {proposal.status}."}, status=status.HTTP_409_CONFLICT)
+
+        from django.utils import timezone
+
+        proposal.status = PlanProposal.STATUS_REJECTED
+        proposal.rejection_reason = (request.data.get("reason") or "")[:300]
+        proposal.resolved_at = timezone.now()
+        proposal.save(update_fields=["status", "rejection_reason", "resolved_at", "updated_at"])
+
+        # Traveler memory: a rejection with a reason is a durable preference
+        if proposal.rejection_reason:
+            try:
+                from apps.planner.models import TravelerProfile
+
+                profile, _ = TravelerProfile.objects.get_or_create(user=workspace.user)
+                profile.upsert_fact(
+                    f"rejected.{proposal.kind}",
+                    proposal.rejection_reason,
+                    provenance="stated",
+                    source_trip=workspace.id,
+                )
+            except Exception as exc:
+                print(f"Rejection fact recording failed (non-fatal): {exc}")
+
+        return Response({"status": "rejected", "proposal": PlanProposalSerializer(proposal).data})
+
+    # ── Price watches — standing tasks; findings arrive as proposals ─────────
+
+    @action(detail=True, methods=["post", "delete"], url_path=r"blocks/(?P<block_id>[^/]+)/watch")
+    def watch_block(self, request, pk=None, block_id=None):
+        """POST creates/activates a watch on this block's price; DELETE deactivates it."""
+        workspace = self.get_object()
+        if not hasattr(workspace, "trip"):
+            return Response({"detail": "Plan has not been created yet."}, status=status.HTTP_404_NOT_FOUND)
+
+        from apps.planner.models import PriceWatch
+        from apps.planner.services.block_schema import find_block
+
+        block, _day = find_block(workspace.trip, block_id)
+        if block is None:
+            return Response({"detail": "Block not found in this plan."}, status=status.HTTP_404_NOT_FOUND)
+
+        if request.method == "DELETE":
+            PriceWatch.objects.filter(workspace=workspace, block_id=str(block_id)).update(active=False)
+            return Response({"watching": False})
+
+        watch, _created = PriceWatch.objects.update_or_create(
+            workspace=workspace,
+            block_id=str(block_id),
+            defaults={
+                "active": True,
+                "threshold_amount": request.data.get("threshold_amount"),
+                "last_price": (block.get("cost") or {}).get("amount"),
+            },
+        )
+        return Response({"watching": True, "block_id": watch.block_id}, status=status.HTTP_201_CREATED)
+
+
+# ── SSE chat streaming ───────────────────────────────────────────────────
+
+_SLOT_CHIPS = {
+    "destination": "Set a destination",
+    "travel_dates": "Pick my dates",
+    "origin": "Set departure city",
+    "optional_details": "Add preferences",
+    "nearby_cities": "Show nearby escapes",
+}
+
+
+def _suggested_replies(result):
+    """Deterministic next-step chips from what the draft still needs —
+    the proactive-planner feel without inventing anything."""
+    chips = [_SLOT_CHIPS[slot] for slot in (result.get("missing_slots") or []) if slot in _SLOT_CHIPS]
+    if result.get("ready_for_plan"):
+        chips.insert(0, "Create my plan ✨")
+    return chips[:4]
+
+
+def _sse(event, payload):
+    import json
+
+    return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
+
+
+def _stream_chat_response(user, message, workspace, structured_value):
+    """
+    One SSE stream per turn. The engine call runs in its own transaction
+    (the request itself is non-atomic so the connection isn't held open for
+    the stream's lifetime); the reply is then delivered as token chunks so
+    the client renders progressively, followed by widgets + done.
+    """
+    import time
+
+    from django.db import transaction as db_transaction
+
+    try:
+        with db_transaction.atomic():
+            result = ConversationService().send_message(
+                user, message=message, workspace=workspace, structured_value=structured_value
+            )
+    except Exception as exc:
+        yield _sse("error", {"detail": str(exc)[:300]})
+        return
+
+    assistant = result["assistant_message"]
+    meta = assistant.metadata or {}
+
+    yield _sse("state", {
+        "workspace_id": str(result["workspace"].id),
+        "detected_intent": meta.get("detected_intent"),
+        "confidence_score": meta.get("confidence_score"),
+        "ready_for_plan": result["ready_for_plan"],
+        "missing_slots": result["missing_slots"],
+        "user_message_id": str(result["user_message"].id),
+    })
+
+    # Word-chunked delivery of the persisted reply (~4 words per event).
+    words = (assistant.message or "").split(" ")
+    for i in range(0, len(words), 4):
+        yield _sse("token", {"t": " ".join(words[i:i + 4]) + (" " if i + 4 < len(words) else "")})
+        time.sleep(0.03)
+
+    yield _sse("widgets", assistant.widgets or [])
+    yield _sse("done", {
+        "message_id": str(assistant.id),
+        "workspace": PlannerWorkspaceSerializer(result["workspace"]).data,
+        "ready_for_plan": result["ready_for_plan"],
+        "missing_slots": result["missing_slots"],
+        "metadata": meta,
+        "suggested_replies": _suggested_replies(result),
+    })
+
+
+def _chat_stream_response(request, workspace):
+    from django.http import StreamingHttpResponse
+
+    message = request.data.get("message", "")
+    structured_value = request.data.get("structured_value")
+    if not message and not structured_value:
+        return Response(
+            {"detail": "message or structured_value is required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    response = StreamingHttpResponse(
+        _stream_chat_response(get_planner_user(request), message, workspace, structured_value),
+        content_type="text/event-stream",
+    )
+    response["Cache-Control"] = "no-cache"
+    response["X-Accel-Buffering"] = "no"  # proxies must not buffer the stream
+    return response
+
+
+from django.db import transaction as _transaction
+
+
+@_transaction.non_atomic_requests
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def lazy_chat_stream(request):
+    """SSE variant of lazy_chat — first message, workspace created lazily."""
+    return _chat_stream_response(request, workspace=None)
+
+
+@_transaction.non_atomic_requests
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def workspace_chat_stream(request, workspace_id=None):
+    """SSE variant of the workspace chat action."""
+    workspace = PlannerWorkspace.objects.filter(
+        id=workspace_id, user=get_planner_user(request), is_deleted=False
+    ).first()
+    if workspace is None:
+        return Response({"detail": "Workspace not found."}, status=status.HTTP_404_NOT_FOUND)
+    return _chat_stream_response(request, workspace)
 
 
 @api_view(["POST"])
@@ -123,6 +615,31 @@ def lazy_chat(request):
         structured_value=structured_value,
     )
     return Response(ChatResponseSerializer(result).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(["GET", "DELETE"])
+@permission_classes([AllowAny])
+def traveler_profile(request):
+    """
+    The consent surface for traveler memory. GET lists every remembered fact
+    with its provenance and source trip; DELETE ?key=... forgets one.
+    Memory the user cannot inspect and delete is memory we don't keep.
+    """
+    from apps.planner.models import TravelerProfile
+
+    user = get_planner_user(request)
+    profile, _ = TravelerProfile.objects.get_or_create(user=user)
+
+    if request.method == "DELETE":
+        key = request.query_params.get("key")
+        if not key:
+            return Response({"detail": "key query param is required"}, status=status.HTTP_400_BAD_REQUEST)
+        before = len(profile.facts or [])
+        profile.facts = [f for f in (profile.facts or []) if f.get("key") != key]
+        profile.save(update_fields=["facts", "updated_at"])
+        return Response({"deleted": before - len(profile.facts)})
+
+    return Response({"facts": profile.facts or []})
 
 
 @api_view(["POST"])

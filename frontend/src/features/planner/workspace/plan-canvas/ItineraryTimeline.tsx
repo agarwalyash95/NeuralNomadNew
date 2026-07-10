@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MockTripData, ItineraryItem } from './mockData';
+import { MockTripData, ItineraryItem } from './types';
 import CityHeaderNode from './nodes/CityHeaderNode';
 import DayHeaderNode from './nodes/DayHeaderNode';
 import TransportNode from './nodes/TransportNode';
@@ -8,7 +8,9 @@ import TransitNode from './nodes/TransitNode';
 import DeletingNode from './nodes/DeletingNode';
 import { Plus } from 'lucide-react';
 import { NodeClickPayload } from '../types';
-import { calculateHaversineDistanceKm, estimateTransitMins, optimizeDayRoute } from './utils/routeOptimizer';
+import { optimizeDayRoute } from './utils/routeOptimizer';
+import { useTransitDistances } from '../hooks/useTransitDistances';
+import { cn } from '@/lib/utils';
 
 import {
   DndContext,
@@ -39,6 +41,9 @@ interface ItineraryTimelineProps {
   onCityEnter?: (cityId: string) => void;
   onDayEnter?: (dayId: string) => void;
   onDataChange?: (newData: MockTripData) => void;
+  onVerifyLivePrice?: (itemId: string) => void;
+  /** Starts a standing price watch — findings arrive later as proposals */
+  onWatchPrice?: (itemId: string) => void;
 }
 
 /** Transport types — use TransportNode (departure/arrival layout) */
@@ -50,11 +55,14 @@ export default function ItineraryTimeline({
   onItemHover,
   onCityEnter,
   onDayEnter,
-  onDataChange
+  onDataChange,
+  onVerifyLivePrice,
+  onWatchPrice
 }: ItineraryTimelineProps) {
   const [localData, setLocalData] = useState<MockTripData>(data);
   const [collapsedCities, setCollapsedCities] = useState<Record<string, boolean>>({});
   const [collapsedDays, setCollapsedDays] = useState<Record<string, boolean>>({});
+  const { getTransit } = useTransitDistances(localData);
 
   useEffect(() => {
     // Preserve any isDeleting/isInactive states from localData when new props arrive
@@ -120,142 +128,138 @@ export default function ItineraryTimeline({
     return null;
   };
 
+  const updateData = (newData: MockTripData, shouldPersist = true) => {
+    setLocalData(newData);
+    if (shouldPersist) {
+      onDataChange?.(newData);
+    }
+  };
+ 
   const handleDragOver = (event: DragOverEvent) => {
     const { active, over } = event;
     if (!over) return;
-
+ 
     const activeInfo = findDayAndCity(active.id);
     const overInfo = findDayAndCity(over.id);
-
+ 
     if (!activeInfo || !overInfo) return;
     if (activeInfo.cityIndex !== overInfo.cityIndex) return;
-
+ 
     if (activeInfo.dayIndex !== overInfo.dayIndex) {
-      setLocalData(prev => {
-        const newData = JSON.parse(JSON.stringify(prev));
-        const activeItem = newData.cities[activeInfo.cityIndex].days[activeInfo.dayIndex].items.splice(activeInfo.itemIndex, 1)[0];
-
-        if (overInfo.isDay) {
-          newData.cities[overInfo.cityIndex].days[overInfo.dayIndex].items.push(activeItem);
-        } else {
-          newData.cities[overInfo.cityIndex].days[overInfo.dayIndex].items.splice(overInfo.itemIndex, 0, activeItem);
-        }
-        onDataChange?.(newData);
-        return newData;
-      });
+      const newData = JSON.parse(JSON.stringify(localData));
+      const activeItem = newData.cities[activeInfo.cityIndex].days[activeInfo.dayIndex].items.splice(activeInfo.itemIndex, 1)[0];
+ 
+      if (overInfo.isDay) {
+        newData.cities[overInfo.cityIndex].days[overInfo.dayIndex].items.push(activeItem);
+      } else {
+        newData.cities[overInfo.cityIndex].days[overInfo.dayIndex].items.splice(overInfo.itemIndex, 0, activeItem);
+      }
+      updateData(newData, false); // Only update visual UI state, do not persist to database
     }
   };
-
+ 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-    if (!over) return;
-
+    if (!over) {
+      // Persist the final drag-over visual positions
+      onDataChange?.(localData);
+      return;
+    }
+ 
     const activeInfo = findDayAndCity(active.id);
     const overInfo = findDayAndCity(over.id);
-
-    if (!activeInfo || !overInfo) return;
-    if (activeInfo.cityIndex !== overInfo.cityIndex) return;
-
+ 
+    if (!activeInfo || !overInfo) {
+      onDataChange?.(localData);
+      return;
+    }
+    if (activeInfo.cityIndex !== overInfo.cityIndex) {
+      onDataChange?.(localData);
+      return;
+    }
+ 
     if (activeInfo.dayIndex === overInfo.dayIndex && activeInfo.itemIndex !== overInfo.itemIndex) {
-      setLocalData(prev => {
-        const newData = JSON.parse(JSON.stringify(prev));
-        const dayItems = newData.cities[activeInfo.cityIndex].days[activeInfo.dayIndex].items;
-        newData.cities[activeInfo.cityIndex].days[activeInfo.dayIndex].items = arrayMove(dayItems, activeInfo.itemIndex, overInfo.itemIndex);
-        onDataChange?.(newData);
-        return newData;
-      });
+      const newData = JSON.parse(JSON.stringify(localData));
+      const dayItems = newData.cities[activeInfo.cityIndex].days[activeInfo.dayIndex].items;
+      newData.cities[activeInfo.cityIndex].days[activeInfo.dayIndex].items = arrayMove(dayItems, activeInfo.itemIndex, overInfo.itemIndex);
+      updateData(newData, true); // Save final position to database
+    } else {
+      // Save the final state after dragging across different days
+      onDataChange?.(localData);
     }
   };
 
   // Safe ID-based soft removal with 5s countdown
   const handleRemove = (itemId: string) => {
-    setLocalData(prev => {
-      const newData = JSON.parse(JSON.stringify(prev));
-      for (const city of newData.cities) {
-        for (const day of city.days) {
-          const item = day.items.find((i: any) => i.id === itemId);
-          if (item) {
-            item.isDeleting = true;
-            break;
-          }
+    const newData = JSON.parse(JSON.stringify(localData));
+    for (const city of newData.cities) {
+      for (const day of city.days) {
+        const item = day.items.find((i: any) => i.id === itemId);
+        if (item) {
+          item.isDeleting = true;
+          break;
         }
       }
-      onDataChange?.(newData);
-      return newData;
-    });
+    }
+    updateData(newData);
   };
 
   const handleUndo = (itemId: string) => {
-    setLocalData(prev => {
-      const newData = JSON.parse(JSON.stringify(prev));
-      for (const city of newData.cities) {
-        for (const day of city.days) {
-          const item = day.items.find((i: any) => i.id === itemId);
-          if (item) {
-            delete item.isDeleting;
-            break;
-          }
+    const newData = JSON.parse(JSON.stringify(localData));
+    for (const city of newData.cities) {
+      for (const day of city.days) {
+        const item = day.items.find((i: any) => i.id === itemId);
+        if (item) {
+          delete item.isDeleting;
+          break;
         }
       }
-      onDataChange?.(newData);
-      return newData;
-    });
+    }
+    updateData(newData);
   };
 
   const handlePermanentRemove = (itemId: string) => {
-    setLocalData(prev => {
-      const newData = JSON.parse(JSON.stringify(prev));
-      for (const city of newData.cities) {
-        for (const day of city.days) {
-          const item = day.items.find((i: any) => i.id === itemId);
-          if (item) {
-            item.isInactive = true;
-            delete item.isDeleting;
-            break;
-          }
+    const newData = JSON.parse(JSON.stringify(localData));
+    for (const city of newData.cities) {
+      for (const day of city.days) {
+        const item = day.items.find((i: any) => i.id === itemId);
+        if (item) {
+          item.isInactive = true;
+          delete item.isDeleting;
+          break;
         }
       }
-      onDataChange?.(newData);
-      return newData;
-    });
+    }
+    updateData(newData);
   };
 
   // Transit soft removal with 5s countdown
   const handleRemoveTransit = (cityId: string) => {
-    setLocalData(prev => {
-      const newData = JSON.parse(JSON.stringify(prev));
-      const city = newData.cities.find((c: any) => c.id === cityId);
-      if (city?.transitToNext) {
-        city.transitToNext.isDeleting = true;
-      }
-      onDataChange?.(newData);
-      return newData;
-    });
+    const newData = JSON.parse(JSON.stringify(localData));
+    const city = newData.cities.find((c: any) => c.id === cityId);
+    if (city?.transitToNext) {
+      city.transitToNext.isDeleting = true;
+    }
+    updateData(newData);
   };
 
   const handleUndoTransit = (cityId: string) => {
-    setLocalData(prev => {
-      const newData = JSON.parse(JSON.stringify(prev));
-      const city = newData.cities.find((c: any) => c.id === cityId);
-      if (city?.transitToNext) {
-        delete city.transitToNext.isDeleting;
-      }
-      onDataChange?.(newData);
-      return newData;
-    });
+    const newData = JSON.parse(JSON.stringify(localData));
+    const city = newData.cities.find((c: any) => c.id === cityId);
+    if (city?.transitToNext) {
+      delete city.transitToNext.isDeleting;
+    }
+    updateData(newData);
   };
 
   const handlePermanentRemoveTransit = (cityId: string) => {
-    setLocalData(prev => {
-      const newData = JSON.parse(JSON.stringify(prev));
-      const city = newData.cities.find((c: any) => c.id === cityId);
-      if (city?.transitToNext) {
-        city.transitToNext.isInactive = true;
-        delete city.transitToNext.isDeleting;
-      }
-      onDataChange?.(newData);
-      return newData;
-    });
+    const newData = JSON.parse(JSON.stringify(localData));
+    const city = newData.cities.find((c: any) => c.id === cityId);
+    if (city?.transitToNext) {
+      city.transitToNext.isInactive = true;
+      delete city.transitToNext.isDeleting;
+    }
+    updateData(newData);
   };
 
   return (
@@ -266,6 +270,26 @@ export default function ItineraryTimeline({
       onDragEnd={handleDragEnd}
     >
       <div className="pb-10">
+        <div className="mb-2 flex justify-end px-4">
+          <button
+            type="button"
+            onClick={() => {
+              const allDayIds = localData.cities.flatMap(c => c.days).map(d => d.id);
+              const anyCollapsed = allDayIds.some(id => collapsedDays[id]);
+              const next: Record<string, boolean> = {};
+              if (!anyCollapsed) {
+                allDayIds.forEach(id => {
+                  next[id] = true;
+                });
+              }
+              setCollapsedDays(next);
+            }}
+            className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-[10px] font-extrabold text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700 transition-all cursor-pointer shadow-3xs export-hidden"
+          >
+            {localData.cities.flatMap(c => c.days).some(d => collapsedDays[d.id]) ? '📂 Expand All Days' : '📁 Collapse All Days'}
+          </button>
+        </div>
+
         {localData.cities.map((city, cityIndex) => {
           const isCityCollapsed = !!collapsedCities[city.id];
           return (
@@ -293,22 +317,27 @@ export default function ItineraryTimeline({
                   onCityEnter?.(city.id);
                 }}
               >
-                <div id={`day-${day.dayNumber}`}>
-                  <DayHeaderNode
-                    day={day}
-                    isCollapsed={isDayCollapsed}
-                    onToggle={() => toggleDay(day.id)}
-                    onOptimizeRoute={() => {
-                      const optResult = optimizeDayRoute(day);
-                      setLocalData(prev => {
-                        const newData = JSON.parse(JSON.stringify(prev));
-                        newData.cities[cityIndex].days[dayIndex] = optResult.day;
-                        onDataChange?.(newData);
-                        return newData;
-                      });
-                    }}
-                  />
-                </div>
+                {(() => {
+                  const optResult = optimizeDayRoute(day);
+                  const canOptimize = optResult.savedKm > 0.5 && optResult.savedMins > 5;
+                  const timeSavedText = canOptimize ? `saves ~${optResult.savedMins}m` : undefined;
+
+                  return (
+                    <div id={`day-${day.dayNumber}`}>
+                      <DayHeaderNode
+                        day={day}
+                        isCollapsed={isDayCollapsed}
+                        onToggle={() => toggleDay(day.id)}
+                        timeSavedText={timeSavedText}
+                        onOptimizeRoute={() => {
+                          const newData = JSON.parse(JSON.stringify(localData));
+                          newData.cities[cityIndex].days[dayIndex] = optResult.day;
+                          updateData(newData);
+                        }}
+                      />
+                    </div>
+                  );
+                })()}
 
                 {!isDayCollapsed && (
                 <SortableContext id={day.id} items={day.items.filter(i => !i.isInactive).map(i => i.id)} strategy={verticalListSortingStrategy}>
@@ -318,22 +347,48 @@ export default function ItineraryTimeline({
                       const isVeryLastItem = isLastItemInDay && dayIndex === city.days.length - 1 && !city.transitToNext && cityIndex === localData.cities.length - 1;
                       const nextItem = activeItems[itemIndex + 1];
 
-                      // Distance calculation to next node
+                      // Distance to next node: generation hint → server-resolved → haversine
                       let distPill = null;
                       if (nextItem) {
-                        const dist = calculateHaversineDistanceKm(item.latitude, item.longitude, nextItem.latitude, nextItem.longitude, item, nextItem);
-                        const mins = estimateTransitMins(dist);
+                        const transit = getTransit(item, nextItem, day.transitHints);
+                        const dist = transit.distanceKm;
+                        const mins = transit.durationMins;
                         if (dist > 0.3) {
+                          const isDetour = dist > 12.0;
                           distPill = (
                             <div key={`dist-${item.id}-${nextItem.id}`} className="relative py-2 pl-[144px]">
                               <div className="absolute bottom-0 left-[38px] top-0 w-1 bg-slate-800" />
                               <div className="absolute bottom-1/2 left-[120px] top-0 w-[1.5px] bg-slate-200" />
-                              <div className="ml-[-0.75rem] flex items-center gap-1.5 rounded-full border border-slate-200/90 bg-slate-100/90 px-2.5 py-0.5 text-[10px] font-bold text-slate-600 shadow-2xs backdrop-blur-xs">
-                                <span>🚘</span>
-                                <span>{dist} km</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onItemClick?.({
+                                    nodeId: `transit-${item.id}-${nextItem.id}`,
+                                    nodeType: 'cab',
+                                    nodeTitle: `Transit from ${item.title} to ${nextItem.title}`,
+                                    dayId: day.id,
+                                    dayNumber: day.dayNumber,
+                                    dayLabel: `Day ${day.dayNumber}`,
+                                    cityId: city.id,
+                                    cityName: city.cityName,
+                                    dateStr: day.dateStr,
+                                    subtitle: `${item.title} to ${nextItem.title}`,
+                                    startTime: item.endTime || item.startTime || '',
+                                  });
+                                }}
+                                className={cn(
+                                  "ml-[-0.75rem] flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-extrabold transition-all cursor-pointer backdrop-blur-xs shadow-2xs",
+                                  isDetour
+                                    ? "bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100 hover:border-amber-450 animate-pulse"
+                                    : "bg-white border-slate-200 text-slate-600 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600"
+                                )}
+                                title={isDetour ? "⚠️ Geographically suboptimal transit leg. Click to book transport." : "Click to book a taxi/cab for this transit"}
+                              >
+                                <span>{isDetour ? "⚠️" : "🚘"}</span>
+                                <span>{isDetour ? `Detour: ${dist} km` : `${dist} km`}</span>
                                 <span className="text-slate-400">•</span>
                                 <span>~{mins} mins transit</span>
-                              </div>
+                              </button>
                             </div>
                           );
                         }
@@ -353,6 +408,10 @@ export default function ItineraryTimeline({
                         dateStr: day.dateStr,
                         subtitle: item.subtitle,
                         startTime: item.startTime || '',
+                        latitude: item.latitude ?? undefined,
+                        longitude: item.longitude ?? undefined,
+                        price: item.price,
+                        cost: item.cost,
                       };
 
                       if (item.isDeleting) {
@@ -378,6 +437,8 @@ export default function ItineraryTimeline({
                               onClick={() => onItemClick?.(clickPayload)}
                               onRemove={() => handleRemove(item.id)}
                               onHover={(hovered) => onItemHover?.(hovered ? item : null)}
+                              onVerifyLivePrice={onVerifyLivePrice}
+                              onWatchPrice={onWatchPrice}
                             />
                             {distPill}
                           </React.Fragment>
@@ -393,23 +454,71 @@ export default function ItineraryTimeline({
                             onClick={() => onItemClick?.(clickPayload)}
                             onRemove={() => handleRemove(item.id)}
                             onHover={(hovered) => onItemHover?.(hovered ? item : null)}
+                            onVerifyLivePrice={onVerifyLivePrice}
                           />
                           {distPill}
                         </React.Fragment>
                       );
                     })}
 
-                    <div className="relative py-4 pl-[144px]">
-                      <div className="absolute bottom-0 left-[38px] top-0 w-1 bg-slate-800" />
-                      <div className="absolute bottom-1/2 left-[120px] top-0 w-[1.5px] bg-slate-200" />
-                      <div className="ml-[-1rem] flex justify-start">
-                        <button className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-500 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700 cursor-pointer">
-                          <Plus size={14} /> Add Activity
+                    {day.items.filter(item => !item.isInactive).length === 0 && (
+                      <div className="relative py-4 pl-[70px] pr-4">
+                        <div className="absolute bottom-0 left-[38px] top-0 w-1 bg-slate-800" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onItemClick?.({
+                              nodeId: `add-activity-${day.id}`,
+                              nodeType: 'activity',
+                              nodeTitle: `Add Spot to Day ${day.dayNumber}`,
+                              dayId: day.id,
+                              dayNumber: day.dayNumber,
+                              dayLabel: `Day ${day.dayNumber}`,
+                              cityId: city.id,
+                              cityName: city.cityName,
+                              dateStr: day.dateStr,
+                              subtitle: `Exploring ${city.cityName}`,
+                              startTime: '09:00 AM',
+                            });
+                          }}
+                          className="flex w-full items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-slate-200/80 bg-white/40 p-4 text-xs font-bold text-slate-500 hover:bg-slate-55 hover:border-slate-300 hover:text-slate-700 transition-all cursor-pointer shadow-2xs export-hidden"
+                        >
+                          <Plus size={14} /> Add Spot to Day {day.dayNumber}
                         </button>
                       </div>
+                    )}
+
+                    {day.items.filter(item => !item.isInactive).length > 0 && (
+                      <div className="relative py-4 pl-[144px]">
+                        <div className="absolute bottom-0 left-[38px] top-0 w-1 bg-slate-800" />
+                        <div className="absolute bottom-1/2 left-[120px] top-0 w-[1.5px] bg-slate-200" />
+                        <div className="ml-[-1rem] flex justify-start">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onItemClick?.({
+                                nodeId: `add-activity-${day.id}`,
+                                nodeType: 'activity',
+                                nodeTitle: `Add Activity to Day ${day.dayNumber}`,
+                                dayId: day.id,
+                                dayNumber: day.dayNumber,
+                                dayLabel: `Day ${day.dayNumber}`,
+                                cityId: city.id,
+                                  cityName: city.cityName,
+                                  dateStr: day.dateStr,
+                                  subtitle: `Exploring ${city.cityName}`,
+                                  startTime: '09:00 AM',
+                                });
+                              }}
+                              className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-500 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700 cursor-pointer export-hidden"
+                            >
+                              <Plus size={14} /> Add Activity
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                </SortableContext>
+                  </SortableContext>
                 )}
 
               </div>
@@ -438,6 +547,8 @@ export default function ItineraryTimeline({
                     dateStr: city.days[city.days.length - 1]?.dateStr ?? '',
                     subtitle: city.transitToNext!.subtitle,
                     startTime: city.transitToNext!.startTime || '',
+                    price: city.transitToNext!.price,
+                    cost: city.transitToNext!.cost,
                   })}
                   onHover={(hovered) => onItemHover?.(hovered ? city.transitToNext! : null)}
                   onRemove={() => handleRemoveTransit(city.id)}

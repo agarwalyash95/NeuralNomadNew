@@ -20,44 +20,54 @@ logger = logging.getLogger(__name__)
 class ProviderRegistry:
     """
     Central Manager for third-party travel search API providers.
+
+    Live providers are used only when LIVE_PROVIDERS_ENABLED is true AND a
+    RAPIDAPI_KEY is configured; otherwise every service falls back to its
+    Mock provider. Settings are read per-call (not at import time) so a
+    settings override or env flip takes effect without a restart of the
+    module-level singleton.
     """
 
-    def __init__(self):
-        self.api_key = getattr(settings, 'RAPIDAPI_KEY', '')
+    @property
+    def api_key(self) -> str:
+        if not getattr(settings, 'LIVE_PROVIDERS_ENABLED', False):
+            return ''
+        return getattr(settings, 'RAPIDAPI_KEY', '')
 
     def get_provider(self, service_type: str) -> BaseSearchProvider:
         service_type = service_type.lower().strip()
+        api_key = self.api_key
 
         if service_type in ['flight', 'flights']:
             provider_name = getattr(settings, 'FLIGHT_PROVIDER', 'sky_scrapper')
-            if provider_name == 'sky_scrapper' and self.api_key:
-                return SkyScrapperFlightProvider(api_key=self.api_key)
+            if provider_name == 'sky_scrapper' and api_key:
+                return SkyScrapperFlightProvider(api_key=api_key)
             return MockFlightProvider()
 
         elif service_type in ['hotel', 'hotels']:
             provider_name = getattr(settings, 'HOTEL_PROVIDER', 'booking_com')
-            if provider_name == 'booking_com' and self.api_key:
-                return BookingComHotelProvider(api_key=self.api_key)
-            elif provider_name == 'hotels_dojo' and self.api_key:
-                return HotelsDojoProvider(api_key=self.api_key)
+            if provider_name == 'booking_com' and api_key:
+                return BookingComHotelProvider(api_key=api_key)
+            elif provider_name == 'hotels_dojo' and api_key:
+                return HotelsDojoProvider(api_key=api_key)
             return MockHotelProvider()
 
         elif service_type in ['bus', 'buses']:
             provider_name = getattr(settings, 'BUS_PROVIDER', 'redbus')
-            if provider_name == 'redbus' and self.api_key:
-                return RedbusBusProvider(api_key=self.api_key)
+            if provider_name == 'redbus' and api_key:
+                return RedbusBusProvider(api_key=api_key)
             return MockBusProvider()
 
         elif service_type in ['train', 'trains']:
             provider_name = getattr(settings, 'TRAIN_PROVIDER', 'live_train')
-            if provider_name == 'live_train' and self.api_key:
-                return LiveTrainStatusProvider(api_key=self.api_key)
+            if provider_name == 'live_train' and api_key:
+                return LiveTrainStatusProvider(api_key=api_key)
             return MockTrainProvider()
 
         elif service_type in ['cab', 'cabs', 'taxi', 'taxis']:
             provider_name = getattr(settings, 'CAB_PROVIDER', 'booking_taxi')
-            if provider_name == 'booking_taxi' and self.api_key:
-                return BookingComTaxiProvider(api_key=self.api_key)
+            if provider_name == 'booking_taxi' and api_key:
+                return BookingComTaxiProvider(api_key=api_key)
             return MockCabProvider()
 
         else:

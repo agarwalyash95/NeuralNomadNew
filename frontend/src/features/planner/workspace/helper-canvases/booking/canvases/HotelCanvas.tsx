@@ -1,16 +1,17 @@
 'use client';
 
-import React, { FormEvent, useState, useEffect } from 'react';
-import { BedDouble, Search, Star } from 'lucide-react';
-import { BookingSearchParams } from '@/types/booking';
-import HotelSearchForm from '../forms/HotelSearchForm';
-import { searchService } from '@/services/search.service';
+import React, { useState, useEffect, useMemo } from 'react';
+import { BedDouble } from 'lucide-react';
+import { referenceService } from '@/services/reference.service';
+import { useHotelStore } from '@/store/hotelStore';
 import { TripContext } from '../../../types';
 import CanvasHeader from '../../shared/CanvasHeader';
 import SearchSummaryBar from '../../shared/SearchSummaryBar';
 import QuickFilterBar from '../../shared/QuickFilterBar';
 import ReplaceConfirmBar from '../../shared/ReplaceConfirmBar';
-import { ItineraryItem } from '../../../plan-canvas/mockData';
+import SuggestionCard from '../../shared/SuggestionCard';
+import CurrentlyBookedCard from '../../shared/CurrentlyBookedCard';
+import { ItineraryItem, Suggestion } from '../../../plan-canvas/types';
 
 interface HotelCanvasProps {
   onClose?: () => void;
@@ -18,90 +19,95 @@ interface HotelCanvasProps {
   onAddToPlan?: (item: ItineraryItem) => void;
 }
 
-const QUICK_FILTER_TAGS = ['Free WiFi', '4+ Stars', 'Pool', 'Breakfast Incl.', 'Free Cancellation'];
-
-function buildInitialParams(ctx: TripContext): BookingSearchParams {
-  return {
-    service: 'hotel',
-    tripType: 'one-way',
-    origin: '',
-    destination: '',
-    departureDate: '',
-    returnDate: '',
-    travellers: String(ctx.travellers || 2),
-    cabinClass: 'Economy',
-    fareType: 'Regular',
-    city: ctx.activeNodeCityName || ctx.destination || 'Manali',
-    checkIn: ctx.activeNodeDateStr || ctx.startDate || '',
-    checkOut: ctx.endDate || '',
-    roomCount: '1',
-    nationality: 'Indian',
-    trainClass: 'SL',
-    quota: 'General',
-    cabType: 'airport',
-    pickup: '',
-    drop: '',
-  };
-}
-
-function updateParam(
-  setParams: React.Dispatch<React.SetStateAction<BookingSearchParams>>,
-  field: keyof BookingSearchParams,
-  value: string
-) {
-  setParams(current => ({ ...current, [field]: value }));
-}
+const QUICK_FILTER_TAGS = ['All', '4+ Stars', 'Budget', 'Premium'];
 
 export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: HotelCanvasProps) {
-  const [params, setParams] = useState<BookingSearchParams>(() => buildInitialParams(tripContext));
-  const [formError, setFormError] = useState<string | null>(null);
+  const defaultLocation = tripContext.activeNodeCityName || tripContext.destination || 'Manali';
+  const [searchQuery, setSearchQuery] = useState(`${defaultLocation}, India`);
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<any[]>([]);
-  const [selectedTags, setSelectedTags] = useState<string[]>(['Free WiFi']);
-  const [pendingItem, setPendingItem] = useState<any | null>(null);
+  const [selectedTags, setSelectedTags] = useState<string[]>(['All']);
+  const [pendingItem, setPendingItem] = useState<Suggestion | null>(null);
+
+  // Accordion state
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [expandedData, setExpandedData] = useState<Suggestion | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+
+  const [results, setResults] = useState<Suggestion[]>([]);
+
+  const getHotelDetail = useHotelStore(state => state.getHotelDetail);
+  const setHotelDetail = useHotelStore(state => state.setHotelDetail);
 
   useEffect(() => {
-    setParams(buildInitialParams(tripContext));
-  }, [tripContext.tripId]);
+    const loc = tripContext.activeNodeCityName || tripContext.destination;
+    setSearchQuery(loc ? `${loc}, India` : 'Manali, India');
+  }, [tripContext.tripId, tripContext.activeNodeCityName, tripContext.destination]);
 
-  const fetchHotels = async (searchParams: BookingSearchParams) => {
+  const fetchHotels = async (query: string) => {
     setLoading(true);
     try {
-      const apiResults = await searchService.search(searchParams);
-      const mapped = apiResults.map((hotel) => {
-        const firstRoom = hotel.meta?.rooms?.[0];
-        const price = hotel.providers?.[0]?.price || firstRoom?.price_per_night || 3500;
-        const amenities = hotel.meta?.amenities || ['WiFi'];
-        return {
-          id: hotel.id,
-          name: hotel.title,
-          rating: hotel.meta?.star_rating || 4.0,
-          location: hotel.meta?.address || hotel.destination_city,
-          price,
-          originalPrice: Math.round(price * 1.15),
-          amenities,
-          roomType: firstRoom?.type || 'Deluxe Room',
-          cancellation: 'Free cancellation',
-          breakfast: amenities.includes('Restaurant') ? 'Breakfast available' : 'Room only',
-        };
-      });
-      setResults(mapped);
-    } catch (err) {
-      console.error('Error fetching hotels:', err);
+      const loc = tripContext.activeNodeCityName || tripContext.destination;
+      const useCoords = loc && query.toLowerCase().includes(loc.toLowerCase());
+      const data = await referenceService.exploreHotels(
+        query,
+        useCoords ? tripContext.activeNodeLatitude : undefined,
+        useCoords ? tripContext.activeNodeLongitude : undefined
+      );
+      setResults(Array.isArray(data) ? data : []);
+    } catch (err: any) {
+      console.error('Error fetching hotels:', err?.message || err);
+      setResults([]);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { fetchHotels(params); }, []);
+  useEffect(() => { fetchHotels(searchQuery); }, [searchQuery]);
 
-  const handleSearch = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!params.city.trim()) { setFormError('Enter a city.'); return; }
-    setFormError(null);
-    setIsSearchExpanded(false);
-    await fetchHotels(params);
+  // Don't recommend what's already planned for the day in view
+  const plannedTitles = useMemo(
+    () => new Set((tripContext.activeDayItemTitles || []).map(t => t.trim().toLowerCase())),
+    [tripContext.activeDayItemTitles]
+  );
+  const tagFiltered = useMemo(() => {
+    if (selectedTags.length === 0 || selectedTags.includes('All')) return results;
+    return results.filter(h => selectedTags.every(tag => {
+      if (tag === '4+ Stars') return (h.rating ?? 0) >= 4;
+      if (tag === 'Budget') return h.details.price_range === '$' || h.details.price_range === '$$';
+      if (tag === 'Premium') return h.details.price_range === '$$$' || h.details.price_range === '$$$$';
+      return true;
+    }));
+  }, [results, selectedTags]);
+  const visibleResults = useMemo(
+    () => tagFiltered.filter(h => !plannedTitles.has(h.name.trim().toLowerCase())),
+    [tagFiltered, plannedTitles]
+  );
+
+  const toggleExpand = async (suggestion: Suggestion) => {
+    if (expandedId === suggestion.id) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(suggestion.id);
+
+    const cachedItem = getHotelDetail(suggestion.id);
+    if (cachedItem) {
+      setExpandedData(cachedItem);
+      return;
+    }
+
+    setExpandedData(null);
+    setDetailsLoading(true);
+    try {
+      const resp = await referenceService.getHotelDetails(suggestion.id);
+      setExpandedData(resp);
+      setHotelDetail(suggestion.id, resp);
+    } catch (err) {
+      console.error('Error fetching hotel details:', err);
+    } finally {
+      setDetailsLoading(false);
+    }
   };
 
   const handleConfirmReplace = () => {
@@ -111,28 +117,23 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
       type: 'hotel',
       startTime: '14:00',
       title: pendingItem.name,
-      subtitle: `${pendingItem.location} • ${pendingItem.roomType}`,
-      price: `₹${pendingItem.price.toLocaleString()} / night`,
+      subtitle: pendingItem.address || '',
+      details: pendingItem.subtitle,
       status: 'Pending',
-      details: pendingItem.breakfast,
-      rating: pendingItem.rating,
+      rating: pendingItem.rating != null ? Math.floor(pendingItem.rating) : undefined,
+      geoTag: pendingItem.address || '',
+      image: pendingItem.image_url || undefined,
+      latitude: pendingItem.latitude ?? undefined,
+      longitude: pendingItem.longitude ?? undefined,
+      place_id: pendingItem.place_id ?? undefined,
+      cost: pendingItem.cost,
     };
     onAddToPlan(newItem);
     setPendingItem(null);
+    setExpandedId(null);
   };
 
-  const filteredResults = results.filter(h => {
-    if (selectedTags.length === 0) return true;
-    return selectedTags.every(tag => {
-      if (tag === '4+ Stars') return h.rating >= 4;
-      if (tag === 'Pool') return h.amenities?.some((a: string) => a.toLowerCase().includes('pool'));
-      if (tag === 'Free WiFi') return h.amenities?.some((a: string) => a.toLowerCase().includes('wifi'));
-      return true;
-    });
-  });
-
-  const searchSummary = params.city ? `Hotels in ${params.city}` : 'Search Hotels';
-  const searchSecondary = [params.checkIn && `Check-in: ${params.checkIn}`, params.checkOut && `Check-out: ${params.checkOut}`].filter(Boolean).join(' • ');
+  const searchSummary = `Hotels in ${tripContext.destination || 'Manali'}`;
 
   return (
     <div className="flex h-full flex-col bg-white">
@@ -144,10 +145,11 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
         tripContext={tripContext}
         onClose={onClose}
       />
+      <CurrentlyBookedCard tripContext={tripContext} nodeType="hotel" />
 
       <div className="custom-scrollbar flex-1 overflow-y-auto">
         {!isSearchExpanded && (
-          <SearchSummaryBar primary={searchSummary} secondary={searchSecondary} accentColor="group-hover:text-indigo-600" onClick={() => setIsSearchExpanded(true)}>
+          <SearchSummaryBar primary={searchSummary} secondary="Stays near your itinerary" accentColor="group-hover:text-indigo-600" onClick={() => setIsSearchExpanded(true)}>
             <QuickFilterBar
               tags={QUICK_FILTER_TAGS}
               selected={selectedTags}
@@ -160,17 +162,13 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
 
         {isSearchExpanded && (
           <div className="border-b border-slate-200 bg-white p-4">
-            <form onSubmit={handleSearch} className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-800">Edit Search</h3>
-                <button type="button" onClick={() => setIsSearchExpanded(false)} className="text-xs font-semibold text-slate-500 hover:text-slate-700">Cancel</button>
-              </div>
-              <HotelSearchForm params={params} onUpdateParam={(field, value) => updateParam(setParams, field, value)} />
-              {formError && <div className="flex items-center gap-2 rounded-lg bg-red-50 p-2 text-xs font-semibold text-red-600"><div className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" />{formError}</div>}
-              <button type="submit" disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white transition-all hover:bg-indigo-700 disabled:opacity-50">
-                {loading ? <><div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />Searching...</> : <><Search size={16} />Search Hotels</>}
-              </button>
-            </form>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-slate-800">Search Hotels</h3>
+              <button onClick={() => setIsSearchExpanded(false)} className="text-xs font-semibold text-slate-500">Cancel</button>
+            </div>
+            <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+              placeholder="e.g. Manali, India"
+              className="w-full rounded-xl border border-slate-200 p-3 text-sm text-slate-900 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
           </div>
         )}
 
@@ -180,44 +178,26 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
               <div className="mb-3 h-10 w-10 animate-spin rounded-full border-3 border-slate-200 border-t-indigo-600" />
               <p className="text-sm font-semibold text-slate-600">Finding hotels...</p>
             </div>
-          ) : filteredResults.length > 0 ? (
+          ) : visibleResults.length > 0 ? (
             <div className="space-y-3">
-              <p className="text-xs font-semibold text-slate-500">{filteredResults.length} hotels found</p>
-              {filteredResults.map((hotel) => (
-                <div key={hotel.id} className={`rounded-xl border bg-white p-4 transition-all hover:shadow-md ${pendingItem?.id === hotel.id ? 'border-indigo-400 ring-2 ring-indigo-100' : 'border-slate-200 hover:border-indigo-300'}`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1">
-                      <h3 className="text-sm font-semibold text-slate-900">{hotel.name}</h3>
-                      <p className="mt-0.5 text-xs text-slate-500">{hotel.location}</p>
-                      <div className="mt-1.5 flex items-center gap-1">
-                        {[...Array(5)].map((_, i) => <Star key={i} size={11} fill={i < Math.floor(hotel.rating) ? '#f59e0b' : 'none'} className={i < Math.floor(hotel.rating) ? 'text-amber-400' : 'text-slate-300'} />)}
-                        <span className="ml-1 text-[10px] font-semibold text-slate-600">{hotel.rating}</span>
-                      </div>
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {hotel.amenities?.slice(0, 4).map((a: string) => (
-                          <span key={a} className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">{a}</span>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-xl font-bold text-slate-900">₹{hotel.price.toLocaleString()}</p>
-                      <p className="text-xs text-slate-500 line-through">₹{hotel.originalPrice.toLocaleString()}</p>
-                      <p className="text-[10px] text-slate-500">per night</p>
-                      <button
-                        onClick={() => setPendingItem(hotel)}
-                        className={`mt-2 rounded-lg px-4 py-2 text-xs font-semibold transition-colors ${pendingItem?.id === hotel.id ? 'bg-indigo-700 text-white' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
-                      >
-                        {pendingItem?.id === hotel.id ? '✓ Selected' : 'Select'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
+              <p className="text-xs font-semibold text-slate-500">{visibleResults.length} hotels found</p>
+              {visibleResults.map((hotel) => (
+                <SuggestionCard
+                  key={hotel.id}
+                  suggestion={hotel}
+                  isExpanded={expandedId === hotel.id}
+                  isPending={pendingItem?.id === hotel.id}
+                  detailsLoading={detailsLoading && expandedId === hotel.id && !expandedData}
+                  onToggleExpand={() => toggleExpand(hotel)}
+                  onSelect={() => setPendingItem(expandedId === hotel.id ? (expandedData || hotel) : hotel)}
+                  selectLabel="Select Hotel"
+                />
               ))}
             </div>
           ) : (
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-8 text-center">
               <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-200"><BedDouble size={24} className="text-slate-400" /></div>
-              <p className="text-sm font-semibold text-slate-600">No hotels found in {params.city}</p>
+              <p className="text-sm font-semibold text-slate-600">No hotels found near {tripContext.destination || 'this trip'}</p>
             </div>
           )}
         </div>
@@ -226,7 +206,7 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
       {pendingItem && onAddToPlan && (
         <ReplaceConfirmBar
           newItemTitle={pendingItem.name}
-          newItemPrice={`₹${pendingItem.price.toLocaleString()} / night`}
+          newItemPrice={pendingItem.price_label || undefined}
           tripContext={tripContext}
           confirmColor="bg-indigo-600 hover:bg-indigo-700"
           onCancel={() => setPendingItem(null)}

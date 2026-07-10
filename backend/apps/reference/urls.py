@@ -6,7 +6,7 @@ from .views import (
     BusRouteViewSet, MetroStationViewSet, HotelMasterViewSet, RestaurantMasterViewSet,
     AttractionMasterViewSet, ActivityMasterViewSet, VisaRequirementViewSet,
     CurrencyViewSet, HolidayCalendarViewSet, WeatherNormalsViewSet,
-    TravelSeasonViewSet, GooglePlaceCacheViewSet
+    TravelSeasonViewSet, GooglePlaceCacheViewSet, LivePriceView, PlaceDetailsView
 )
 
 router = DefaultRouter()
@@ -33,5 +33,8 @@ router.register(r'travel-seasons', TravelSeasonViewSet)
 router.register(r'google-places', GooglePlaceCacheViewSet)
 
 urlpatterns = [
+    path('live-price/', LivePriceView.as_view(), name='live-price'),
+    path('places/details/', PlaceDetailsView.as_view(), name='place-details'),
     path('', include(router.urls)),
 ]
+

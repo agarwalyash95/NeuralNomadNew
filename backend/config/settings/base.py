@@ -201,3 +201,21 @@ CHANNEL_LAYERS = {
         "BACKEND": "channels.layers.InMemoryChannelLayer",
     },
 }
+
+# Google Places API Key configuration
+GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY", "")
+
+# LLM (Gemini) — the google-genai client also reads GEMINI_API_KEY from the
+# environment directly; exposing it here makes the dependency explicit.
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+
+# Live travel-search providers (RapidAPI). Mock providers are used unless
+# LIVE_PROVIDERS_ENABLED is true AND RAPIDAPI_KEY is set — one env flip to go live.
+LIVE_PROVIDERS_ENABLED = os.getenv("LIVE_PROVIDERS_ENABLED", "False").lower() in ("true", "1", "t")
+RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY", "")
+FLIGHT_PROVIDER = os.getenv("FLIGHT_PROVIDER", "sky_scrapper")
+HOTEL_PROVIDER = os.getenv("HOTEL_PROVIDER", "booking_com")
+TRAIN_PROVIDER = os.getenv("TRAIN_PROVIDER", "live_train")
+BUS_PROVIDER = os.getenv("BUS_PROVIDER", "redbus")
+CAB_PROVIDER = os.getenv("CAB_PROVIDER", "booking_taxi")
+

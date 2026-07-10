@@ -51,6 +51,7 @@ class PlannerWorkspace(BaseModel):
         default=MODE_PLANNING,
     )
     last_activity_at = models.DateTimeField(default=timezone.now)
+    is_modified = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["-last_activity_at", "-created_at"]
@@ -291,6 +292,66 @@ class PlannerTrip(BaseModel):
         db_table = "planner_trip"
 
 
+class PlannerTripOriginal(BaseModel):
+    workspace = models.OneToOneField(
+        PlannerWorkspace,
+        on_delete=models.CASCADE,
+        related_name="original_trip",
+    )
+    title = models.CharField(max_length=160)
+    summary = models.TextField(blank=True)
+    cities = models.JSONField(default=list, blank=True)
+    days = models.JSONField(default=list, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        db_table = "planner_trip_original"
+
+    def __str__(self):
+        return f"Original: {self.title}"
+
+
+class PlanGenerationJob(BaseModel):
+    """
+    One background plan-generation run. The loading screen polls this row —
+    every phase/progress/detail here is real pipeline state, never cosmetic.
+    Its own table (not PlannerTrip.metadata) because the trip row doesn't
+    exist yet while generation runs, and failed runs are worth keeping.
+    """
+
+    STATUS_QUEUED = "queued"
+    STATUS_RUNNING = "running"
+    STATUS_DONE = "done"
+    STATUS_FAILED = "failed"
+    STATUS_CHOICES = [
+        (STATUS_QUEUED, "Queued"),
+        (STATUS_RUNNING, "Running"),
+        (STATUS_DONE, "Done"),
+        (STATUS_FAILED, "Failed"),
+    ]
+
+    workspace = models.ForeignKey(
+        PlannerWorkspace,
+        on_delete=models.CASCADE,
+        related_name="generation_jobs",
+    )
+    status = models.CharField(max_length=12, default=STATUS_QUEUED, choices=STATUS_CHOICES, db_index=True)
+    phase = models.CharField(max_length=40, blank=True, default="")
+    progress = models.PositiveSmallIntegerField(default=0)
+    # [{key, label, state: pending|active|done|failed, detail, at}]
+    phase_log = models.JSONField(default=list, blank=True)
+    error = models.TextField(blank=True, default="")
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "planner_generation_job"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"GenerationJob {self.workspace_id} [{self.status} {self.progress}%]"
+
+
 class PlannerQuestionBank(BaseModel):
     """
     Stores proven questions and widgets for specific intents and destinations.
@@ -373,3 +434,195 @@ class LocationDistanceCache(BaseModel):
     def __str__(self):
         return f"{self.origin_key} -> {self.destination_key} ({self.distance_km}km, {self.duration_mins}m)"
 
+
+
+class PlanProposal(BaseModel):
+    """
+    An agent- or tool-initiated change to a plan, awaiting the traveler's
+    decision. The AI never mutates a plan directly — every change flows
+    through a proposal the user accepts, rejects, or lets expire.
+
+    diff shape: {"before": {"days": [...]}, "after": {"days": [...]},
+                 "deltas": {"saved_km": float, "saved_mins": int, ...}}
+    Days in the diff use block schema v2.
+    """
+
+    KIND_ROUTE_OPTIMIZATION = "route_optimization"
+    KIND_PLAN_EDIT = "plan_edit"
+    KIND_PRICE_WATCH = "price_watch"
+
+    STATUS_OPEN = "open"
+    STATUS_ACCEPTED = "accepted"
+    STATUS_REJECTED = "rejected"
+    STATUS_EXPIRED = "expired"
+
+    STATUS_CHOICES = [
+        (STATUS_OPEN, "Open"),
+        (STATUS_ACCEPTED, "Accepted"),
+        (STATUS_REJECTED, "Rejected"),
+        (STATUS_EXPIRED, "Expired"),
+    ]
+
+    workspace = models.ForeignKey(
+        PlannerWorkspace,
+        on_delete=models.CASCADE,
+        related_name="proposals",
+    )
+    kind = models.CharField(max_length=40, default=KIND_PLAN_EDIT)
+    title = models.CharField(max_length=200)
+    rationale = models.TextField(blank=True)
+    diff = models.JSONField(default=dict, blank=True)
+    status = models.CharField(max_length=20, default=STATUS_OPEN, choices=STATUS_CHOICES, db_index=True)
+    # Rejections carry the reason so the agent never re-proposes rejected ideas
+    rejection_reason = models.CharField(max_length=300, blank=True)
+    created_by = models.CharField(max_length=20, default="agent")
+    # Staleness guard: the trip state this proposal was computed against.
+    # If the plan changed since, the proposal expires instead of mis-merging.
+    base_trip_updated_at = models.DateTimeField(null=True, blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "planner_plan_proposal"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"[{self.status}] {self.title}"
+
+
+class PlanBlockCommitment(BaseModel):
+    """
+    The money/commitment state machine for a single plan block.
+
+    Itinerary CONTENT stays in PlannerTrip JSON; commitment state (quotes,
+    holds, bookings, refund windows) lives here as queryable, auditable rows.
+    The block's JSON block_status is kept in sync on every transition.
+
+    Ladder: (planned) -> priced -> held -> booked -> ticketed
+    """
+
+    STATUS_PRICED = "priced"
+    STATUS_HELD = "held"
+    STATUS_BOOKED = "booked"
+    STATUS_TICKETED = "ticketed"
+
+    STATUS_CHOICES = [
+        (STATUS_PRICED, "Priced"),
+        (STATUS_HELD, "Held"),
+        (STATUS_BOOKED, "Booked"),
+        (STATUS_TICKETED, "Ticketed"),
+    ]
+
+    # Rank order for forward-only transitions (held may re-price)
+    STATUS_RANK = {STATUS_PRICED: 1, STATUS_HELD: 2, STATUS_BOOKED: 3, STATUS_TICKETED: 4}
+
+    workspace = models.ForeignKey(
+        PlannerWorkspace,
+        on_delete=models.CASCADE,
+        related_name="commitments",
+    )
+    block_id = models.CharField(max_length=64, db_index=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, db_index=True)
+    amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    currency = models.CharField(max_length=3, default="INR")
+    quote = models.JSONField(default=dict, blank=True)
+    # Every commitment shows its escape hatch
+    refundable_until = models.DateTimeField(null=True, blank=True)
+    provider_ref = models.CharField(max_length=120, blank=True)
+    # Append-only audit trail of transitions: [{to, at, amount}]
+    history = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        db_table = "planner_block_commitment"
+        unique_together = ("workspace", "block_id")
+
+    def can_transition_to(self, new_status):
+        current_rank = self.STATUS_RANK.get(self.status, 0)
+        new_rank = self.STATUS_RANK.get(new_status)
+        if new_rank is None:
+            return False
+        # held may fall back to priced (a re-quote); everything else is forward-only
+        if self.status == self.STATUS_HELD and new_status == self.STATUS_PRICED:
+            return True
+        return new_rank > current_rank
+
+    def __str__(self):
+        return f"{self.block_id}: {self.status}"
+
+
+class TravelerProfile(BaseModel):
+    """
+    Durable cross-trip memory about the traveler.
+
+    facts is a list of {key, value, provenance, source_trip, updated_at}.
+    Provenance discipline applies to memory too:
+      - "stated"    — the user said it explicitly
+      - "inferred"  — derived from behavior (a plan they created, a rejection)
+      - "confirmed" — inferred, then confirmed by the user
+    Nothing silently learned is silently applied: every applied memory must
+    cite itself, and this profile is fully inspectable and deletable.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="traveler_profile",
+    )
+    facts = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        db_table = "planner_traveler_profile"
+
+    def upsert_fact(self, key, value, provenance="inferred", source_trip=None):
+        facts = self.facts or []
+        now = timezone.now().isoformat()
+        for fact in facts:
+            if fact.get("key") == key:
+                # A user statement outranks an inference — never downgrade
+                if fact.get("provenance") in ("stated", "confirmed") and provenance == "inferred":
+                    return
+                fact.update({
+                    "value": value,
+                    "provenance": provenance,
+                    "source_trip": str(source_trip) if source_trip else fact.get("source_trip"),
+                    "updated_at": now,
+                })
+                break
+        else:
+            facts.append({
+                "key": key,
+                "value": value,
+                "provenance": provenance,
+                "source_trip": str(source_trip) if source_trip else None,
+                "updated_at": now,
+            })
+        self.facts = facts
+        self.save(update_fields=["facts", "updated_at"])
+
+    def __str__(self):
+        return f"TravelerProfile({self.user_id}, {len(self.facts or [])} facts)"
+
+
+class PriceWatch(BaseModel):
+    """
+    A standing task the user delegated: keep re-checking this block's price.
+    Findings are filed as PlanProposals — the watch never mutates the plan.
+    """
+
+    workspace = models.ForeignKey(
+        PlannerWorkspace,
+        on_delete=models.CASCADE,
+        related_name="price_watches",
+    )
+    block_id = models.CharField(max_length=64, db_index=True)
+    # Optional act-envelope: only propose when price drops below this
+    threshold_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    active = models.BooleanField(default=True, db_index=True)
+    last_checked_at = models.DateTimeField(null=True, blank=True)
+    last_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+
+    class Meta:
+        db_table = "planner_price_watch"
+        unique_together = ("workspace", "block_id")
+
+    def __str__(self):
+        return f"Watch({self.block_id}, active={self.active})"

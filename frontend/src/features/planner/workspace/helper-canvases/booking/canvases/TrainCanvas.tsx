@@ -10,7 +10,9 @@ import CanvasHeader from '../../shared/CanvasHeader';
 import SearchSummaryBar from '../../shared/SearchSummaryBar';
 import QuickFilterBar from '../../shared/QuickFilterBar';
 import ReplaceConfirmBar from '../../shared/ReplaceConfirmBar';
-import { ItineraryItem } from '../../../plan-canvas/mockData';
+import { ItineraryItem, CostProvenance } from '../../../plan-canvas/types';
+import { ProvenanceBadge } from '../../../../components/ProvenanceBadge';
+import CurrentlyBookedCard from '../../shared/CurrentlyBookedCard';
 
 interface TrainCanvasProps {
   onClose?: () => void;
@@ -19,6 +21,10 @@ interface TrainCanvasProps {
 }
 
 const QUICK_FILTER_TAGS = ['AC Class', 'Sleeper', 'Available', 'Rajdhani', 'Vande Bharat'];
+
+/** Search results are real inventory, but not yet price-locked — 'estimated'
+ *  until the traveler explicitly verifies via Verify Live Price on the block. */
+const RESULT_PROVENANCE: CostProvenance = { tier: 'estimated', source: 'Live search', basis: 'Not yet price-verified' };
 
 function buildInitialParams(ctx: TripContext): BookingSearchParams {
   let origin = 'New Delhi (NDLS)';
@@ -132,16 +138,30 @@ export default function TrainCanvas({ onClose, tripContext, onAddToPlan }: Train
       price: `₹${pendingItem.price.toLocaleString()}`,
       status: 'Pending',
       details: `${pendingItem.duration} • ${pendingItem.availability}`,
+      cost: { amount: pendingItem.price, currency: 'INR', provenance: RESULT_PROVENANCE },
     };
     onAddToPlan(newItem);
     setPendingItem(null);
   };
+
+  const filteredResults = results.filter((train: any) => {
+    if (selectedTags.length === 0) return true;
+    return selectedTags.every(tag => {
+      if (tag === 'AC Class') return train.classes?.some((c: any) => /^[123]A$/.test(c.class || ''));
+      if (tag === 'Sleeper') return train.classes?.some((c: any) => c.class === 'SL');
+      if (tag === 'Available') return (train.availability || '').toLowerCase().includes('available');
+      if (tag === 'Rajdhani') return (train.name || '').toLowerCase().includes('rajdhani');
+      if (tag === 'Vande Bharat') return (train.name || '').toLowerCase().includes('vande bharat');
+      return true;
+    });
+  });
 
   const searchSummary = `${params.origin} → ${params.destination}`;
 
   return (
     <div className="flex h-full flex-col bg-white">
       <CanvasHeader icon={<TrainFront size={18} />} iconColor="bg-blue-700" label="Trains" title={searchSummary} tripContext={tripContext} onClose={onClose} />
+      <CurrentlyBookedCard tripContext={tripContext} nodeType="train" />
       <div className="custom-scrollbar flex-1 overflow-y-auto">
         {!isSearchExpanded && (
           <SearchSummaryBar primary={searchSummary} secondary={[params.departureDate, `${params.travellers} passenger(s)`, params.trainClass].filter(Boolean).join(' • ')}
@@ -172,10 +192,10 @@ export default function TrainCanvas({ onClose, tripContext, onAddToPlan }: Train
               <div className="mb-3 h-10 w-10 animate-spin rounded-full border-3 border-slate-200 border-t-blue-700" />
               <p className="text-sm font-semibold text-slate-600">Searching trains...</p>
             </div>
-          ) : results.length > 0 ? (
+          ) : filteredResults.length > 0 ? (
             <div className="space-y-3">
-              <p className="text-xs font-semibold text-slate-500">{results.length} trains found</p>
-              {results.map((train) => (
+              <p className="text-xs font-semibold text-slate-500">{filteredResults.length} trains found</p>
+              {filteredResults.map((train) => (
                 <div key={train.id} className={`rounded-xl border bg-white p-4 transition-all hover:shadow-md ${pendingItem?.id === train.id ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200 hover:border-blue-300'}`}>
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
@@ -195,7 +215,8 @@ export default function TrainCanvas({ onClose, tripContext, onAddToPlan }: Train
                     </div>
                     <div className="ml-4 text-right shrink-0">
                       <p className="text-xl font-bold text-slate-900">₹{train.price.toLocaleString()}</p>
-                      <p className="text-xs text-green-600 font-semibold">{train.availability}</p>
+                      <p className="text-xs text-green-600 font-semibold mb-1">{train.availability}</p>
+                      <ProvenanceBadge provenance={RESULT_PROVENANCE} className="mb-1.5" />
                       <button onClick={() => setPendingItem(train)}
                         className={`mt-2 rounded-lg px-4 py-2 text-xs font-semibold transition-colors ${pendingItem?.id === train.id ? 'bg-blue-800 text-white' : 'bg-blue-700 text-white hover:bg-blue-800'}`}>
                         {pendingItem?.id === train.id ? '✓ Selected' : 'Select'}

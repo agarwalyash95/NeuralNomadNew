@@ -1,0 +1,382 @@
+import React, { useState } from 'react';
+import { Sparkles, MapPin, Check } from 'lucide-react';
+import type { WidgetData } from '@/services/planner.types';
+
+const CURRENCY_CONFIGS: Record<string, { min: number; max: number; step: number; defaultValue: number; budgetThreshold: number; midThreshold: number }> = {
+  USD: { min: 200, max: 10000, step: 100, defaultValue: 2000, budgetThreshold: 1000, midThreshold: 3000 },
+  EUR: { min: 200, max: 10000, step: 100, defaultValue: 2000, budgetThreshold: 1000, midThreshold: 3000 },
+  GBP: { min: 150, max: 8000, step: 100, defaultValue: 1500, budgetThreshold: 800, midThreshold: 2400 },
+  INR: { min: 15000, max: 800000, step: 5000, defaultValue: 150000, budgetThreshold: 75000, midThreshold: 220000 },
+  JPY: { min: 30000, max: 1500000, step: 10000, defaultValue: 300000, budgetThreshold: 150000, midThreshold: 450000 },
+};
+
+function getLocalCurrency() {
+  if (typeof window === 'undefined') return { code: 'USD', symbol: '$' };
+  let code = 'USD';
+  const locale = navigator.language || 'en-US';
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (tz?.includes('Kolkata') || tz?.includes('Calcutta')) code = 'INR';
+    else if (locale.endsWith('-IN') || locale.startsWith('hi')) code = 'INR';
+    else if (locale.endsWith('-GB') || tz?.includes('Europe/London')) code = 'GBP';
+    else if (locale.endsWith('-JP') || locale.startsWith('ja')) code = 'JPY';
+    else {
+      const euroLocales = ['de', 'fr', 'es', 'it', 'nl', 'be', 'at', 'fi', 'ie', 'pt', 'gr'];
+      if (euroLocales.some(el => locale.startsWith(el))) code = 'EUR';
+    }
+  } catch { /* noop */ }
+
+  let symbol = '$';
+  try {
+    const parts = new Intl.NumberFormat(undefined, { style: 'currency', currency: code }).formatToParts(1);
+    symbol = parts.find(p => p.type === 'currency')?.value ?? symbol;
+  } catch {
+    if (code === 'INR') symbol = '₹';
+    else if (code === 'GBP') symbol = '£';
+    else if (code === 'JPY') symbol = '¥';
+    else if (code === 'EUR') symbol = '€';
+  }
+  return { code, symbol };
+}
+
+function getBudgetTier(val: number, code: string) {
+  const conf = (CURRENCY_CONFIGS[code] || CURRENCY_CONFIGS.USD) as NonNullable<typeof CURRENCY_CONFIGS[string]>;
+  if (val < conf.budgetThreshold) return 'budget';
+  if (val < conf.midThreshold) return 'mid_range';
+  return 'premium';
+}
+
+const FIELD_OPTIONS: Record<string, string[]> = {
+  flight_class: ['Economy', 'Premium Economy', 'Business', 'First Class'],
+  train_class: ['Sleeper', '3rd AC', '2nd AC', '1st AC', 'Chair Car'],
+  cabin_class: ['Interior', 'Oceanview', 'Balcony', 'Suite'],
+  car_type: ['Hatchback', 'Sedan', 'SUV', 'Luxury'],
+  vehicle_type: ['Hatchback', 'Sedan', 'SUV', 'Luxury'],
+  bus_type: ['AC Sleeper', 'Non-AC Sleeper', 'AC Seater', 'Volvo'],
+  time_window: ['Morning', 'Afternoon', 'Evening', 'Night'],
+  preferred_mode: ['Flight', 'Train', 'Bus', 'Cab', 'Mixed'],
+  star_rating: ['3 Star', '4 Star', '5 Star', 'Luxury Resort'],
+  meal_type: ['Breakfast Included', 'Half Board', 'All Inclusive'],
+  cuisine: ['Local', 'North Indian', 'South Indian', 'Asian', 'Continental'],
+  trip_pace: ['Relaxed', 'Balanced', 'Fast-Paced'],
+  stay_amenities: ['Pool', 'Spa & Wellness', 'Free Breakfast', 'Beachfront', 'Gym'],
+  property_type: ['Hotel', 'Resort', 'Villa', 'Boutique Stay'],
+  non_stop: ['Direct Only', 'Any Flight'],
+  tatkal: ['Standard Booking', 'Tatkal / Urgent'],
+  meal_preference: ['Veg', 'Non-Veg', 'Jain'],
+  journey_timing: ['Day Journey', 'Overnight'],
+  return_trip: ['One Way', 'Round Trip'],
+  transmission: ['Automatic', 'Manual'],
+  priority: ['Cheapest', 'Fastest Route', 'Max Comfort'],
+  intensity_level: ['Light & Easy', 'Moderate', 'Action-Packed'],
+  dining_package: ['Standard Dining', 'Gourmet Package', 'Chef Table'],
+  dietary: ['Vegetarian', 'Vegan', 'Jain', 'Halal', 'No Restrictions'],
+  ambiance: ['Romantic', 'Family Friendly', 'Fine Dining', 'Casual Vibes'],
+};
+
+interface OptionalDetailsWidgetProps {
+  widget: WidgetData;
+  onSubmit: (message: string, structuredValue: any) => void;
+}
+
+export function OptionalDetailsWidget({ widget, onSubmit }: OptionalDetailsWidgetProps) {
+  const { code: currencyCode, symbol: currencySymbol } = getLocalCurrency();
+  const config = (CURRENCY_CONFIGS[currencyCode] || CURRENCY_CONFIGS.USD) as NonNullable<typeof CURRENCY_CONFIGS[string]>;
+
+  const rawFields = (widget.data.fields as string[]) || [];
+  const fields = rawFields.length > 0 ? rawFields : ['visit_purpose', 'travelers', 'budget', 'interests', 'origin'];
+  const prefilled = (widget.data.prefilled as Record<string, any>) || {};
+
+  // State
+  const [activeStep, setActiveStep] = useState(0);
+  const [visitPurpose, setVisitPurpose] = useState(prefilled.visit_purpose || '');
+  const [travelers, setTravelers] = useState(prefilled.travelers || 2);
+  const [budgetVal, setBudgetVal] = useState(prefilled.budget_inr || prefilled.recommended_budget_inr || config.defaultValue);
+  const [interests, setInterests] = useState<string[]>(prefilled.interests || []);
+  const [origin, setOrigin] = useState(() => {
+    if (prefilled.origin) return prefilled.origin;
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('neuralnomad_home_origin');
+      if (saved) return saved;
+    }
+    return '';
+  });
+  const [chipValues, setChipValues] = useState<Record<string, string>>(() => ({ ...prefilled }));
+
+  const confidenceScore = Math.min(100, Math.round(50 + (activeStep / Math.max(1, fields.length)) * 50));
+  const isFormComplete = activeStep >= fields.length;
+
+  const handleNext = () => {
+    setActiveStep(prev => prev + 1);
+  };
+
+  const getChipVal = (f: string) => chipValues[f] || prefilled[f] || '';
+  const setChipVal = (f: string, v: string) => setChipValues(prev => ({ ...prev, [f]: v }));
+
+  const handleSubmit = () => {
+    const tier = getBudgetTier(budgetVal, currencyCode);
+    const formattedBudget = new Intl.NumberFormat(undefined).format(budgetVal);
+    const parts: string[] = [];
+
+    if (fields.includes('visit_purpose') && visitPurpose) parts.push(`purpose: ${visitPurpose}`);
+    if (fields.includes('travelers')) parts.push(`${travelers} travelers`);
+    if (fields.includes('budget')) parts.push(`budget: ${currencySymbol}${formattedBudget}`);
+    if (fields.includes('origin') && origin.trim()) {
+      parts.push(`from ${origin.trim()}`);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('neuralnomad_home_origin', origin.trim());
+      }
+    }
+    if (fields.includes('interests') && interests.length) parts.push(`interests: ${interests.join(', ')}`);
+
+    Object.entries(chipValues).forEach(([k, v]) => {
+      if (v && fields.includes(k)) parts.push(`${k.replace('_', ' ')}: ${v}`);
+    });
+
+    const message = parts.length > 0 ? parts.join(', ') + '.' : 'Updated my preferences.';
+
+    const chipPayload: Record<string, any> = {};
+    Object.entries(chipValues).forEach(([k, v]) => {
+      if (v && fields.includes(k)) chipPayload[k] = v;
+    });
+
+    onSubmit(message, {
+      field: 'optional_trip_details',
+      value: {
+        visit_purpose: fields.includes('visit_purpose') ? visitPurpose : undefined,
+        travelers: fields.includes('travelers') ? travelers : undefined,
+        budget: fields.includes('budget') ? { tier, amount: budgetVal, currency: currencyCode } : undefined,
+        budget_inr: fields.includes('budget') ? budgetVal : undefined,
+        interests: fields.includes('interests') ? interests : undefined,
+        origin: fields.includes('origin') && origin.trim() ? origin.trim() : undefined,
+        ...chipPayload,
+      },
+    });
+  };
+
+  const handleSkipAll = () => {
+    const tier = getBudgetTier(budgetVal, currencyCode);
+    const finalPayload: Record<string, any> = {};
+    fields.forEach(field => {
+      if (field === 'visit_purpose') {
+        finalPayload.visit_purpose = visitPurpose || prefilled.visit_purpose || 'vacation';
+      } else if (field === 'travelers') {
+        finalPayload.travelers = travelers || prefilled.travelers || 2;
+      } else if (field === 'budget') {
+        finalPayload.budget = { tier, amount: budgetVal, currency: currencyCode };
+        finalPayload.budget_inr = budgetVal;
+      } else if (field === 'origin') {
+        finalPayload.origin = origin.trim() || prefilled.origin || 'Delhi';
+      } else if (field === 'interests') {
+        finalPayload.interests = interests.length > 0 ? interests : (prefilled.interests || ['nature']);
+      } else {
+        finalPayload[field] = chipValues[field] || prefilled[field] || FIELD_OPTIONS[field]?.[0] || 'Standard';
+      }
+    });
+
+    onSubmit('Configured my travel profile with recommendations.', {
+      field: 'optional_trip_details',
+      value: finalPayload,
+    });
+  };
+
+  const renderField = (field: string, index: number) => {
+    const isCompleted = index < activeStep;
+    const isFuture = index > activeStep;
+
+    if (isFuture) {
+      return (
+        <div key={field} className="py-2 opacity-40">
+          <label className="text-[11px] font-semibold uppercase text-slate-500">
+            {field.replace('_', ' ')} (Next)
+          </label>
+        </div>
+      );
+    }
+
+    if (isCompleted) {
+      let valStr = '';
+      if (field === 'visit_purpose') valStr = visitPurpose;
+      else if (field === 'travelers') valStr = `${travelers} Passengers`;
+      else if (field === 'origin') valStr = origin;
+      else if (field === 'budget') valStr = `${currencySymbol}${new Intl.NumberFormat(undefined).format(budgetVal)}`;
+      else if (field === 'interests') valStr = interests.join(', ');
+      else valStr = getChipVal(field);
+
+      return (
+        <div key={field} className="flex items-center gap-2 py-2 text-sm font-medium text-slate-600 border-b border-slate-50 last:border-0">
+          <Check size={14} className="text-emerald-500" />
+          <span className="capitalize">{field.replace('_', ' ')}:</span>
+          <span className="text-slate-900 capitalize font-bold">{valStr || 'Not set'}</span>
+        </div>
+      );
+    }
+
+    const nextBtn = (
+      <div className="mt-4 flex items-center justify-between gap-2">
+        <button onClick={handleNext} className="text-xs font-semibold text-slate-400 hover:text-slate-600 transition-colors cursor-pointer">
+          Skip Step →
+        </button>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={handleSkipAll} 
+            className="text-xs font-extrabold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
+          >
+            ⚡ Skip All & Build Plan
+          </button>
+          <button 
+            onClick={handleNext} 
+            className="rounded-lg bg-slate-900 px-4 py-1.5 text-xs font-bold text-white transition-all hover:bg-slate-800 cursor-pointer"
+          >
+            Next Step
+          </button>
+        </div>
+      </div>
+    );
+
+    const options = FIELD_OPTIONS[field] || ['Standard', 'Premium', 'Flexible'];
+    const currentVal = getChipVal(field);
+
+    // ACTIVE STEP
+    return (
+      <div key={field} className="py-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
+        {field === 'visit_purpose' && (
+          <div>
+            <label className="text-[11px] font-semibold uppercase text-slate-500 flex justify-between">
+              <span>Trip Purpose</span>
+              {prefilled.visit_purpose && <span className="text-[9px] text-indigo-500 flex items-center gap-0.5"><Sparkles size={8}/> AI Detected</span>}
+            </label>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {['Vacation', 'Business', 'Hometown', 'Family', 'Honeymoon', 'Solo'].map(p => (
+                <button
+                  key={p}
+                  onClick={() => { setVisitPurpose(p.toLowerCase()); setTimeout(handleNext, 150); }}
+                  className={`rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-all border flex items-center gap-1 ${
+                    visitPurpose === p.toLowerCase() ? 'bg-indigo-600 text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+            {nextBtn}
+          </div>
+        )}
+
+        {field === 'travelers' && (
+          <div>
+            <label className="text-[11px] font-semibold uppercase text-slate-500">Travelers</label>
+            <div className="mt-2 flex items-center gap-3">
+              <button onClick={() => setTravelers(Math.max(1, travelers - 1))} className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-600 font-bold hover:bg-slate-200">-</button>
+              <span className="w-6 text-center text-sm font-bold text-slate-800">{travelers}</span>
+              <button onClick={() => setTravelers(travelers + 1)} className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-600 font-bold hover:bg-slate-200">+</button>
+            </div>
+            {nextBtn}
+          </div>
+        )}
+
+        {field === 'budget' && (
+          <div>
+            <label className="text-[11px] font-semibold uppercase text-slate-500 flex justify-between">
+              <span>Trip Budget</span>
+              {prefilled.recommended_budget_inr && <span className="text-[9px] text-indigo-500 flex items-center gap-0.5"><Sparkles size={8}/> Recommended</span>}
+            </label>
+            <div className="mt-2 text-sm font-bold text-blue-600">
+              {currencySymbol}{new Intl.NumberFormat(undefined).format(budgetVal)}
+            </div>
+            <input type="range" min={config.min} max={config.max} step={config.step} value={budgetVal} onChange={(e) => setBudgetVal(Number(e.target.value))} className="mt-2 w-full h-1.5 cursor-pointer appearance-none rounded-lg bg-slate-200 accent-blue-600" />
+            {nextBtn}
+          </div>
+        )}
+
+        {field === 'origin' && (
+          <div>
+            <label className="text-[11px] font-semibold uppercase text-slate-500">Departure City</label>
+            <div className="relative mt-2">
+              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+              <input value={origin} onChange={(e) => setOrigin(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleNext()} placeholder="e.g. Mumbai" className="w-full rounded-lg border border-slate-200 bg-slate-50 py-1.5 pl-8 pr-3 text-sm text-slate-800 placeholder:text-slate-400" />
+            </div>
+            {nextBtn}
+          </div>
+        )}
+
+        {field === 'interests' && (
+          <div>
+            <label className="text-[11px] font-semibold uppercase text-slate-500">Interests</label>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {['Food', 'Culture', 'Nature', 'Nightlife', 'Shopping', 'Relaxation', 'Adventure'].map(i => {
+                const isSel = interests.includes(i.toLowerCase());
+                return (
+                  <button key={i} onClick={() => {
+                    setInterests(prev => isSel ? prev.filter(x => x !== i.toLowerCase()) : [...prev, i.toLowerCase()]);
+                  }} className={`rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-all border ${isSel ? 'bg-indigo-600 text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}>
+                    {i}
+                  </button>
+                )
+              })}
+            </div>
+            {nextBtn}
+          </div>
+        )}
+
+        {/* Dynamic chip-based fields (handles all other fields + fallback) */}
+        {!['visit_purpose', 'travelers', 'budget', 'origin', 'interests'].includes(field) && (
+          <div>
+            <label className="text-[11px] font-semibold uppercase text-slate-500 flex justify-between">
+              <span>{field.replace('_', ' ')}</span>
+              {prefilled[field] && <span className="text-[9px] text-indigo-500 flex items-center gap-0.5"><Sparkles size={8}/> Recommended</span>}
+            </label>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {options.map(opt => (
+                <button
+                  key={opt}
+                  onClick={() => { setChipVal(field, opt); setTimeout(handleNext, 150); }}
+                  className={`rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-all border ${currentVal === opt ? 'bg-indigo-600 text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}
+                >
+                  {opt}
+                </button>
+              ))}
+            </div>
+            {nextBtn}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="mr-auto mt-2 flex w-full max-w-sm flex-col gap-3 rounded-2xl border border-line-strong bg-white p-4 shadow-sm animate-fade-in">
+      <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+        <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
+          <Sparkles size={14} className="text-indigo-500 animate-pulse" />
+          <span>Fine-tuning your trip</span>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">AI Confidence {confidenceScore}%</span>
+          <div className="w-20 bg-slate-100 rounded-full h-1.5 overflow-hidden">
+            <div className="bg-gradient-to-r from-indigo-500 to-blue-500 h-1.5 rounded-full transition-all duration-700 ease-out" style={{ width: `${confidenceScore}%` }} />
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-col">
+        {fields.map((field, idx) => renderField(field, idx))}
+      </div>
+
+      <div className="mt-2 pt-2 animate-in fade-in zoom-in duration-300 border-t border-slate-100 flex items-center justify-between gap-2">
+        <button
+          onClick={handleSkipAll}
+          className="text-xs font-semibold text-slate-400 hover:text-slate-600 transition-colors"
+        >
+          Skip All & Create
+        </button>
+        <button
+          onClick={handleSubmit}
+          className="rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2 text-xs font-bold text-white shadow-sm transition-all hover:opacity-90 flex items-center justify-center gap-1.5"
+        >
+          <Check size={14} /> {isFormComplete ? 'Confirm Preferences' : 'Submit & Build'}
+        </button>
+      </div>
+    </div>
+  );
+}

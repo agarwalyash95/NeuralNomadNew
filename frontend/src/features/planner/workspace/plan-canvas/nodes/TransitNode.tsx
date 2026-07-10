@@ -1,6 +1,6 @@
 import React from 'react';
 import { Train, Plane, Bus, Trash2 } from 'lucide-react';
-import { ItineraryItem } from '../mockData';
+import { ItineraryItem } from '../types';
 import Image from 'next/image';
 
 interface TransitNodeProps {

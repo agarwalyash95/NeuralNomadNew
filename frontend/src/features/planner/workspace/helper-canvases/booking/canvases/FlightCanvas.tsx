@@ -10,15 +10,21 @@ import CanvasHeader from '../../shared/CanvasHeader';
 import SearchSummaryBar from '../../shared/SearchSummaryBar';
 import QuickFilterBar from '../../shared/QuickFilterBar';
 import ReplaceConfirmBar from '../../shared/ReplaceConfirmBar';
-import { ItineraryItem } from '../../../plan-canvas/mockData';
+import { ItineraryItem, CostProvenance } from '../../../plan-canvas/types';
+import { ProvenanceBadge } from '../../../../components/ProvenanceBadge';
+import CurrentlyBookedCard from '../../shared/CurrentlyBookedCard';
 
 interface FlightCanvasProps {
   onClose?: () => void;
   tripContext: TripContext;
-  onAddToPlan?: (item: ItineraryItem) => void;
+  onAddToPlan?: (item: ItineraryItem, options?: { thenBook?: boolean }) => void;
 }
 
 const QUICK_FILTER_TAGS = ['Cheapest', 'Fastest', 'Morning', 'Evening', 'Non-stop'];
+
+/** Search results are real inventory, but not yet price-locked — 'estimated'
+ *  until the traveler explicitly verifies via Verify Live Price on the block. */
+const RESULT_PROVENANCE: CostProvenance = { tier: 'estimated', source: 'Live search', basis: 'Not yet price-verified' };
 
 function buildInitialParams(ctx: TripContext): BookingSearchParams {
   let origin = 'Delhi (DEL)';
@@ -86,6 +92,8 @@ export default function FlightCanvas({ onClose, tripContext, onAddToPlan }: Flig
   const [results, setResults] = useState<any[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>(['Cheapest']);
   const [pendingItem, setPendingItem] = useState<any | null>(null);
+  /** 'trip' = plan the flight; 'booking' = price it and go straight to Checkout */
+  const [pendingAction, setPendingAction] = useState<'trip' | 'booking'>('trip');
 
   // Re-prefill if trip context changes
   useEffect(() => {
@@ -106,6 +114,7 @@ export default function FlightCanvas({ onClose, tripContext, onAddToPlan }: Flig
         return {
           id: flight.id,
           airline: flight.title,
+          logo: (flight as any).logo_url || (flight.meta as any)?.airline_logo || (flight.providers?.[0] as any)?.logo || null,
           flightNumber: flight.code,
           departure: {
             time: getTime(flight.departure_time),
@@ -148,8 +157,9 @@ export default function FlightCanvas({ onClose, tripContext, onAddToPlan }: Flig
     await fetchFlights(params);
   };
 
-  const handleSelect = (flight: any) => {
+  const handleSelect = (flight: any, action: 'trip' | 'booking') => {
     setPendingItem(flight);
+    setPendingAction(action);
   };
 
   const handleConfirmReplace = () => {
@@ -164,20 +174,31 @@ export default function FlightCanvas({ onClose, tripContext, onAddToPlan }: Flig
       price: `₹${pendingItem.price.toLocaleString()}`,
       status: 'Pending',
       details: `${pendingItem.duration} • ${pendingItem.stops} • ${pendingItem.baggage}`,
+      // "Add to booking" carries a quote the commitment ladder starts from
+      blockStatus: pendingAction === 'booking' ? 'priced' : 'planned',
+      cost: { amount: pendingItem.price, currency: 'INR', provenance: RESULT_PROVENANCE },
     };
-    onAddToPlan(newItem);
+    onAddToPlan(newItem, { thenBook: pendingAction === 'booking' });
     setPendingItem(null);
   };
 
-  const filteredResults = results.filter(f => {
-    if (selectedTags.length === 0) return true;
-    return selectedTags.every(tag => {
-      if (tag === 'Non-stop') return f.stops === 'Non-stop';
-      if (tag === 'Morning') return parseInt(f.departure.time) < 12;
-      if (tag === 'Evening') return parseInt(f.departure.time) >= 17;
-      return true;
+  // 'Cheapest'/'Fastest' are sort toggles, not predicates — a flight can't be
+  // excluded for being expensive, only ranked lower. Everything else filters.
+  const filteredResults = results
+    .filter(f => {
+      if (selectedTags.length === 0) return true;
+      return selectedTags.every(tag => {
+        if (tag === 'Non-stop') return f.stops === 'Non-stop';
+        if (tag === 'Morning') return parseInt(f.departure.time) < 12;
+        if (tag === 'Evening') return parseInt(f.departure.time) >= 17;
+        return true;
+      });
+    })
+    .sort((a, b) => {
+      if (selectedTags.includes('Cheapest')) return a.price - b.price;
+      if (selectedTags.includes('Fastest')) return parseInt(a.duration) - parseInt(b.duration);
+      return 0;
     });
-  });
 
   const searchSummary = `${params.origin} → ${params.destination}`;
   const searchSecondary = [params.departureDate, `${params.travellers} traveller(s)`, params.cabinClass].filter(Boolean).join(' • ');
@@ -192,6 +213,7 @@ export default function FlightCanvas({ onClose, tripContext, onAddToPlan }: Flig
         tripContext={tripContext}
         onClose={onClose}
       />
+      <CurrentlyBookedCard tripContext={tripContext} nodeType="flight" />
 
       <div className="custom-scrollbar flex-1 overflow-y-auto">
         {!isSearchExpanded && (
@@ -237,39 +259,89 @@ export default function FlightCanvas({ onClose, tripContext, onAddToPlan }: Flig
             <div className="space-y-3">
               <p className="text-xs font-semibold text-slate-500">{filteredResults.length} flights found</p>
               {filteredResults.map((flight) => (
-                <div key={flight.id} className={`group rounded-xl border bg-white p-4 transition-all hover:shadow-md ${pendingItem?.id === flight.id ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200 hover:border-blue-300'}`}>
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="mb-3 flex items-center gap-2">
-                        <span className="text-lg">✈️</span>
-                        <div>
-                          <p className="text-sm font-semibold text-slate-900">{flight.airline}</p>
-                          <p className="text-xs text-slate-500">{flight.flightNumber}</p>
+                <div
+                  key={flight.id}
+                  className={`group overflow-hidden rounded-2xl border bg-paper-2 transition-all hover:shadow-md ${pendingItem?.id === flight.id ? 'border-blue-400 ring-2 ring-blue-100' : 'border-line hover:border-blue-300'}`}
+                >
+                  <div className="p-4 pb-3">
+                    {/* Airline identity + price */}
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        {flight.logo ? (
+                          <img src={flight.logo} alt={flight.airline} className="h-8 w-8 shrink-0 rounded-lg border border-line object-contain p-0.5" />
+                        ) : (
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-[11px] font-black text-blue-700">
+                            {String(flight.airline || '?').slice(0, 2).toUpperCase()}
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-ink-900">{flight.airline}</p>
+                          <p className="text-[11px] font-medium text-ink-500">
+                            {flight.flightNumber}
+                            {flight.class && <span className="ml-1.5 rounded-sm bg-paper-0 px-1 py-px text-[9px] font-bold uppercase tracking-wide text-ink-500">{flight.class}</span>}
+                          </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <div><p className="text-lg font-bold text-slate-900">{flight.departure.time}</p><p className="text-xs text-slate-500">{flight.departure.airport}</p></div>
-                        <div className="flex flex-1 flex-col items-center">
-                          <p className="text-[10px] font-semibold text-slate-400">{flight.duration}</p>
-                          <div className="my-1 h-px w-full bg-slate-300" />
-                          <p className="text-[10px] text-slate-400">{flight.stops}</p>
+                      <div className="shrink-0 text-right">
+                        <p className="text-lg font-black tabular-nums text-ink-900">₹{flight.price.toLocaleString()}</p>
+                        <p className="-mt-0.5 text-[10px] text-ink-400">per person</p>
+                      </div>
+                    </div>
+
+                    {/* Route timeline */}
+                    <div className="flex items-center gap-3">
+                      <div className="shrink-0">
+                        <p className="text-base font-bold tabular-nums text-ink-900">{flight.departure.time}</p>
+                        <p className="text-[11px] font-semibold text-ink-500">{flight.departure.airport}</p>
+                      </div>
+                      <div className="flex min-w-0 flex-1 flex-col items-center">
+                        <p className="text-[10px] font-bold text-ink-400">{flight.duration}</p>
+                        <div className="relative my-1 h-px w-full bg-line-strong">
+                          <span className="absolute left-0 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full border border-line-strong bg-paper-2" />
+                          <span className="absolute right-0 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-blue-600" />
                         </div>
-                        <div className="text-right"><p className="text-lg font-bold text-slate-900">{flight.arrival.time}</p><p className="text-xs text-slate-500">{flight.arrival.airport}</p></div>
+                        <p className={`text-[10px] font-bold ${flight.stops === 'Non-stop' ? 'text-trust-verified' : 'text-ink-400'}`}>{flight.stops}</p>
                       </div>
-                      <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
-                        <span>{flight.baggage}</span><span>•</span><span>{flight.seats}</span>
+                      <div className="shrink-0 text-right">
+                        <p className="text-base font-bold tabular-nums text-ink-900">{flight.arrival.time}</p>
+                        <p className="text-[11px] font-semibold text-ink-500">{flight.arrival.airport}</p>
                       </div>
                     </div>
-                    <div className="ml-4 text-right">
-                      <p className="text-xl font-bold text-slate-900">₹{flight.price.toLocaleString()}</p>
-                      <p className="text-xs text-slate-500">per person</p>
-                      <button
-                        onClick={() => handleSelect(flight)}
-                        className={`mt-2 rounded-lg px-4 py-2 text-xs font-semibold transition-colors ${pendingItem?.id === flight.id ? 'bg-blue-700 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
-                      >
-                        {pendingItem?.id === flight.id ? '✓ Selected' : 'Select'}
-                      </button>
+
+                    {/* Fact chips */}
+                    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                      <span className="rounded-full border border-line bg-paper-1 px-2 py-0.5 text-[10px] font-bold text-ink-500">🧳 {flight.baggage}</span>
+                      <span className="rounded-full border border-line bg-paper-1 px-2 py-0.5 text-[10px] font-bold text-ink-500">{flight.seats}</span>
+                      {flight.meal?.length > 0 && (
+                        <span className="rounded-full border border-line bg-paper-1 px-2 py-0.5 text-[10px] font-bold text-ink-500">🍽 Meal</span>
+                      )}
+                      <span className="ml-auto"><ProvenanceBadge provenance={RESULT_PROVENANCE} /></span>
                     </div>
+                  </div>
+
+                  {/* Split action row */}
+                  <div className="flex border-t border-line">
+                    <button
+                      onClick={() => handleSelect(flight, 'trip')}
+                      className={`flex-1 cursor-pointer py-2 text-xs font-bold transition-colors ${
+                        pendingItem?.id === flight.id && pendingAction === 'trip'
+                          ? 'bg-blue-50 text-blue-700'
+                          : 'text-ink-700 hover:bg-paper-1'
+                      }`}
+                    >
+                      {pendingItem?.id === flight.id && pendingAction === 'trip' ? '✓ Adding to trip' : '+ Add to trip'}
+                    </button>
+                    <div className="w-px bg-line" />
+                    <button
+                      onClick={() => handleSelect(flight, 'booking')}
+                      className={`flex-1 cursor-pointer py-2 text-xs font-bold transition-colors ${
+                        pendingItem?.id === flight.id && pendingAction === 'booking'
+                          ? 'bg-blue-700 text-white'
+                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                      }`}
+                    >
+                      {pendingItem?.id === flight.id && pendingAction === 'booking' ? '✓ Booking…' : 'Add to booking'}
+                    </button>
                   </div>
                 </div>
               ))}
@@ -291,6 +363,7 @@ export default function FlightCanvas({ onClose, tripContext, onAddToPlan }: Flig
           newItemPrice={`₹${pendingItem.price.toLocaleString()}`}
           tripContext={tripContext}
           confirmColor="bg-blue-600 hover:bg-blue-700"
+          confirmLabel={pendingAction === 'booking' ? 'Add & go to Checkout' : 'Add to trip'}
           onCancel={() => setPendingItem(null)}
           onConfirm={handleConfirmReplace}
         />

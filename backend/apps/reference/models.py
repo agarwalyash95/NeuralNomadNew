@@ -118,13 +118,28 @@ class MetroStation(models.Model):
 
 class HotelMaster(models.Model):
     city = models.ForeignKey(City, on_delete=models.CASCADE)
+    place_id = models.CharField(max_length=255, blank=True, null=True, unique=True)
     name = models.CharField(max_length=255)
     star_rating = models.DecimalField(max_digits=2, decimal_places=1, blank=True, null=True)
+    primary_type = models.CharField(max_length=100, blank=True, null=True)
+    price_range = models.CharField(max_length=10, blank=True, null=True)  # e.g. $$, when Google reports one
     user_rating = models.DecimalField(max_digits=3, decimal_places=2, blank=True, null=True)
+    user_ratings_total = models.IntegerField(default=0)
     address = models.TextField(blank=True, null=True)
     image_url = models.URLField(max_length=1000, blank=True, null=True)
     latitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
     longitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
+
+    # Deep Details (Google Places), mirroring RestaurantMaster/AttractionMaster
+    parking_options = models.JSONField(default=list, blank=True)
+    payment_options = models.JSONField(default=list, blank=True)
+    reviews = models.JSONField(default=list, blank=True)
+    secondary_images = models.JSONField(default=list, blank=True)
+    opening_hours = models.JSONField(default=list, blank=True)
+
+    national_phone_number = models.CharField(max_length=50, blank=True, null=True)
+    website_uri = models.URLField(max_length=1000, blank=True, null=True)
+    editorial_summary = models.TextField(blank=True, null=True)
 
     def __str__(self):
         return self.name
@@ -294,3 +309,46 @@ class GooglePlaceCache(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class TravelPriceHistory(models.Model):
+    """
+    Historical and live travel price database (covering the last 3 years).
+    Uses ForeignKeys linking to the existing master reference tables.
+    """
+    service_type = models.CharField(max_length=20, choices=[
+        ('flight', 'Flight'),
+        ('train', 'Train'),
+        ('bus', 'Bus'),
+        ('hotel', 'Hotel'),
+        ('cab', 'Cab'),
+    ], db_index=True)
+    
+    date = models.DateField(db_index=True)
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+    currency = models.CharField(max_length=3, default='INR')
+    provider = models.CharField(max_length=100, db_index=True)
+    code = models.CharField(max_length=50, blank=True, help_text='Flight number, train number, room type, cab type')
+    
+    # ForeignKeys linking to reference master tables
+    airport_route = models.ForeignKey(AirportRoute, on_delete=models.CASCADE, null=True, blank=True, related_name='historical_prices')
+    train_route = models.ForeignKey(TrainRoute, on_delete=models.CASCADE, null=True, blank=True, related_name='historical_prices')
+    bus_route = models.ForeignKey(BusRoute, on_delete=models.CASCADE, null=True, blank=True, related_name='historical_prices')
+    hotel = models.ForeignKey(HotelMaster, on_delete=models.CASCADE, null=True, blank=True, related_name='historical_prices')
+    city = models.ForeignKey(City, on_delete=models.CASCADE, null=True, blank=True, related_name='cab_historical_prices')
+    
+    details = models.JSONField(default=dict, blank=True, help_text='Extra details like class breakdown, seat availability, duration, departure/arrival times')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['date', 'service_type', 'provider']
+        verbose_name = 'Travel Price History'
+        verbose_name_plural = 'Travel Price History'
+        indexes = [
+            models.Index(fields=['service_type', 'date']),
+        ]
+
+    def __str__(self):
+        return f"[{self.service_type.upper()}] {self.provider} on {self.date}: INR {self.price}"
+

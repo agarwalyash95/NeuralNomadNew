@@ -19,7 +19,7 @@ export default function SelectField({
   icon: Icon,
 }: SelectFieldProps) {
   return (
-    <div className="group relative w-full rounded-2xl border border-[#ddd7ca] bg-white px-3 py-3 transition-colors focus-within:border-blue-500">
+    <div className="group relative w-full rounded-2xl border border-line-strong bg-white px-3 py-3 transition-colors focus-within:border-blue-500">
       <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500 transition-colors group-focus-within:text-blue-600">
         {label}
       </label>

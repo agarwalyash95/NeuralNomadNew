@@ -15,6 +15,33 @@ export type ActivityStatus = 'planned' | 'booked' | 'completed' | 'cancelled';
 
 // ─── Workspace ─────────────────────────────────────
 
+export type WorkspaceLifecycle = 'traveling' | 'planning' | 'upcoming' | 'past';
+
+/** Sidebar section — one at a time: Recent → Saved (on save) → Booked (on book) */
+export type WorkspaceBucket = 'recent' | 'saved' | 'booked';
+
+// ─── Plan generation job (real progress, polled ~1s) ───
+
+export type GenerationPhaseState = 'pending' | 'active' | 'done' | 'failed';
+
+export interface GenerationPhase {
+  key: string;
+  label: string;
+  state: GenerationPhaseState;
+  /** Real pipeline detail, e.g. "Jaipur: 18 attractions, 12 restaurants" */
+  detail: string;
+  at: string | null;
+}
+
+export interface GenerationJobStatus {
+  job_id: string;
+  status: 'queued' | 'running' | 'done' | 'failed';
+  phase: string;
+  progress: number;
+  phases: GenerationPhase[];
+  error: string | null;
+}
+
 export interface PlannerWorkspace {
   id: string;
   title: string;
@@ -26,6 +53,13 @@ export interface PlannerWorkspace {
   chat_count: number;
   active_canvases: CanvasType[];
   draft_state?: TripDraftState;
+  is_modified?: boolean;
+  /** Where this trip sits in time — server-computed */
+  lifecycle?: WorkspaceLifecycle;
+  /** Sidebar section — server-computed, drives sidebar grouping */
+  bucket?: WorkspaceBucket;
+  /** One-line hint: what this trip needs from the user next */
+  next_action?: string;
 }
 
 export interface TripDraftState {
@@ -45,43 +79,6 @@ export interface TripDraftState {
   metadata: Record<string, unknown>;
   ready_for_plan: boolean;
   missing_slots: string[];
-}
-
-// ─── Memory ────────────────────────────────────────
-
-export interface PlannerMemory {
-  destination: Record<string, string>;
-  origin: Record<string, string>;
-  dates: Record<string, string>;
-  travelers: Record<string, number>;
-  budget: Record<string, string | number>;
-  transportation_preference: string[];
-  hotel_preference: Record<string, unknown>;
-  interests: string[];
-  food_preference: Record<string, string>;
-  accessibility: Record<string, unknown>;
-  visa_status: Record<string, string>;
-  booking_summary: Record<string, number>;
-  current_phase: string;
-  conversation_summary: string;
-  last_ai_action: Record<string, unknown>;
-}
-
-// ─── Context ───────────────────────────────────────
-
-export interface WorkspaceContext {
-  origin_location: string;
-  destination_location: string;
-  start_date: string | null;
-  end_date: string | null;
-  adults: number;
-  children: number;
-  infants: number;
-  budget: number | null;
-  budget_currency: string;
-  travel_style: string;
-  interests: string[];
-  metadata: Record<string, unknown>;
 }
 
 // ─── Chat ──────────────────────────────────────────
@@ -143,6 +140,19 @@ export interface TripActivity {
   notes: string;
   weather_info: Record<string, unknown>;
   metadata: Record<string, unknown>;
+  /** Block schema v2 — structured cost with provenance (trust grammar) */
+  cost?: {
+    amount: number | null;
+    currency: string;
+    provenance: {
+      tier: 'verified' | 'estimated' | 'suggested';
+      source?: string;
+      basis?: string;
+      verified_at?: string;
+    };
+  };
+  /** Block schema v2 — commitment ladder */
+  block_status?: 'idea' | 'planned' | 'priced' | 'booked';
 }
 
 export interface TripDay {
@@ -176,70 +186,64 @@ export interface PlannerTrip {
   metadata: Record<string, unknown>;
   cities: TripCity[];
   days: TripDay[];
+  /** Block schema version emitted by the backend (v2 = provenance-aware) */
+  schema_version?: number;
 }
 
-// ─── Recommendation ────────────────────────────────
+// ─── Proposals — AI proposes, the traveler decides ──
 
-export interface Recommendation {
+export type ProposalStatus = 'open' | 'accepted' | 'rejected' | 'expired';
+
+export interface PlanProposal {
   id: string;
-  type: string;
-  canvas_type: CanvasType;
+  kind: 'route_optimization' | 'plan_edit' | 'price_watch';
   title: string;
-  description: string;
-  confidence: number;
-  priority: number;
-  reason: string;
-  estimated_cost: number | null;
-  estimated_time: number | null;
-  impact: string;
-  dependencies: string[];
-  actions: Array<{
-    label: string;
-    command_type: string;
-    payload: Record<string, unknown>;
-  }>;
-  data: Record<string, unknown>;
-  is_dismissed: boolean;
-  is_accepted: boolean;
-}
-
-// ─── Canvas ────────────────────────────────────────
-
-export interface CanvasInstance {
-  id: string;
-  canvas_type: CanvasType;
-  lifecycle_state: CanvasLifecycleState;
-  is_active: boolean;
-  display_order: number;
-}
-
-// ─── Booking / Cart ────────────────────────────────
-
-export interface BookingOrder {
-  id: string;
-  item_type: string;
-  source_canvas: string;
-  title: string;
-  provider: string;
-  price: number;
-  currency_code: string;
-  status: string;
-  metadata: Record<string, unknown>;
+  rationale: string;
+  diff: {
+    before?: { days: any[] };
+    after?: { days: any[] };
+    deltas?: { saved_km?: number; saved_mins?: number; cost_delta?: number };
+  };
+  status: ProposalStatus;
+  rejection_reason: string;
+  created_by: string;
   created_at: string;
+  resolved_at: string | null;
 }
 
-// ─── Saved Places ──────────────────────────────────
+// ─── Traveler memory ────────────────────────────────
 
-export interface SavedPlace {
-  id: string;
-  name: string;
-  category: string;
-  address: string;
-  latitude: number;
-  longitude: number;
-  rating: number | null;
-  metadata: Record<string, unknown>;
-  created_at: string;
+export interface TravelerFact {
+  key: string;
+  value: unknown;
+  /** stated = user said it; inferred = derived from behavior; confirmed = inferred then user-approved */
+  provenance: 'stated' | 'inferred' | 'confirmed';
+  source_trip: string | null;
+  updated_at: string;
+}
+
+// ─── Commitments & Ledger ──────────────────────────
+
+export type CommitmentStatus = 'priced' | 'held' | 'booked' | 'ticketed';
+
+export interface BlockCommitment {
+  block_id: string;
+  status: CommitmentStatus;
+  amount: number | null;
+  currency: string;
+  refundable_until: string | null;
+  provider_ref: string;
+}
+
+export interface TripLedger {
+  currency: string;
+  budget: number | null;
+  /** Money actually committed (booked/ticketed rows) */
+  committed: number;
+  /** Cost of remaining active blocks — honesty-labeled by weakest input tier */
+  planned_estimate: number;
+  planned_tier: 'verified' | 'estimated' | 'suggested' | null;
+  commitments: BlockCommitment[];
 }
 
 // ─── Reference Data ────────────────────────────────

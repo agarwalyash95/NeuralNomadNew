@@ -4,6 +4,8 @@
  * and know which Plan Canvas node triggered them (for Replace flow).
  */
 
+import type { BlockCost } from './plan-canvas/types';
+
 export interface TripContext {
   /** The workspace / trip ID */
   tripId: string | null;
@@ -31,6 +33,10 @@ export interface TripContext {
   activeNodeType?: string;
   /** Human-readable name of the active node (e.g. "Zostel Manali") */
   activeNodeTitle?: string;
+  /** Display price of the active node right now (e.g. "₹3,500 / night") — lets a Helper Canvas show "currently: X" */
+  activeNodePrice?: string;
+  /** Structured cost + provenance of the active node, if it has one — source of truth over activeNodePrice */
+  activeNodeCost?: BlockCost;
   /** Human-readable day label (e.g. "Day 1 — Oct 15") */
   activeNodeDayLabel?: string;
   /** Subtitle of the active node (often holds origin/destination or location) */
@@ -41,6 +47,12 @@ export interface TripContext {
   activeNodeCityName?: string;
   /** Date of the node */
   activeNodeDateStr?: string;
+  /** Latitude of the active node */
+  activeNodeLatitude?: number;
+  /** Longitude of the active node */
+  activeNodeLongitude?: number;
+  /** Titles already planned for the day in play — lets Helper Canvases skip suggesting duplicates */
+  activeDayItemTitles?: string[];
 }
 
 /** Emitted by ItineraryTimeline when any item is clicked */
@@ -56,4 +68,10 @@ export interface NodeClickPayload {
   dateStr: string;
   subtitle: string;
   startTime: string;
+  latitude?: number;
+  longitude?: number;
+  /** The clicked item's current display price, if it has one — carried into the Helper Canvas */
+  price?: string;
+  /** The clicked item's structured cost + provenance, if it has one */
+  cost?: BlockCost;
 }

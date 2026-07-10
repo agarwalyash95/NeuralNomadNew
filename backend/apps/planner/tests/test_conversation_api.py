@@ -57,7 +57,7 @@ class PlannerConversationApiTests(TestCase):
         self.assertEqual(response.data["draft_state"]["destination_text"], "Tokyo")
         self.assertEqual(response.data["draft_state"]["start_date"], f"{date.today().year}-10-01")
         self.assertEqual(response.data["draft_state"]["end_date"], f"{date.today().year}-10-08")
-        self.assertEqual(response.data["assistant_message"]["widgets"][0]["type"], "optional_trip_details")
+        self.assertEqual(response.data["assistant_message"]["widgets"][0]["type"], "nearby_cities_recommendation")
 
     @patch('apps.planner.services.conversation_engine.genai.Client')
     def test_readiness_requires_destination_and_dates(self, mock_client_class):

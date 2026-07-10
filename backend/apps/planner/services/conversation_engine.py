@@ -361,8 +361,26 @@ class ConversationEngine:
             # Compute deterministic confidence score (overrides AI estimate)
             confidence_score, confidence_explanation = self._calculate_confidence(draft)
 
-            # Determine the single correct widget (uses updated draft state)
-            widget_type, widget_payload = self._determine_widget(draft, ai_data)
+            # Determine the widget type dynamically based on AI model preference, fall back to deterministic order
+            ai_widget = ai_data.widgets[0] if (ai_data.widgets and isinstance(ai_data.widgets, list) and len(ai_data.widgets) > 0) else None
+            valid_widgets = {
+                "destination_search", "origin_search", "date_range_picker",
+                "optional_trip_details", "nearby_cities_recommendation"
+            }
+            if ai_widget in valid_widgets:
+                widget_type = ai_widget
+                # Validate prereqs
+                meta = draft.metadata or {}
+                if widget_type in ["origin_search", "date_range_picker", "optional_trip_details", "nearby_cities_recommendation"] and not draft.destination_text:
+                    widget_type = "destination_search"
+                elif widget_type == "optional_trip_details" and meta.get("optional_submitted"):
+                    widget_type, _ = self._determine_widget(draft, ai_data)
+                elif widget_type == "nearby_cities_recommendation" and (not draft.destination_text or not draft.start_date or not draft.end_date or meta.get("nearby_cities")):
+                    widget_type, _ = self._determine_widget(draft, ai_data)
+                
+                widget_payload = self._build_widget_payload_for_type(draft, widget_type, ai_data)
+            else:
+                widget_type, widget_payload = self._determine_widget(draft, ai_data)
 
             reply = ai_data.reply
 
@@ -611,6 +629,82 @@ class ConversationEngine:
             if already_known_lines else "  - (nothing collected yet)"
         )
 
+        # Query matching prices from database to inject into system prompt
+        real_options_block = ""
+        if draft.destination_text:
+            dest_clean = draft.destination_text.strip()
+            origin_clean = meta.get("origin", "").strip() if meta.get("origin") else ""
+            travel_date = draft.start_date
+            
+            if not travel_date:
+                # Fallback to date in the near future (e.g. 30 days from today)
+                travel_date = date.today() + datetime.timedelta(days=30)
+                
+            from django.db.models import Q
+            from apps.reference.models import TravelPriceHistory
+            
+            # Flights
+            flights_qs = TravelPriceHistory.objects.filter(service_type='flight', date=travel_date)
+            if origin_clean:
+                flights_qs = flights_qs.filter(
+                    Q(airport_route__source__city__name__icontains=origin_clean) |
+                    Q(airport_route__source__iata_code__icontains=origin_clean)
+                )
+            if dest_clean:
+                flights_qs = flights_qs.filter(
+                    Q(airport_route__destination__city__name__icontains=dest_clean) |
+                    Q(airport_route__destination__iata_code__icontains=dest_clean)
+                )
+                
+            # Trains
+            trains_qs = TravelPriceHistory.objects.filter(service_type='train', date=travel_date)
+            if origin_clean:
+                trains_qs = trains_qs.filter(
+                    Q(train_route__source__city__name__icontains=origin_clean) |
+                    Q(train_route__source__code__icontains=origin_clean)
+                )
+            if dest_clean:
+                trains_qs = trains_qs.filter(
+                    Q(train_route__destination__city__name__icontains=dest_clean) |
+                    Q(train_route__destination__code__icontains=dest_clean)
+                )
+
+            # Buses
+            buses_qs = TravelPriceHistory.objects.filter(service_type='bus', date=travel_date)
+            if origin_clean:
+                buses_qs = buses_qs.filter(bus_route__source__city__name__icontains=origin_clean)
+            if dest_clean:
+                buses_qs = buses_qs.filter(bus_route__destination__city__name__icontains=dest_clean)
+
+            # Hotels
+            hotels_qs = TravelPriceHistory.objects.filter(service_type='hotel', date=travel_date)
+            if dest_clean:
+                hotels_qs = hotels_qs.filter(hotel__city__name__icontains=dest_clean)
+
+            # Format list of options
+            options_lines = []
+            if flights_qs.exists():
+                options_lines.append("Flights:")
+                for item in flights_qs[:3]:
+                    options_lines.append(f"  - {item.provider} ({item.code}): Rs {int(item.price):,} (Economy), Duration: {item.details.get('duration')}, Departs: {item.details.get('departure_time')}")
+            if trains_qs.exists():
+                options_lines.append("Trains:")
+                for item in trains_qs[:3]:
+                    classes_str = ", ".join(f"{c['class']}: Rs {int(c['price']):,}" for c in item.details.get('classes', []))
+                    options_lines.append(f"  - {item.provider} ({item.code}): {classes_str}, Duration: {item.details.get('duration')}, Departs: {item.details.get('departure_time')}")
+            if buses_qs.exists():
+                options_lines.append("Buses:")
+                for item in buses_qs[:2]:
+                    options_lines.append(f"  - {item.provider} ({item.code}): Rs {int(item.price):,}, Duration: {item.details.get('duration')}")
+            if hotels_qs.exists():
+                options_lines.append("Hotels:")
+                for item in hotels_qs[:3]:
+                    rooms_str = ", ".join(f"{r['name']}: Rs {int(r['price_per_night']):,}" for r in item.details.get('rooms', []))
+                    options_lines.append(f"  - {item.provider} (Stars: {item.details.get('stars')}): {rooms_str}")
+                    
+            if options_lines:
+                real_options_block = "\n".join(options_lines)
+
         learned_context = self._load_learned_context(draft)
 
         system_prompt = f"""You are a world-class human travel consultant named Priya — you've booked thousands of trips
@@ -633,6 +727,12 @@ Today is {today_str}.
 7. For honeymoon: be romantic. For business: be efficient. For hometown: be warm and personal.
 8. Never use corporate phrases like "Certainly!", "Of course!", "Absolutely!", "I'd be happy to help".
 9. NEVER ask two questions at once. One natural conversational question maximum per turn.
+10. VALUE-DRIVEN INQUIRY: Never ask a question without explaining WHY it matters from a travel planning perspective. Connect it to a localized tip, weather warning, budget advantage, or seasonal insight (e.g. instead of "When are you visiting Kyoto?", say "Cherry blossom season in Kyoto peaks in early April and hotel prices surge quickly, so locking in dates early helps secure the best rates. What dates are you thinking?").
+11. CRITICAL DATABASE-BACKED RECOMMENDATIONS: You must use the exact airlines, train names, hotel options, codes, and prices from the list of actual database options provided below. Do NOT make up any random/imaginary flights, train numbers, hotels, or prices.
+
+--- ACTUAL REAL TRAVEL OPTIONS AND PRICES FROM DATABASE ---
+{real_options_block if real_options_block else "  - (no options matching this route/date found in the database yet)"}
+
 
 --- EXTRACTION ---
 Read the user's message and populate JSON output fields:
@@ -675,6 +775,7 @@ When the optional form is next:
   - everything done → []
 {learned_context}"""
 
+
         # Build chat history
         chat_contents = []
         if history:
@@ -685,7 +786,7 @@ When the optional form is next:
         chat_contents.append({"role": "user", "parts": [{"text": message or "Continue helping me plan."}]})
 
         response = self.client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.5-pro",
             contents=chat_contents,
             config=genai.types.GenerateContentConfig(
                 system_instruction=system_prompt,
@@ -766,6 +867,55 @@ When the optional form is next:
             ),
         }
         return rules.get(intent, rules[INTENT_FULL_TRIP])
+
+    def _build_widget_payload_for_type(self, draft, widget_type, ai_data):
+        from apps.planner.models import INTENT_FULL_TRIP, INTENT_OPTIONAL_FIELDS
+        intent = draft.intent or INTENT_FULL_TRIP
+        meta = draft.metadata or {}
+
+        if widget_type == "destination_search":
+            return {}
+        elif widget_type == "origin_search":
+            return {
+                "destination": draft.destination_text or "",
+                "intent": intent,
+            }
+        elif widget_type == "date_range_picker":
+            return {
+                "intent": intent,
+                "destination": draft.destination_text or "",
+                "origin": meta.get("origin", ""),
+            }
+        elif widget_type == "optional_trip_details":
+            optional_fields = INTENT_OPTIONAL_FIELDS.get(intent, INTENT_OPTIONAL_FIELDS.get(INTENT_FULL_TRIP, []))
+            prefilled = self._build_optional_prefilled(draft)
+            return {
+                "fields": optional_fields,
+                "intent": intent,
+                "prefilled": prefilled,
+                "destination": draft.destination_text or "",
+                "duration_days": (
+                    (draft.end_date - draft.start_date).days
+                    if draft.start_date and draft.end_date else None
+                ),
+            }
+        elif widget_type == "nearby_cities_recommendation":
+            suggestions = []
+            if ai_data and getattr(ai_data, "nearby_cities", None):
+                suggestions = [
+                    {
+                        "city": s.city,
+                        "distance": s.distance,
+                        "why_visit": s.why_visit,
+                        "recommended_duration": s.recommended_duration,
+                    }
+                    for s in ai_data.nearby_cities
+                ]
+            return {
+                "destination": draft.destination_text or "",
+                "suggestions": suggestions,
+            }
+        return {}
 
     # ─────────────────────────────────────────────────────────────────────────
     # Widget Determination — Single Source of Truth
@@ -899,28 +1049,48 @@ When the optional form is next:
             # Otherwise, keep established single-service intent (e.g. flight_only, hotel_only)
 
 
-        if ai_data.destination_text and not draft.destination_text:
-            city = City.objects.select_related("country").filter(
-                name__iexact=ai_data.destination_text
-            ).first()
-            if city:
-                draft.destination_city = city
-                draft.destination_text = city.name
-            else:
-                draft.destination_text = ai_data.destination_text
+        if ai_data.destination_text:
+            cleaned_dest = ai_data.destination_text.strip()
+            if not draft.destination_text or draft.destination_text.lower() != cleaned_dest.lower():
+                city = City.objects.select_related("country").filter(
+                    name__iexact=cleaned_dest
+                ).first()
+                if city:
+                    draft.destination_city = city
+                    draft.destination_text = city.name
+                else:
+                    draft.destination_city = None
+                    draft.destination_text = cleaned_dest
 
-        if ai_data.start_date and not draft.start_date:
+        if ai_data.start_date:
             parsed = safe_parse_date(ai_data.start_date)
-            if parsed:
+            if parsed and (not draft.start_date or draft.start_date != parsed):
                 draft.start_date = parsed
 
-        if ai_data.end_date and not draft.end_date:
+        if ai_data.end_date:
             parsed = safe_parse_date(ai_data.end_date)
-            if parsed:
+            if parsed and (not draft.end_date or draft.end_date != parsed):
                 draft.end_date = parsed
 
         if ai_data.adults:
             draft.adults = ai_data.adults
+
+        # Regex & Semantic fallback for traveler extraction if LLM missed it
+        user_msg = (message or "").lower()
+        import re
+        trav_match = re.search(r'(\d+)\s*(?:traveler|traveller|people|adult|person|passenger)s?', user_msg)
+        if trav_match:
+            try:
+                extracted_adults = int(trav_match.group(1))
+                if extracted_adults > 0:
+                    draft.adults = extracted_adults
+            except (ValueError, TypeError):
+                pass
+        else:
+            if "me and mom" in user_msg or "me and my friend" in user_msg or "me and wife" in user_msg or "me and husband" in user_msg or "couple" in user_msg or "we both" in user_msg or "two of us" in user_msg:
+                draft.adults = 2
+            elif "solo" in user_msg or "myself" in user_msg or "just me" in user_msg:
+                draft.adults = 1
 
 
         if ai_data.budget_tier and not draft.budget_tier:
@@ -1085,19 +1255,25 @@ When the optional form is next:
                 if parsed_end:
                     draft.end_date = parsed_end
 
-        elif field == "travelers" and isinstance(value, dict):
-            try:
-                draft.adults = max(int(value.get("adults", draft.adults) or 1), 1)
-            except (ValueError, TypeError):
-                pass
-            try:
-                draft.children = max(int(value.get("children", draft.children) or 0), 0)
-            except (ValueError, TypeError):
-                pass
-            try:
-                draft.infants = max(int(value.get("infants", draft.infants) or 0), 0)
-            except (ValueError, TypeError):
-                pass
+        elif field == "travelers":
+            if isinstance(value, dict):
+                try:
+                    draft.adults = max(int(value.get("adults", draft.adults) or 1), 1)
+                except (ValueError, TypeError):
+                    pass
+                try:
+                    draft.children = max(int(value.get("children", draft.children) or 0), 0)
+                except (ValueError, TypeError):
+                    pass
+                try:
+                    draft.infants = max(int(value.get("infants", draft.infants) or 0), 0)
+                except (ValueError, TypeError):
+                    pass
+            else:
+                try:
+                    draft.adults = max(int(value or 1), 1)
+                except (ValueError, TypeError):
+                    pass
 
         elif field == "budget":
             if isinstance(value, dict):
