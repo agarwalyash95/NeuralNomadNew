@@ -9,6 +9,11 @@ const nextConfig = {
   },
 
   // Image optimization
+  // NOTE: place photos are served through our own backend proxy
+  // (BACKEND_BASE_URL + /api/reference/photo-proxy/...) rather than directly
+  // from Google, so the Places API key never reaches the browser. The
+  // 'localhost' pattern below covers dev; add the real backend hostname here
+  // once a production domain exists.
   images: {
     remotePatterns: [
       {

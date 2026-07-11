@@ -34,6 +34,7 @@ class TravelPassSerializer(serializers.ModelSerializer):
 
         read_only_fields = (
             "id",
+            "user",
             "reference_number",
             "created_at",
             "updated_at",

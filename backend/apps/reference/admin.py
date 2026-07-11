@@ -3,8 +3,7 @@ from .models import (
     Country, State, City, Airport, Airline, AirportRoute,
     RailwayStation, TrainRoute, BusStation, BusRoute, MetroStation,
     HotelMaster, RestaurantMaster, AttractionMaster, ActivityMaster,
-    VisaRequirement, Currency, HolidayCalendar, WeatherNormals,
-    TravelSeason, GooglePlaceCache
+    HolidayCalendar, WeatherNormals, TravelSeason
 )
 
 admin.site.register(Country)
@@ -22,9 +21,6 @@ admin.site.register(HotelMaster)
 admin.site.register(RestaurantMaster)
 admin.site.register(AttractionMaster)
 admin.site.register(ActivityMaster)
-admin.site.register(VisaRequirement)
-admin.site.register(Currency)
 admin.site.register(HolidayCalendar)
 admin.site.register(WeatherNormals)
 admin.site.register(TravelSeason)
-admin.site.register(GooglePlaceCache)

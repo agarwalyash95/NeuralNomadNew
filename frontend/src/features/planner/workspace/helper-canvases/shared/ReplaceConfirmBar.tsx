@@ -17,6 +17,11 @@ interface ReplaceConfirmBarProps {
   confirmLabel?: string;
   onCancel: () => void;
   onConfirm: () => void;
+  /** When provided, renders a second action next to the primary confirm —
+   *  e.g. "Add to trip" (onConfirm) / "Add to booking" (onConfirmSecondary),
+   *  the split used wherever a category actually supports booking. */
+  onConfirmSecondary?: () => void;
+  secondaryLabel?: string;
 }
 
 /**
@@ -33,6 +38,8 @@ export default function ReplaceConfirmBar({
   confirmLabel = 'Yes, Replace',
   onCancel,
   onConfirm,
+  onConfirmSecondary,
+  secondaryLabel = 'Add to booking',
 }: ReplaceConfirmBarProps) {
   return (
     <div className="sticky bottom-0 z-30 border-t border-amber-200 bg-amber-50 px-4 py-3 shadow-lg">
@@ -72,8 +79,17 @@ export default function ReplaceConfirmBar({
           className={`flex-1 rounded-xl py-2 text-xs font-semibold text-white transition-colors ${confirmColor}`}
         >
           {confirmLabel}
-          <ArrowRight size={12} className="ml-1 inline" />
+          {!onConfirmSecondary && <ArrowRight size={12} className="ml-1 inline" />}
         </button>
+        {onConfirmSecondary && (
+          <button
+            onClick={onConfirmSecondary}
+            className="flex-1 rounded-xl bg-slate-900 py-2 text-xs font-semibold text-white transition-colors hover:bg-slate-800"
+          >
+            {secondaryLabel}
+            <ArrowRight size={12} className="ml-1 inline" />
+          </button>
+        )}
       </div>
     </div>
   );

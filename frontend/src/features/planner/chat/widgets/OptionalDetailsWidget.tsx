@@ -348,7 +348,7 @@ export function OptionalDetailsWidget({ widget, onSubmit }: OptionalDetailsWidge
     <div className="mr-auto mt-2 flex w-full max-w-sm flex-col gap-3 rounded-2xl border border-line-strong bg-white p-4 shadow-sm animate-fade-in">
       <div className="flex items-center justify-between border-b border-slate-100 pb-2">
         <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
-          <Sparkles size={14} className="text-indigo-500 animate-pulse" />
+          <Sparkles size={14} className="text-indigo-500 motion-safe:animate-pulse" />
           <span>Fine-tuning your trip</span>
         </div>
         <div className="flex flex-col items-end gap-1">

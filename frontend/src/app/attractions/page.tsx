@@ -23,8 +23,16 @@ export default function AttractionsPage() {
   const debouncedSearch = useDebounce(searchQuery, 300);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const { exploreLocation, places, loading: exploring } = useExplore();
+  const { exploreLocation, places, loading: exploring, resolvedLocation } = useExplore();
   const { fetchDetails, details, loading: loadingDetails } = useExploreDetails();
+
+  // Sync resolved geocoded location name to input query and exploration title
+  useEffect(() => {
+    if (resolvedLocation) {
+      setCurrentLocationStr(resolvedLocation);
+      setSearchQuery(resolvedLocation);
+    }
+  }, [resolvedLocation]);
 
   // Geolocation on initial load
   useEffect(() => {
@@ -93,16 +101,15 @@ export default function AttractionsPage() {
     }
   };
 
-  const handlePlaceClick = (placeId: string | number) => {
-    // setSelectedPlaceId(placeId); // Assuming this state was accidentally removed
+  const handlePlaceClick = (place: any) => {
     setIsModalOpen(true);
-    fetchDetails(placeId);
+    fetchDetails(place.id, place.category);
   };
 
   // Group places by category
-  const sights = places.filter(p => p.category === 'tourist_attraction' || p.category === 'museum' || p.category === 'monument' || p.category === 'temple');
+  const sights = places.filter(p => p.category === 'attraction');
   const restaurants = places.filter(p => p.category === 'restaurant');
-  const activities = places.filter(p => p.category === 'amusement_park' || p.category === 'park' || p.category === 'local_activities');
+  const activities = places.filter(p => p.category === 'activity');
   
   let filteredPlaces = places;
   if (activeFilter === 'sights') filteredPlaces = sights;
@@ -110,7 +117,7 @@ export default function AttractionsPage() {
   if (activeFilter === 'activities') filteredPlaces = activities;
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-955">
       {/* 1. Massive Hero Section */}
       <section className="relative h-[60vh] min-h-[500px] w-full flex flex-col items-center justify-center pt-20 px-4">
         {/* Beautiful Background Image */}
@@ -125,7 +132,7 @@ export default function AttractionsPage() {
           <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
         </div>
 
-        <div className="relative z-10 w-full max-w-3xl text-center">
+        <div className={`relative w-full max-w-3xl text-center ${showDropdown && searchQuery.length > 1 ? 'z-40' : 'z-10'}`}>
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/20 backdrop-blur-md border border-white/30 text-white text-sm font-medium mb-6">
             <Sparkles size={16} className="text-amber-300" />
             Discover extraordinary places
@@ -133,7 +140,7 @@ export default function AttractionsPage() {
           <h1 className="text-5xl md:text-7xl font-black text-white mb-6 drop-shadow-lg tracking-tight">
             Where to next?
           </h1>
-          <p className="text-lg md:text-xl text-white/90 mb-10 drop-shadow-md">
+          <p className="text-lg md:text-xl text-white/95 mb-10 drop-shadow-md">
             Search any city, neighborhood, or landmark to instantly unlock its hidden gems.
           </p>
 
@@ -241,8 +248,8 @@ export default function AttractionsPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {filteredPlaces.map((place) => (
                   <div 
-                    key={place.id} 
-                    onClick={() => handlePlaceClick(place.id)}
+                    key={`${place.category}-${place.id}`} 
+                    onClick={() => handlePlaceClick(place)}
                     className="cursor-pointer"
                   >
                     <PlaceCard place={place} />

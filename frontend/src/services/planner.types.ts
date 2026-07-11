@@ -196,7 +196,7 @@ export type ProposalStatus = 'open' | 'accepted' | 'rejected' | 'expired';
 
 export interface PlanProposal {
   id: string;
-  kind: 'route_optimization' | 'plan_edit' | 'price_watch';
+  kind: 'route_optimization' | 'plan_edit' | 'price_watch' | 'insight';
   title: string;
   rationale: string;
   diff: {
@@ -211,6 +211,18 @@ export interface PlanProposal {
   resolved_at: string | null;
 }
 
+// ─── Proactive insights — advisory, never a silent plan change ──────
+
+export interface PlanInsight {
+  rule: string;
+  day_number: number | null;
+  severity: 'info' | 'warning';
+  message: string;
+  related_block_ids: string[];
+  action: null; // K3's two rules are advisory-only; actionable rules land in K5
+  context_hash: string;
+}
+
 // ─── Traveler memory ────────────────────────────────
 
 export interface TravelerFact {
@@ -220,6 +232,34 @@ export interface TravelerFact {
   provenance: 'stated' | 'inferred' | 'confirmed';
   source_trip: string | null;
   updated_at: string;
+}
+
+/** A `transport_preference` TravelerFact's value shape — cross-trip, set
+ *  once in the header kebab, read by booking canvases as their default sort/filter. */
+export interface TransportPreference {
+  priority?: 'cheapest' | 'fastest' | 'comfort' | null;
+  avoid_flights?: boolean;
+  avoid_overnight?: boolean;
+  minimal_transfers?: boolean;
+}
+
+// ─── Transport leg comparison ───────────────────────
+
+export interface TransportLegRow {
+  mode: 'flight' | 'train' | 'bus' | 'cab';
+  duration_mins: number | null;
+  duration_label: string | null;
+  distance_km: number | null;
+  price: number | null;
+  price_label: string | null;
+  provenance: { tier: string; source?: string; basis?: string } | null;
+}
+
+export interface TransportLegComparison {
+  origin: string;
+  destination: string;
+  rows: TransportLegRow[];
+  recommendation: { mode: string; alternative_mode?: string; reason: string } | null;
 }
 
 // ─── Commitments & Ledger ──────────────────────────
@@ -330,3 +370,23 @@ export const CANVAS_ICONS: Record<CanvasType, string> = {
   forex: 'Coins',
   booking: 'ShoppingCart',
 };
+
+// ─── Recommended Trip ──────────────────────────────
+
+export interface RecommendedTrip {
+  id: string;
+  title: string;
+  destination: string;
+  duration_days: number;
+  best_season: string;
+  budget_category: string;
+  trip_style: string;
+  ai_recommendation_score: number;
+  short_description: string;
+  number_of_cities: number;
+  highlights: string[];
+  estimated_total_cost: string;
+  destination_image: string;
+  is_active: boolean;
+}
+

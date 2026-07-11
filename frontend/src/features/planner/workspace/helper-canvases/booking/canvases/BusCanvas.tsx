@@ -1,6 +1,6 @@
 'use client';
 
-import React, { FormEvent, useState, useEffect } from 'react';
+import React, { FormEvent, useState, useEffect, useRef } from 'react';
 import { Bus, Search } from 'lucide-react';
 import { BookingSearchParams } from '@/types/booking';
 import BusSearchForm from '../forms/BusSearchForm';
@@ -13,6 +13,7 @@ import ReplaceConfirmBar from '../../shared/ReplaceConfirmBar';
 import { ItineraryItem, CostProvenance } from '../../../plan-canvas/types';
 import { ProvenanceBadge } from '../../../../components/ProvenanceBadge';
 import CurrentlyBookedCard from '../../shared/CurrentlyBookedCard';
+import { useTransportPreference } from '@/features/planner/hooks/usePlannerQueries';
 
 interface BusCanvasProps {
   onClose?: () => void;
@@ -22,9 +23,10 @@ interface BusCanvasProps {
 
 const QUICK_FILTER_TAGS = ['AC Sleeper', 'Volvo', 'Lowest Price', 'Fastest', 'Ladies Special'];
 
-/** Search results are real inventory, but not yet price-locked — 'estimated'
- *  until the traveler explicitly verifies via Verify Live Price on the block. */
-const RESULT_PROVENANCE: CostProvenance = { tier: 'estimated', source: 'Live search', basis: 'Not yet price-verified' };
+/** Search results come from reference-table inventory, not a live third-party
+ *  quote — 'suggested' tier until the traveler explicitly verifies via Verify
+ *  Live Price on the block. */
+const RESULT_PROVENANCE: CostProvenance = { tier: 'suggested', source: 'Inventory search', basis: 'Not yet price-verified' };
 
 function buildInitialParams(ctx: TripContext): BookingSearchParams {
   let origin = 'Delhi';
@@ -90,22 +92,34 @@ export default function BusCanvas({ onClose, tripContext, onAddToPlan }: BusCanv
 
   useEffect(() => { setParams(buildInitialParams(tripContext)); }, [tripContext.tripId]);
 
+  // Cross-trip transport preference seeds the default sort — a one-time
+  // seed, not a forced override of a choice already made in this canvas.
+  const { data: transportPreference } = useTransportPreference();
+  const appliedPreference = useRef(false);
+  useEffect(() => {
+    if (appliedPreference.current || !transportPreference?.priority) return;
+    appliedPreference.current = true;
+    if (transportPreference.priority === 'cheapest') setSelectedTags((prev) => [...prev, 'Lowest Price']);
+    else if (transportPreference.priority === 'fastest') setSelectedTags((prev) => [...prev, 'Fastest']);
+  }, [transportPreference]);
+
   const fetchBuses = async (searchParams: BookingSearchParams) => {
     setLoading(true);
     try {
       const apiResults = await searchService.search(searchParams);
       const mapped = apiResults.map((bus) => {
         const seat = bus.meta?.seats?.[0];
-        const price = bus.providers?.[0]?.price || seat?.price || 1200;
+        // A missing fact renders as absent, never a fabricated default.
+        const price = bus.providers?.[0]?.price ?? seat?.price ?? null;
         return {
           id: bus.id,
           operator: bus.title,
           busType: bus.meta?.bus_type || 'AC Sleeper',
-          departure: { time: bus.departure_time || '18:00', location: bus.origin_city || searchParams.origin || 'Origin' },
-          arrival: { time: bus.arrival_time || '08:30+1', location: bus.destination_city || searchParams.destination || tripContext.destination },
-          duration: bus.duration || '14h 30m',
+          departure: { time: bus.departure_time || null, location: bus.origin_city || searchParams.origin || 'Origin' },
+          arrival: { time: bus.arrival_time || null, location: bus.destination_city || searchParams.destination || tripContext.destination },
+          duration: bus.duration || null,
           price,
-          seats: seat?.seats_available ? `${seat.seats_available} seats left` : 'Available',
+          seats: seat?.seats_available != null ? `${seat.seats_available} seats left` : null,
           amenities: ['Charging Point', 'Blanket'],
         };
       });
@@ -130,13 +144,13 @@ export default function BusCanvas({ onClose, tripContext, onAddToPlan }: BusCanv
     const newItem: ItineraryItem = {
       id: `bus-${pendingItem.id}-${Date.now()}`,
       type: 'bus',
-      startTime: pendingItem.departure.time,
-      endTime: pendingItem.arrival.time,
+      startTime: pendingItem.departure.time ?? undefined,
+      endTime: pendingItem.arrival.time ?? undefined,
       title: `${pendingItem.operator}`,
       subtitle: `${pendingItem.departure.location} to ${pendingItem.arrival.location} • ${pendingItem.busType}`,
-      price: `₹${pendingItem.price.toLocaleString()}`,
+      price: pendingItem.price != null ? `₹${pendingItem.price.toLocaleString()}` : undefined,
       status: 'Pending',
-      details: `${pendingItem.duration} • ${pendingItem.seats}`,
+      details: [pendingItem.duration, pendingItem.seats].filter(Boolean).join(' • ') || undefined,
       cost: { amount: pendingItem.price, currency: 'INR', provenance: RESULT_PROVENANCE },
     };
     onAddToPlan(newItem);
@@ -155,8 +169,9 @@ export default function BusCanvas({ onClose, tripContext, onAddToPlan }: BusCanv
       });
     })
     .sort((a: any, b: any) => {
-      if (selectedTags.includes('Lowest Price')) return a.price - b.price;
-      if (selectedTags.includes('Fastest')) return parseInt(a.duration) - parseInt(b.duration);
+      // Unknown price/duration sorts last, never treated as 0/cheapest.
+      if (selectedTags.includes('Lowest Price')) return (a.price ?? Infinity) - (b.price ?? Infinity);
+      if (selectedTags.includes('Fastest')) return (parseInt(a.duration || '') || Infinity) - (parseInt(b.duration || '') || Infinity);
       return 0;
     });
 
@@ -206,15 +221,15 @@ export default function BusCanvas({ onClose, tripContext, onAddToPlan }: BusCanv
                       <p className="text-sm font-semibold text-slate-900">{bus.operator}</p>
                       <p className="text-xs text-slate-500">{bus.busType}</p>
                       <div className="mt-2 flex items-center gap-3 text-xs">
-                        <span className="font-bold text-slate-900">{bus.departure.time}</span>
+                        <span className="font-bold text-slate-900">{bus.departure.time || '--:--'}</span>
                         <span className="text-slate-400">→</span>
-                        <span className="font-bold text-slate-900">{bus.arrival.time}</span>
-                        <span className="text-slate-500">• {bus.duration}</span>
+                        <span className="font-bold text-slate-900">{bus.arrival.time || '--:--'}</span>
+                        <span className="text-slate-500">• {bus.duration || 'Duration TBD'}</span>
                       </div>
-                      <p className="mt-1 text-xs text-slate-500">{bus.seats}</p>
+                      {bus.seats && <p className="mt-1 text-xs text-slate-500">{bus.seats}</p>}
                     </div>
                     <div className="ml-4 text-right shrink-0">
-                      <p className="text-xl font-bold text-slate-900">₹{bus.price.toLocaleString()}</p>
+                      <p className="text-xl font-bold text-slate-900">{bus.price != null ? `₹${bus.price.toLocaleString()}` : 'Price on request'}</p>
                       <div className="mb-1 flex justify-end"><ProvenanceBadge provenance={RESULT_PROVENANCE} /></div>
                       <button onClick={() => setPendingItem(bus)}
                         className={`mt-2 rounded-lg px-4 py-2 text-xs font-semibold transition-colors ${pendingItem?.id === bus.id ? 'bg-sky-700 text-white' : 'bg-sky-600 text-white hover:bg-sky-700'}`}>
@@ -234,7 +249,7 @@ export default function BusCanvas({ onClose, tripContext, onAddToPlan }: BusCanv
         </div>
       </div>
       {pendingItem && onAddToPlan && (
-        <ReplaceConfirmBar newItemTitle={pendingItem.operator} newItemPrice={`₹${pendingItem.price.toLocaleString()}`}
+        <ReplaceConfirmBar newItemTitle={pendingItem.operator} newItemPrice={pendingItem.price != null ? `₹${pendingItem.price.toLocaleString()}` : undefined}
           tripContext={tripContext} confirmColor="bg-sky-600 hover:bg-sky-700"
           onCancel={() => setPendingItem(null)} onConfirm={handleConfirmReplace} />
       )}

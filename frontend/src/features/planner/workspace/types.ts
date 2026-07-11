@@ -47,6 +47,10 @@ export interface TripContext {
   activeNodeCityName?: string;
   /** Date of the node */
   activeNodeDateStr?: string;
+  /** Nights the active node's city segment covers — for stay-context bars (hotels) */
+  activeNodeCityNights?: number;
+  /** "Oct 15 to Oct 18" — the active node's city segment's arrival→departure range */
+  activeNodeCityDateRange?: string;
   /** Latitude of the active node */
   activeNodeLatitude?: number;
   /** Longitude of the active node */
@@ -74,4 +78,7 @@ export interface NodeClickPayload {
   price?: string;
   /** The clicked item's structured cost + provenance, if it has one */
   cost?: BlockCost;
+  /** Insert-between: place the new item right after this existing item's
+   *  id in the day, instead of appending to the end of the day. */
+  insertAfterId?: string;
 }

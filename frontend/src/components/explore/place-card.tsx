@@ -1,9 +1,10 @@
 import { Attraction } from '@/services/attraction.service';
+import { Suggestion } from '@/features/planner/workspace/plan-canvas/types';
 import { MapPin, Star, Bookmark } from 'lucide-react';
 import Image from 'next/image';
 
 interface PlaceCardProps {
-  place: Attraction;
+  place: Attraction | Suggestion;
   compact?: boolean;
 }
 
@@ -25,11 +26,18 @@ export function PlaceCard({ place, compact = false }: PlaceCardProps) {
       case 'tourist_attraction': return { icon: '📸', color: 'from-violet-500/80 to-violet-600/80' };
       case 'amusement_park': return { icon: '🎢', color: 'from-fuchsia-500/80 to-fuchsia-600/80' };
       case 'local_activities': return { icon: '🎭', color: 'from-amber-500/80 to-amber-600/80' };
+      // Suggestion categories mapping
+      case 'attraction': return { icon: '🏛️', color: 'from-blue-500/80 to-blue-600/80' };
+      case 'activity': return { icon: '🎭', color: 'from-violet-500/80 to-violet-600/80' };
+      case 'hotel': return { icon: '🏨', color: 'from-emerald-500/80 to-emerald-600/80' };
       default: return { icon: '📍', color: 'from-slate-700/80 to-slate-800/80' };
     }
   };
 
   const catDetails = getCategoryDetails(place.category);
+  const ratingCount = 'ratings_count' in place ? place.ratings_count : ('review_count' in place ? place.review_count : 0);
+  const priceLabel = 'price_label' in place ? place.price_label : null;
+  const priceLevel = 'price_level' in place ? (place as any).price_level : null;
 
   return (
     <div className={`group relative overflow-hidden rounded-3xl isolate transition-all duration-500 hover:-translate-y-1 hover:shadow-[0_10px_30px_-10px_rgba(0,0,0,0.5)] cursor-pointer w-full ${compact ? 'h-[220px]' : 'h-[400px]'}`}>
@@ -76,22 +84,27 @@ export function PlaceCard({ place, compact = false }: PlaceCardProps) {
           
           <p className={`text-slate-300 line-clamp-1 flex items-center gap-1.5 ${compact ? 'text-xs mb-2' : 'text-sm mb-4'}`}>
             <MapPin size={compact ? 12 : 14} className="text-primary shrink-0" />
-            <span className="truncate">{place.address || place.description}</span>
+            <span className="truncate">{place.address || (place as any).description}</span>
           </p>
 
           <div className={`flex items-center justify-between border-white/10 ${compact ? 'pt-2 border-t border-dashed' : 'pt-4 border-t'}`}>
             <div className={`flex items-center gap-1 bg-black/50 backdrop-blur-md text-amber-400 rounded-lg font-bold border border-white/5 ${compact ? 'px-2 py-1 text-xs' : 'px-3 py-1.5 text-sm rounded-xl'}`}>
               <Star size={compact ? 12 : 16} className="fill-current" />
               <span>{place.rating ? place.rating.toFixed(1) : 'New'}</span>
-              {place.review_count > 0 && !compact && (
-                <span className="text-xs text-white/60 font-medium ml-1">({place.review_count})</span>
+              {ratingCount > 0 && !compact && (
+                <span className="text-xs text-white/60 font-medium ml-1">({ratingCount})</span>
               )}
             </div>
             
-            {renderPrice((place as any).price_level)}
+            {priceLabel ? (
+              <div className="flex items-center text-green-400 font-bold text-xs bg-green-500/10 px-2.5 py-1 rounded backdrop-blur-sm">
+                {priceLabel}
+              </div>
+            ) : renderPrice(priceLevel)}
           </div>
         </div>
       </div>
     </div>
   );
 }
+

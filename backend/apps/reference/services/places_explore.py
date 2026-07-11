@@ -14,6 +14,7 @@ import math
 import requests
 from django.conf import settings
 from django.db import transaction
+from django.utils import timezone
 
 from apps.reference.models import City, Country
 
@@ -56,18 +57,24 @@ def _distance_sort(places, lat_val, lng_val):
     return filtered
 
 
-def extract_photos(photos, api_key):
-    """Google Places `photos[].name` -> (primary image_url, [secondary urls])."""
+def extract_photos(photos, api_key=None):
+    """Google Places `photos[].name` -> (primary image_url, [secondary urls]).
+
+    URLs point at our own photo-proxy endpoint (apps.reference.views.place_photo_proxy),
+    never at Google directly — the Places API key must never reach the browser. The
+    `api_key` parameter is kept (unused) so existing call sites don't need to change.
+    """
     image_url = ''
     secondary_images = []
+    base = getattr(settings, 'BACKEND_BASE_URL', '').rstrip('/')
     if photos:
         first_photo = photos[0].get('name')
         if first_photo:
-            image_url = f"https://places.googleapis.com/v1/{first_photo}/media?maxHeightPx=800&maxWidthPx=800&key={api_key}"
+            image_url = f"{base}/api/reference/photo-proxy/{first_photo}/"
         for sp in photos[1:6]:
             spname = sp.get('name')
             if spname:
-                secondary_images.append(f"https://places.googleapis.com/v1/{spname}/media?maxHeightPx=800&maxWidthPx=800&key={api_key}")
+                secondary_images.append(f"{base}/api/reference/photo-proxy/{spname}/")
     return image_url, secondary_images
 
 
@@ -77,6 +84,194 @@ def extract_opening_hours(place_json):
 
 def extract_editorial_summary(place_json):
     return place_json.get('editorialSummary', {}).get('text', '')
+
+
+# ── Google Places field mappers ──────────────────────────────────────────
+# Each maps a Places API result dict to the model-specific create() kwargs
+# (city/place_id are supplied by explore_places itself). Moved here from
+# views.py — service logic belongs in the service layer, and
+# apps.knowledge.services.engine needs to reuse these without importing
+# from a view module (see docs/travel-knowledge-engine-plan.md K2).
+
+def map_restaurant(p, api_key=None):
+    price_map = {
+        "PRICE_LEVEL_FREE": 0, "PRICE_LEVEL_INEXPENSIVE": 1,
+        "PRICE_LEVEL_MODERATE": 2, "PRICE_LEVEL_EXPENSIVE": 3, "PRICE_LEVEL_VERY_EXPENSIVE": 4,
+    }
+    image_url, secondary_images = extract_photos(p.get('photos', []), api_key)
+    return dict(
+        name=p.get('displayName', {}).get('text', 'Unknown')[:250],
+        primary_type=p.get('primaryType', ''),
+        price_level=price_map.get(p.get('priceLevel', ''), None),
+        user_rating=p.get('rating'),
+        user_ratings_total=p.get('userRatingCount', 0),
+        address=p.get('formattedAddress', ''),
+        latitude=p.get('location', {}).get('latitude'),
+        longitude=p.get('location', {}).get('longitude'),
+        outdoor_seating=p.get('outdoorSeating'),
+        good_for_groups=p.get('goodForGroups'),
+        allows_dogs=p.get('allowsDogs'),
+        good_for_children=p.get('goodForChildren'),
+        menu_for_children=p.get('menuForChildren'),
+        serves_vegetarian_food=p.get('servesVegetarianFood'),
+        dine_in=p.get('dineIn'),
+        takeout=p.get('takeout'),
+        delivery=p.get('delivery'),
+        parking_options=p.get('parkingOptions', {}),
+        payment_options=p.get('paymentOptions', {}),
+        reviews=p.get('reviews', [])[:5],
+        opening_hours=extract_opening_hours(p),
+        national_phone_number=p.get('nationalPhoneNumber'),
+        website_uri=p.get('websiteUri'),
+        editorial_summary=extract_editorial_summary(p),
+        image_url=image_url,
+        secondary_images=secondary_images,
+    )
+
+
+def map_attraction(p, api_key=None):
+    image_url, secondary_images = extract_photos(p.get('photos', []), api_key)
+    access_opts = p.get('accessibilityOptions', {})
+    return dict(
+        name=p.get('displayName', {}).get('text', 'Unknown')[:250],
+        primary_type=p.get('primaryType', 'tourist_attraction'),
+        category=p.get('primaryType', 'sightseeing'),
+        user_rating=p.get('rating'),
+        user_ratings_total=p.get('userRatingCount', 0),
+        address=p.get('formattedAddress', ''),
+        latitude=p.get('location', {}).get('latitude'),
+        longitude=p.get('location', {}).get('longitude'),
+        good_for_children=p.get('goodForChildren'),
+        wheelchair_accessible=access_opts.get('wheelchairAccessibleEntrance'),
+        good_for_groups=p.get('goodForGroups'),
+        reviews=p.get('reviews', [])[:5],
+        opening_hours=extract_opening_hours(p),
+        national_phone_number=p.get('nationalPhoneNumber'),
+        website_uri=p.get('websiteUri'),
+        editorial_summary=extract_editorial_summary(p),
+        image_url=image_url,
+        secondary_images=secondary_images,
+        # No real duration/ticket data from Places — honest gaps, not defaults
+        suggested_duration_mins=None,
+        ticket_price_estimate="",
+    )
+
+
+def map_activity(p, api_key=None):
+    image_url, secondary_images = extract_photos(p.get('photos', []), api_key)
+    return dict(
+        name=p.get('displayName', {}).get('text', 'Unknown')[:250],
+        primary_type=p.get('primaryType', 'activity'),
+        category=p.get('primaryType', 'adventure'),
+        user_rating=p.get('rating'),
+        user_ratings_total=p.get('userRatingCount', 0),
+        address=p.get('formattedAddress', ''),
+        latitude=p.get('location', {}).get('latitude'),
+        longitude=p.get('location', {}).get('longitude'),
+        good_for_children=p.get('goodForChildren'),
+        good_for_groups=p.get('goodForGroups'),
+        # Google Places has no data for these — leave honest gaps rather
+        # than stamping invented specifics (guided_tour, price, difficulty).
+        guided_tour=None,
+        equipment_included=None,
+        reviews=p.get('reviews', [])[:5],
+        opening_hours=extract_opening_hours(p),
+        national_phone_number=p.get('nationalPhoneNumber'),
+        website_uri=p.get('websiteUri'),
+        editorial_summary=extract_editorial_summary(p),
+        image_url=image_url,
+        secondary_images=secondary_images,
+        price_estimate=None,
+        suggested_duration="",
+        difficulty_level="",
+    )
+
+
+def map_hotel(p, api_key=None):
+    price_map = {
+        "PRICE_LEVEL_FREE": '', "PRICE_LEVEL_INEXPENSIVE": '$',
+        "PRICE_LEVEL_MODERATE": '$$', "PRICE_LEVEL_EXPENSIVE": '$$$', "PRICE_LEVEL_VERY_EXPENSIVE": '$$$$',
+    }
+    image_url, secondary_images = extract_photos(p.get('photos', []), api_key)
+    return dict(
+        name=p.get('displayName', {}).get('text', 'Unknown')[:250],
+        primary_type=p.get('primaryType', 'lodging'),
+        price_range=price_map.get(p.get('priceLevel', ''), None),
+        user_rating=p.get('rating'),
+        user_ratings_total=p.get('userRatingCount', 0),
+        address=p.get('formattedAddress', ''),
+        latitude=p.get('location', {}).get('latitude'),
+        longitude=p.get('location', {}).get('longitude'),
+        parking_options=p.get('parkingOptions', {}),
+        payment_options=p.get('paymentOptions', {}),
+        reviews=p.get('reviews', [])[:5],
+        opening_hours=extract_opening_hours(p),
+        national_phone_number=p.get('nationalPhoneNumber'),
+        website_uri=p.get('websiteUri'),
+        editorial_summary=extract_editorial_summary(p),
+        image_url=image_url,
+        secondary_images=secondary_images,
+    )
+
+
+# Category config used by KnowledgeEngine.resolve() (apps.knowledge.services.engine)
+# — centralizes what was previously duplicated inline across four explore()
+# actions in views.py.
+def _category_config():
+    from apps.reference.models import ActivityMaster, AttractionMaster, HotelMaster, RestaurantMaster
+
+    return {
+        "hotel": dict(
+            model=HotelMaster,
+            query_template="hotels in {location}",
+            included_type="lodging",
+            field_mask=(
+                "places.id,places.displayName,places.primaryType,places.rating,places.userRatingCount,"
+                "places.priceLevel,places.formattedAddress,places.location,places.parkingOptions,"
+                "places.paymentOptions,places.reviews,places.regularOpeningHours,places.nationalPhoneNumber,"
+                "places.websiteUri,places.editorialSummary,places.photos"
+            ),
+            field_mapper=map_hotel,
+        ),
+        "restaurant": dict(
+            model=RestaurantMaster,
+            query_template="best restaurants in {location}",
+            included_type="restaurant",
+            field_mask=(
+                "places.id,places.displayName,places.primaryType,places.rating,places.userRatingCount,"
+                "places.priceLevel,places.formattedAddress,places.location,places.outdoorSeating,"
+                "places.goodForGroups,places.allowsDogs,places.goodForChildren,places.menuForChildren,"
+                "places.servesVegetarianFood,places.dineIn,places.takeout,places.delivery,"
+                "places.parkingOptions,places.paymentOptions,places.reviews,places.regularOpeningHours,"
+                "places.nationalPhoneNumber,places.websiteUri,places.editorialSummary,places.photos"
+            ),
+            field_mapper=map_restaurant,
+        ),
+        "attraction": dict(
+            model=AttractionMaster,
+            query_template="top tourist attractions, heritage sites and landmarks in {location}",
+            included_type="tourist_attraction",
+            field_mask=(
+                "places.id,places.displayName,places.primaryType,places.rating,places.userRatingCount,"
+                "places.formattedAddress,places.location,places.goodForChildren,places.goodForGroups,"
+                "places.accessibilityOptions,places.reviews,places.regularOpeningHours,"
+                "places.nationalPhoneNumber,places.websiteUri,places.editorialSummary,places.photos"
+            ),
+            field_mapper=map_attraction,
+        ),
+        "activity": dict(
+            model=ActivityMaster,
+            query_template="top adventure activities, outdoor sports and tours in {location}",
+            included_type=None,
+            field_mask=(
+                "places.id,places.displayName,places.primaryType,places.rating,places.userRatingCount,"
+                "places.formattedAddress,places.location,places.goodForChildren,places.goodForGroups,"
+                "places.reviews,places.regularOpeningHours,places.nationalPhoneNumber,places.websiteUri,"
+                "places.editorialSummary,places.photos"
+            ),
+            field_mapper=map_activity,
+        ),
+    }
 
 
 def explore_places(model, location, lat_val, lng_val, google_query, included_type, field_mask, field_mapper):
@@ -135,7 +330,15 @@ def explore_places(model, location, lat_val, lng_val, google_query, included_typ
             try:
                 with transaction.atomic():
                     kwargs = field_mapper(p, api_key)
-                    model.objects.create(city=city_obj, place_id=place_id, **kwargs)
+                    # Stamps freshness at creation time — previously absent, so a
+                    # row's staleness could never be determined (see
+                    # docs/travel-knowledge-engine-plan.md §3a/§4). The background
+                    # refresh task queries against this field.
+                    model.objects.create(
+                        city=city_obj, place_id=place_id,
+                        last_enriched_at=timezone.now(), source="google_places",
+                        **kwargs,
+                    )
             except Exception as e:
                 print(f"Error saving {model.__name__} place: {e}")
 
@@ -146,3 +349,38 @@ def explore_places(model, location, lat_val, lng_val, google_query, included_typ
         final_places.sort(key=lambda p: p.user_rating or 0, reverse=True)
 
     return 'google_places', final_places, None
+
+
+def fetch_place_by_id(model, place_id, field_mask, field_mapper):
+    """
+    Re-fetch a single already-known place from Google's Place Details
+    endpoint (not the text-search endpoint explore_places uses) and update
+    its row in place. Used by the background staleness-refresh task — see
+    apps.reference.tasks.refresh_stale_entities.
+
+    Returns True on a successful refresh, False on any failure (missing key,
+    network error, non-200, or the row no longer existing) — a refresh
+    failure is a "try again next cycle" situation, never a crash.
+    """
+    api_key = getattr(settings, 'GOOGLE_PLACES_API_KEY', '')
+    if not api_key:
+        return False
+
+    headers = {"X-Goog-Api-Key": api_key, "X-Goog-FieldMask": field_mask}
+    try:
+        resp = requests.get(f"https://places.googleapis.com/v1/{place_id}", headers=headers, timeout=5)
+        if resp.status_code != 200:
+            return False
+        place_json = resp.json()
+    except Exception:
+        return False
+
+    try:
+        kwargs = field_mapper(place_json, api_key)
+    except Exception:
+        return False
+
+    updated = model.objects.filter(place_id=place_id).update(
+        last_enriched_at=timezone.now(), **kwargs
+    )
+    return updated > 0

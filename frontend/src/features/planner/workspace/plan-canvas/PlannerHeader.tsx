@@ -1,13 +1,14 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Download, MoreVertical, CreditCard, Loader2, Route, Bookmark, BookmarkCheck,
-  Calendar, Users, Pencil, Ticket, MapPin, Milestone,
+  Calendar, Users, Pencil, Ticket, MapPin, Milestone, Undo2, Redo2, Gauge,
 } from 'lucide-react';
 import { MockTripData } from './types';
 import { parsePriceToInteger } from './utils/priceParser';
 import type { TripLedger } from '@/services/planner.types';
+import TransportPreferencesPanel from '@/features/planner/components/TransportPreferencesPanel';
 
 interface PlannerHeaderProps {
   data: MockTripData;
@@ -27,6 +28,10 @@ interface PlannerHeaderProps {
   isSaved?: boolean;
   /** Rename the trip (persisted to trip + workspace) */
   onRenameTitle?: (title: string) => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
 }
 
 const HATCH_AMBER =
@@ -37,10 +42,21 @@ const HATCH_VIOLET =
 export default function PlannerHeader({
   data, ledger, onExport, isExporting, isSavingCloud, onBook, onViewPasses,
   onOptimizeRoutes, onSave, isSaving, isSaved, onRenameTitle,
+  onUndo, onRedo, canUndo, canRedo,
 }: PlannerHeaderProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(data.title);
+  const [isPrefsOpen, setIsPrefsOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsMenuOpen(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [isMenuOpen]);
 
   const hasBookedItems = data.cities.some(city => {
     if (city.transitToNext?.status === 'Confirmed') return true;
@@ -150,6 +166,27 @@ export default function PlannerHeader({
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5 export-hidden">
+          {(onUndo || onRedo) && (
+            <div className="flex items-center overflow-hidden rounded-lg border border-line-strong bg-paper-2">
+              <button
+                onClick={onUndo}
+                disabled={!canUndo}
+                className="cursor-pointer p-1.5 text-ink-500 transition hover:bg-paper-1 hover:text-ink-900 disabled:cursor-not-allowed disabled:opacity-30"
+                title="Undo (Ctrl+Z)"
+              >
+                <Undo2 size={13} />
+              </button>
+              <div className="h-4 w-px bg-line-strong" />
+              <button
+                onClick={onRedo}
+                disabled={!canRedo}
+                className="cursor-pointer p-1.5 text-ink-500 transition hover:bg-paper-1 hover:text-ink-900 disabled:cursor-not-allowed disabled:opacity-30"
+                title="Redo (Ctrl+Shift+Z)"
+              >
+                <Redo2 size={13} />
+              </button>
+            </div>
+          )}
           {onSave && (
             <button
               onClick={onSave}
@@ -177,7 +214,10 @@ export default function PlannerHeader({
           <div className="relative">
             <button
               onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className="cursor-pointer rounded-lg border border-line-strong bg-paper-2 p-1 text-ink-500 transition hover:bg-paper-1 hover:text-ink-900"
+              aria-haspopup="menu"
+              aria-expanded={isMenuOpen}
+              aria-label="More actions"
+              className="cursor-pointer rounded-lg border border-line-strong bg-paper-2 p-1 text-ink-500 transition hover:bg-paper-1 hover:text-ink-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
               title="More Actions"
             >
               <MoreVertical size={13} />
@@ -185,9 +225,10 @@ export default function PlannerHeader({
             {isMenuOpen && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setIsMenuOpen(false)} />
-                <div className="absolute right-0 z-20 mt-1.5 w-44 rounded-xl border border-line bg-paper-2 p-1.5 shadow-[0_12px_24px_-8px_rgba(15,23,42,0.18)] animate-in fade-in slide-in-from-top-2 duration-150">
+                <div role="menu" className="absolute right-0 z-20 mt-1.5 w-44 rounded-xl border border-line bg-paper-2 p-1.5 shadow-[0_12px_24px_-8px_rgba(15,23,42,0.18)] animate-in fade-in slide-in-from-top-2 duration-150">
                   {hasBookedItems && (
                     <button
+                      role="menuitem"
                       onClick={() => { onViewPasses?.(); setIsMenuOpen(false); }}
                       className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50"
                     >
@@ -196,6 +237,7 @@ export default function PlannerHeader({
                     </button>
                   )}
                   <button
+                    role="menuitem"
                     onClick={() => { onOptimizeRoutes?.(); setIsMenuOpen(false); }}
                     className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold text-ink-700 transition hover:bg-paper-1"
                   >
@@ -203,6 +245,15 @@ export default function PlannerHeader({
                     <span>Optimize routes</span>
                   </button>
                   <button
+                    role="menuitem"
+                    onClick={() => { setIsPrefsOpen(true); setIsMenuOpen(false); }}
+                    className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold text-ink-700 transition hover:bg-paper-1"
+                  >
+                    <Gauge size={13} className="text-ink-400" />
+                    <span>Transport preferences</span>
+                  </button>
+                  <button
+                    role="menuitem"
                     onClick={() => { onExport?.(); setIsMenuOpen(false); }}
                     disabled={isExporting}
                     className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold text-ink-700 transition hover:bg-paper-1 disabled:opacity-50"
@@ -264,6 +315,8 @@ export default function PlannerHeader({
           </span>
         </div>
       </div>
+
+      {isPrefsOpen && <TransportPreferencesPanel onClose={() => setIsPrefsOpen(false)} />}
     </div>
   );
 }

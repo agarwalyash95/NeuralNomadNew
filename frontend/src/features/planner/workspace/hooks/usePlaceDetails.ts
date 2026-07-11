@@ -18,6 +18,16 @@ const STALE_TIME = 24 * 60 * 60 * 1000; // reference data moves slowly
 
 export const placeDetailsKey = (placeId: string) => ['reference', 'place-details', placeId] as const;
 
+// Enrichment (apps.knowledge.services.enrichment) is fired async, server-side,
+// the moment this endpoint is first hit for a place — it's not done by the
+// time this first response lands (~5-8s LLM call). Without a bounded
+// re-check, that empty `details.insights` gets cached for the full 24h
+// staleTime and a freshly-replaced item never shows its insight in this
+// session. Poll a few times, then stop — a place with genuinely no reviews
+// will never get insights, and that's an honest, expected outcome.
+const ENRICHMENT_POLL_MS = 8000;
+const ENRICHMENT_POLL_MAX_ATTEMPTS = 4;
+
 export function usePlaceDetails(item: ItineraryItem | null) {
   const placeId = item?.place_id ?? null;
   return useQuery<Suggestion>({
@@ -26,6 +36,11 @@ export function usePlaceDetails(item: ItineraryItem | null) {
     enabled: Boolean(placeId),
     staleTime: STALE_TIME,
     retry: false, // pre-redesign blocks legitimately 404 — degrade quietly
+    refetchInterval: (query) => {
+      const hasInsights = Object.keys(query.state.data?.details?.insights ?? {}).length > 0;
+      if (hasInsights || query.state.dataUpdateCount >= ENRICHMENT_POLL_MAX_ATTEMPTS) return false;
+      return ENRICHMENT_POLL_MS;
+    },
   });
 }
 

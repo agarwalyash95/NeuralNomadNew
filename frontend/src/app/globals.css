@@ -48,7 +48,7 @@
     --line-strong: 221 215 202; /* borders       #ddd7ca */
     --ink-900: 30 30 26;      /* headings        #1e1e1a */
     --ink-700: 68 64 58;      /* body            #44403a */
-    --ink-500: 140 133 123;   /* muted           #8c857b */
+    --ink-500: 122 116 107;   /* muted           #7a746b — darkened from #8c857b, which was 3.6:1 on white (AX1: fails AA's 4.5:1 for the 10-11.5px text this token is used at) */
     --ink-400: 156 149 123;   /* faint labels    #9c957b */
 
     /* Trust grammar — every price wears one of these */

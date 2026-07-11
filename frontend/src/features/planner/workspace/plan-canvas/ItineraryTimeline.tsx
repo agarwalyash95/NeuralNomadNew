@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { MockTripData, ItineraryItem } from './types';
 import CityHeaderNode from './nodes/CityHeaderNode';
 import DayHeaderNode from './nodes/DayHeaderNode';
@@ -6,7 +6,8 @@ import TransportNode from './nodes/TransportNode';
 import GenericNode from './nodes/GenericNode';
 import TransitNode from './nodes/TransitNode';
 import DeletingNode from './nodes/DeletingNode';
-import { Plus } from 'lucide-react';
+import AddTypeMenu from './nodes/AddTypeMenu';
+import { AlertTriangle, Car, FolderOpen, FolderClosed } from 'lucide-react';
 import { NodeClickPayload } from '../types';
 import { optimizeDayRoute } from './utils/routeOptimizer';
 import { useTransitDistances } from '../hooks/useTransitDistances';
@@ -38,12 +39,18 @@ interface ItineraryTimelineProps {
    */
   onItemClick?: (payload: NodeClickPayload) => void;
   onItemHover?: (item: ItineraryItem | null) => void;
-  onCityEnter?: (cityId: string) => void;
-  onDayEnter?: (dayId: string) => void;
   onDataChange?: (newData: MockTripData) => void;
   onVerifyLivePrice?: (itemId: string) => void;
   /** Starts a standing price watch — findings arrive later as proposals */
   onWatchPrice?: (itemId: string) => void;
+  /**
+   * Computes and files a route-optimization PlanProposal server-side — the
+   * one reviewed path, replacing what used to be a second, unreviewed
+   * direct-apply mutation here (see the day-header optimize button below).
+   */
+  onOptimizeRoutes?: () => void;
+  /** Opens the mode-comparison canvas for an inter-city transit block */
+  onCompareTransit?: (payload: NodeClickPayload) => void;
 }
 
 /** Transport types — use TransportNode (departure/arrival layout) */
@@ -53,16 +60,53 @@ export default function ItineraryTimeline({
   data,
   onItemClick,
   onItemHover,
-  onCityEnter,
-  onDayEnter,
   onDataChange,
   onVerifyLivePrice,
-  onWatchPrice
+  onWatchPrice,
+  onOptimizeRoutes,
+  onCompareTransit
 }: ItineraryTimelineProps) {
   const [localData, setLocalData] = useState<MockTripData>(data);
   const [collapsedCities, setCollapsedCities] = useState<Record<string, boolean>>({});
   const [collapsedDays, setCollapsedDays] = useState<Record<string, boolean>>({});
+  const [crossCityHint, setCrossCityHint] = useState(false);
+  const crossCityHintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { getTransit } = useTransitDistances(localData);
+
+  // Every day in the trip, labeled "City — Day N" — the option list for
+  // MoveToDaySelect, the accessible/mobile path for relocating a block
+  // across cities (which drag-drop intentionally rejects, see handleDragOver).
+  const allDayOptions = useMemo(
+    () =>
+      localData.cities.flatMap((city) =>
+        city.days.map((day) => ({ id: day.id, label: `${city.cityName} — Day ${day.dayNumber}` }))
+      ),
+    [localData]
+  );
+
+  const handleMoveToDay = (itemId: string, targetDayId: string) => {
+    const newData: MockTripData = JSON.parse(JSON.stringify(localData));
+    let moved: ItineraryItem | null = null;
+    for (const city of newData.cities) {
+      for (const day of city.days) {
+        const idx = day.items.findIndex((i: ItineraryItem) => i.id === itemId);
+        if (idx !== -1) {
+          moved = day.items.splice(idx, 1)[0]!;
+          break;
+        }
+      }
+      if (moved) break;
+    }
+    if (!moved) return;
+    for (const city of newData.cities) {
+      const targetDay = city.days.find((d) => d.id === targetDayId);
+      if (targetDay) {
+        targetDay.items.push(moved);
+        break;
+      }
+    }
+    updateData(newData, true);
+  };
 
   useEffect(() => {
     // Preserve any isDeleting/isInactive states from localData when new props arrive
@@ -138,13 +182,22 @@ export default function ItineraryTimeline({
   const handleDragOver = (event: DragOverEvent) => {
     const { active, over } = event;
     if (!over) return;
- 
+
     const activeInfo = findDayAndCity(active.id);
     const overInfo = findDayAndCity(over.id);
- 
+
     if (!activeInfo || !overInfo) return;
-    if (activeInfo.cityIndex !== overInfo.cityIndex) return;
- 
+    if (activeInfo.cityIndex !== overInfo.cityIndex) {
+      // Splicing an item across two different cities' itineraries mid-drag
+      // risks corrupting more than it fixes — rejected, but no longer
+      // silently: a brief hint explains why it snapped back and points at
+      // the accessible path (each node's "Move to…" picker).
+      setCrossCityHint(true);
+      if (crossCityHintTimer.current) clearTimeout(crossCityHintTimer.current);
+      crossCityHintTimer.current = setTimeout(() => setCrossCityHint(false), 2500);
+      return;
+    }
+
     if (activeInfo.dayIndex !== overInfo.dayIndex) {
       const newData = JSON.parse(JSON.stringify(localData));
       const activeItem = newData.cities[activeInfo.cityIndex].days[activeInfo.dayIndex].items.splice(activeInfo.itemIndex, 1)[0];
@@ -189,6 +242,21 @@ export default function ItineraryTimeline({
     }
   };
 
+  const handleTimeChange = (itemId: string, field: 'start' | 'end', value: string) => {
+    const newData = JSON.parse(JSON.stringify(localData));
+    for (const city of newData.cities) {
+      for (const day of city.days) {
+        const item = day.items.find((i: any) => i.id === itemId);
+        if (item) {
+          if (field === 'start') item.startTime = value;
+          else item.endTime = value;
+          updateData(newData, true);
+          return;
+        }
+      }
+    }
+  };
+
   // Safe ID-based soft removal with 5s countdown
   const handleRemove = (itemId: string) => {
     const newData = JSON.parse(JSON.stringify(localData));
@@ -218,19 +286,22 @@ export default function ItineraryTimeline({
     updateData(newData);
   };
 
+  // The 5s undo window has expired — actually remove the block rather than
+  // flagging it isInactive forever. A soft-deleted-forever ghost still gets
+  // serialized on every PATCH and every reader has to remember to filter it;
+  // once the user has had their chance to undo, there's nothing left to keep.
   const handlePermanentRemove = (itemId: string) => {
     const newData = JSON.parse(JSON.stringify(localData));
     for (const city of newData.cities) {
       for (const day of city.days) {
-        const item = day.items.find((i: any) => i.id === itemId);
-        if (item) {
-          item.isInactive = true;
-          delete item.isDeleting;
-          break;
+        const idx = day.items.findIndex((i: any) => i.id === itemId);
+        if (idx !== -1) {
+          day.items.splice(idx, 1);
+          updateData(newData);
+          return;
         }
       }
     }
-    updateData(newData);
   };
 
   // Transit soft removal with 5s countdown
@@ -255,9 +326,8 @@ export default function ItineraryTimeline({
   const handlePermanentRemoveTransit = (cityId: string) => {
     const newData = JSON.parse(JSON.stringify(localData));
     const city = newData.cities.find((c: any) => c.id === cityId);
-    if (city?.transitToNext) {
-      city.transitToNext.isInactive = true;
-      delete city.transitToNext.isDeleting;
+    if (city) {
+      delete city.transitToNext;
     }
     updateData(newData);
   };
@@ -270,6 +340,11 @@ export default function ItineraryTimeline({
       onDragEnd={handleDragEnd}
     >
       <div className="pb-10">
+        {crossCityHint && (
+          <div className="sticky top-0 z-30 mx-4 mb-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800 shadow-sm">
+            Can&apos;t drag items between cities — use the &quot;Move to…&quot; picker on the item instead.
+          </div>
+        )}
         <div className="mb-2 flex justify-end px-4">
           <button
             type="button"
@@ -286,17 +361,35 @@ export default function ItineraryTimeline({
             }}
             className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-[10px] font-extrabold text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700 transition-all cursor-pointer shadow-3xs export-hidden"
           >
-            {localData.cities.flatMap(c => c.days).some(d => collapsedDays[d.id]) ? '📂 Expand All Days' : '📁 Collapse All Days'}
+            {localData.cities.flatMap(c => c.days).some(d => collapsedDays[d.id])
+              ? <><FolderOpen size={12} /> Expand All Days</>
+              : <><FolderClosed size={12} /> Collapse All Days</>}
           </button>
         </div>
 
         {localData.cities.map((city, cityIndex) => {
           const isCityCollapsed = !!collapsedCities[city.id];
+          // Hotel stay-spans: a hotel booked on day K with stayNights=N
+          // covers days K..K+N-1 of this city segment. Days it covers that
+          // don't have their own hotel get a continuation ribbon instead of
+          // silently looking like lodging vanished (docs/planner-product-audit-2026-07.md BK2).
+          const hotelCoverage: Record<number, ItineraryItem> = {};
+          let activeStay: { hotel: ItineraryItem; endIndex: number } | null = null;
+          city.days.forEach((d, idx) => {
+            const ownHotel = d.items.find(i => !i.isInactive && i.type === 'hotel');
+            if (ownHotel) {
+              const nights = ownHotel.stayNights && ownHotel.stayNights > 1 ? ownHotel.stayNights : 1;
+              activeStay = nights > 1 ? { hotel: ownHotel, endIndex: idx + nights - 1 } : null;
+            } else if (activeStay && idx <= activeStay.endIndex) {
+              hotelCoverage[idx] = activeStay.hotel;
+            } else {
+              activeStay = null;
+            }
+          });
           return (
           <div
             key={city.id}
             className="w-full"
-            onMouseEnter={() => onCityEnter?.(city.id)}
           >
             <div id={`city-${city.cityName.replace(/\s+/g, '-').toLowerCase()}`}>
               <CityHeaderNode
@@ -308,16 +401,30 @@ export default function ItineraryTimeline({
 
             {!isCityCollapsed && city.days.map((day, dayIndex) => {
               const isDayCollapsed = !!collapsedDays[day.id];
+              // A detour threshold relative to this day's own legs — 12 km
+              // flat was a detour in Old Manali and a normal hop in Delhi.
+              // Floor of 5 km so a compact day doesn't flag every short walk.
+              const dayActiveItems = day.items.filter(i => !i.isInactive);
+              const dayLegKms = dayActiveItems
+                .slice(0, -1)
+                .map((it, i) => getTransit(it, dayActiveItems[i + 1]!, day.transitHints).distanceKm)
+                .filter((d) => d > 0.3);
+              const dayMedianKm = dayLegKms.length
+                ? [...dayLegKms].sort((a, b) => a - b)[Math.floor(dayLegKms.length / 2)]!
+                : 0;
+              const detourThresholdKm = Math.max(5, dayMedianKm * 2.5);
               return (
               <div
                 key={day.id}
                 className="w-full"
-                onMouseEnter={() => {
-                  onDayEnter?.(day.id);
-                  onCityEnter?.(city.id);
-                }}
               >
                 {(() => {
+                  // Estimate only — informational "saves ~Xm" hint, computed
+                  // the same way as before. Clicking no longer applies this
+                  // client-side result directly; it defers to the one
+                  // reviewed path (onOptimizeRoutes -> a server-computed
+                  // PlanProposal), closing the audit's "two divergent trust
+                  // models for the identical action" finding.
                   const optResult = optimizeDayRoute(day);
                   const canOptimize = optResult.savedKm > 0.5 && optResult.savedMins > 5;
                   const timeSavedText = canOptimize ? `saves ~${optResult.savedMins}m` : undefined;
@@ -329,12 +436,61 @@ export default function ItineraryTimeline({
                         isCollapsed={isDayCollapsed}
                         onToggle={() => toggleDay(day.id)}
                         timeSavedText={timeSavedText}
-                        onOptimizeRoute={() => {
-                          const newData = JSON.parse(JSON.stringify(localData));
-                          newData.cities[cityIndex].days[dayIndex] = optResult.day;
-                          updateData(newData);
-                        }}
+                        onOptimizeRoute={canOptimize ? onOptimizeRoutes : undefined}
                       />
+                    </div>
+                  );
+                })()}
+
+                {!isDayCollapsed && hotelCoverage[dayIndex] && (
+                  <div className="relative py-1.5 pl-[70px] pr-4">
+                    <div className="absolute bottom-0 left-[38px] top-0 w-1 bg-slate-800" />
+                    <div className="flex items-center gap-1.5 rounded-full border border-indigo-100 bg-indigo-50/60 px-3 py-1.5 text-[10px] font-semibold text-indigo-700 w-fit">
+                      <span>🏨</span>
+                      <span>Staying at {hotelCoverage[dayIndex]!.title}</span>
+                    </div>
+                  </div>
+                )}
+
+                {!isDayCollapsed && dayIndex > 0 && (() => {
+                  // Overnight/day-opening gap: yesterday's last stop vs today's
+                  // first — the airport/station-to-hotel case generation
+                  // doesn't stamp a transfer for yet. Suggested only past 2km;
+                  // haversine is enough for "should I suggest this", not
+                  // precise enough to price it (that's what the cab canvas is for).
+                  const prevItems = city.days[dayIndex - 1]?.items.filter(i => !i.isInactive) ?? [];
+                  const currItems = day.items.filter(i => !i.isInactive);
+                  const lastPrev = prevItems[prevItems.length - 1];
+                  const firstCurr = currItems[0];
+                  if (!lastPrev || !firstCurr || lastPrev.latitude == null || lastPrev.longitude == null || firstCurr.latitude == null || firstCurr.longitude == null) {
+                    return null;
+                  }
+                  const transit = getTransit(lastPrev, firstCurr);
+                  if (transit.distanceKm <= 2) return null;
+                  return (
+                    <div className="relative py-2 pl-[70px] pr-4">
+                      <div className="absolute bottom-0 left-[38px] top-0 w-1 bg-slate-800" />
+                      <button
+                        type="button"
+                        onClick={() => onItemClick?.({
+                          nodeId: `transfer-${lastPrev.id}-${firstCurr.id}`,
+                          nodeType: 'cab',
+                          nodeTitle: `Transfer to ${firstCurr.title}`,
+                          dayId: day.id,
+                          dayNumber: day.dayNumber,
+                          dayLabel: `Day ${day.dayNumber}`,
+                          cityId: city.id,
+                          cityName: city.cityName,
+                          dateStr: day.dateStr,
+                          subtitle: `${lastPrev.title} to ${firstCurr.title}`,
+                          startTime: firstCurr.startTime || '',
+                        })}
+                        className="flex w-full items-center gap-2 rounded-xl border border-dashed border-amber-300 bg-amber-50/60 px-3 py-2 text-left text-[11px] font-bold text-amber-700 transition-all cursor-pointer hover:border-amber-400 hover:bg-amber-100 export-hidden"
+                        title="No transfer is planned for this gap yet — click to book a cab"
+                      >
+                        <Car size={12} className="shrink-0" />
+                        <span>Add transfer — {firstCurr.title} is ~{transit.distanceKm} km from {lastPrev.title}</span>
+                      </button>
                     </div>
                   );
                 })()}
@@ -347,18 +503,21 @@ export default function ItineraryTimeline({
                       const isVeryLastItem = isLastItemInDay && dayIndex === city.days.length - 1 && !city.transitToNext && cityIndex === localData.cities.length - 1;
                       const nextItem = activeItems[itemIndex + 1];
 
-                      // Distance to next node: generation hint → server-resolved → haversine
+                      // Distance to next node: generation hint → server-resolved → haversine.
+                      // Also the insert-between affordance — always available for any
+                      // consecutive pair, not just ones far enough apart to show a distance pill.
                       let distPill = null;
                       if (nextItem) {
                         const transit = getTransit(item, nextItem, day.transitHints);
                         const dist = transit.distanceKm;
                         const mins = transit.durationMins;
-                        if (dist > 0.3) {
-                          const isDetour = dist > 12.0;
-                          distPill = (
-                            <div key={`dist-${item.id}-${nextItem.id}`} className="relative py-2 pl-[144px]">
-                              <div className="absolute bottom-0 left-[38px] top-0 w-1 bg-slate-800" />
-                              <div className="absolute bottom-1/2 left-[120px] top-0 w-[1.5px] bg-slate-200" />
+                        const isDetour = dist > detourThresholdKm;
+                        const showDistance = dist > 0.3;
+                        distPill = (
+                          <div key={`dist-${item.id}-${nextItem.id}`} className="relative flex items-center gap-1.5 py-2 pl-[144px]">
+                            <div className="absolute bottom-0 left-[38px] top-0 w-1 bg-slate-800" />
+                            <div className="absolute bottom-1/2 left-[120px] top-0 w-[1.5px] bg-slate-200" />
+                            {showDistance && (
                               <button
                                 type="button"
                                 onClick={() => {
@@ -379,19 +538,38 @@ export default function ItineraryTimeline({
                                 className={cn(
                                   "ml-[-0.75rem] flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-extrabold transition-all cursor-pointer backdrop-blur-xs shadow-2xs",
                                   isDetour
-                                    ? "bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100 hover:border-amber-450 animate-pulse"
+                                    ? "bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100 hover:border-amber-450"
                                     : "bg-white border-slate-200 text-slate-600 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600"
                                 )}
-                                title={isDetour ? "⚠️ Geographically suboptimal transit leg. Click to book transport." : "Click to book a taxi/cab for this transit"}
+                                title={isDetour ? "Noticeably farther than this day's other legs. Click to book transport." : "Click to book a taxi/cab for this transit"}
                               >
-                                <span>{isDetour ? "⚠️" : "🚘"}</span>
+                                {isDetour ? <AlertTriangle size={10} className="shrink-0" /> : <Car size={10} className="shrink-0" />}
                                 <span>{isDetour ? `Detour: ${dist} km` : `${dist} km`}</span>
                                 <span className="text-slate-400">•</span>
                                 <span>~{mins} mins transit</span>
                               </button>
-                            </div>
-                          );
-                        }
+                            )}
+                            <AddTypeMenu
+                              variant="icon"
+                              label="Insert stop"
+                              className={cn('export-hidden', showDistance ? '' : 'ml-[-0.75rem]')}
+                              onSelect={(nodeType) => onItemClick?.({
+                                nodeId: `insert-${item.id}-${nextItem.id}`,
+                                nodeType,
+                                nodeTitle: `Insert between ${item.title} and ${nextItem.title}`,
+                                dayId: day.id,
+                                dayNumber: day.dayNumber,
+                                dayLabel: `Day ${day.dayNumber}`,
+                                cityId: city.id,
+                                cityName: city.cityName,
+                                dateStr: day.dateStr,
+                                subtitle: `Between ${item.title} and ${nextItem.title}`,
+                                startTime: item.endTime || item.startTime || '',
+                                insertAfterId: item.id,
+                              })}
+                            />
+                          </div>
+                        );
                       }
 
 
@@ -439,6 +617,10 @@ export default function ItineraryTimeline({
                               onHover={(hovered) => onItemHover?.(hovered ? item : null)}
                               onVerifyLivePrice={onVerifyLivePrice}
                               onWatchPrice={onWatchPrice}
+                              onTimeChange={(field, value) => handleTimeChange(item.id, field, value)}
+                              moveDayOptions={allDayOptions}
+                              currentDayId={day.id}
+                              onMoveToDay={(targetDayId) => handleMoveToDay(item.id, targetDayId)}
                             />
                             {distPill}
                           </React.Fragment>
@@ -455,6 +637,10 @@ export default function ItineraryTimeline({
                             onRemove={() => handleRemove(item.id)}
                             onHover={(hovered) => onItemHover?.(hovered ? item : null)}
                             onVerifyLivePrice={onVerifyLivePrice}
+                            onTimeChange={(field, value) => handleTimeChange(item.id, field, value)}
+                            moveDayOptions={allDayOptions}
+                            currentDayId={day.id}
+                            onMoveToDay={(targetDayId) => handleMoveToDay(item.id, targetDayId)}
                           />
                           {distPill}
                         </React.Fragment>
@@ -464,27 +650,24 @@ export default function ItineraryTimeline({
                     {day.items.filter(item => !item.isInactive).length === 0 && (
                       <div className="relative py-4 pl-[70px] pr-4">
                         <div className="absolute bottom-0 left-[38px] top-0 w-1 bg-slate-800" />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            onItemClick?.({
-                              nodeId: `add-activity-${day.id}`,
-                              nodeType: 'activity',
-                              nodeTitle: `Add Spot to Day ${day.dayNumber}`,
-                              dayId: day.id,
-                              dayNumber: day.dayNumber,
-                              dayLabel: `Day ${day.dayNumber}`,
-                              cityId: city.id,
-                              cityName: city.cityName,
-                              dateStr: day.dateStr,
-                              subtitle: `Exploring ${city.cityName}`,
-                              startTime: '09:00 AM',
-                            });
-                          }}
-                          className="flex w-full items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-slate-200/80 bg-white/40 p-4 text-xs font-bold text-slate-500 hover:bg-slate-55 hover:border-slate-300 hover:text-slate-700 transition-all cursor-pointer shadow-2xs export-hidden"
-                        >
-                          <Plus size={14} /> Add Spot to Day {day.dayNumber}
-                        </button>
+                        <AddTypeMenu
+                          variant="block"
+                          label={`Add to Day ${day.dayNumber}`}
+                          className="export-hidden"
+                          onSelect={(nodeType) => onItemClick?.({
+                            nodeId: `add-activity-${day.id}`,
+                            nodeType,
+                            nodeTitle: `Add to Day ${day.dayNumber}`,
+                            dayId: day.id,
+                            dayNumber: day.dayNumber,
+                            dayLabel: `Day ${day.dayNumber}`,
+                            cityId: city.id,
+                            cityName: city.cityName,
+                            dateStr: day.dateStr,
+                            subtitle: `Exploring ${city.cityName}`,
+                            startTime: '09:00',
+                          })}
+                        />
                       </div>
                     )}
 
@@ -493,32 +676,29 @@ export default function ItineraryTimeline({
                         <div className="absolute bottom-0 left-[38px] top-0 w-1 bg-slate-800" />
                         <div className="absolute bottom-1/2 left-[120px] top-0 w-[1.5px] bg-slate-200" />
                         <div className="ml-[-1rem] flex justify-start">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onItemClick?.({
-                                nodeId: `add-activity-${day.id}`,
-                                nodeType: 'activity',
-                                nodeTitle: `Add Activity to Day ${day.dayNumber}`,
-                                dayId: day.id,
-                                dayNumber: day.dayNumber,
-                                dayLabel: `Day ${day.dayNumber}`,
-                                cityId: city.id,
-                                  cityName: city.cityName,
-                                  dateStr: day.dateStr,
-                                  subtitle: `Exploring ${city.cityName}`,
-                                  startTime: '09:00 AM',
-                                });
-                              }}
-                              className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-500 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700 cursor-pointer export-hidden"
-                            >
-                              <Plus size={14} /> Add Activity
-                            </button>
-                          </div>
+                          <AddTypeMenu
+                            variant="pill"
+                            label="Add"
+                            className="export-hidden"
+                            onSelect={(nodeType) => onItemClick?.({
+                              nodeId: `add-activity-${day.id}`,
+                              nodeType,
+                              nodeTitle: `Add to Day ${day.dayNumber}`,
+                              dayId: day.id,
+                              dayNumber: day.dayNumber,
+                              dayLabel: `Day ${day.dayNumber}`,
+                              cityId: city.id,
+                              cityName: city.cityName,
+                              dateStr: day.dateStr,
+                              subtitle: `Exploring ${city.cityName}`,
+                              startTime: '09:00',
+                            })}
+                          />
                         </div>
-                      )}
-                    </div>
-                  </SortableContext>
+                      </div>
+                    )}
+                  </div>
+                </SortableContext>
                 )}
 
               </div>
@@ -535,6 +715,7 @@ export default function ItineraryTimeline({
               ) : (
                 <TransitNode
                   item={city.transitToNext}
+                  onVerifyLivePrice={onVerifyLivePrice}
                   onClick={() => onItemClick?.({
                     nodeId: city.transitToNext!.id,
                     nodeType: city.transitToNext!.type,
@@ -550,6 +731,19 @@ export default function ItineraryTimeline({
                     price: city.transitToNext!.price,
                     cost: city.transitToNext!.cost,
                   })}
+                  onCompare={onCompareTransit ? () => onCompareTransit({
+                    nodeId: city.transitToNext!.id,
+                    nodeType: city.transitToNext!.type,
+                    nodeTitle: city.transitToNext!.title,
+                    dayId: city.days[city.days.length - 1]?.id ?? city.id,
+                    dayNumber: city.days[city.days.length - 1]?.dayNumber ?? 0,
+                    dayLabel: `Transit from ${city.cityName}`,
+                    cityId: city.id,
+                    cityName: city.cityName,
+                    dateStr: city.days[city.days.length - 1]?.dateStr ?? '',
+                    subtitle: city.transitToNext!.subtitle,
+                    startTime: city.transitToNext!.startTime || '',
+                  }) : undefined}
                   onHover={(hovered) => onItemHover?.(hovered ? city.transitToNext! : null)}
                   onRemove={() => handleRemoveTransit(city.id)}
                 />

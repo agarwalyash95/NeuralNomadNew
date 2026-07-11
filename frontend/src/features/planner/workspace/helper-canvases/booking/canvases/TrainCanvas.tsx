@@ -22,9 +22,10 @@ interface TrainCanvasProps {
 
 const QUICK_FILTER_TAGS = ['AC Class', 'Sleeper', 'Available', 'Rajdhani', 'Vande Bharat'];
 
-/** Search results are real inventory, but not yet price-locked — 'estimated'
- *  until the traveler explicitly verifies via Verify Live Price on the block. */
-const RESULT_PROVENANCE: CostProvenance = { tier: 'estimated', source: 'Live search', basis: 'Not yet price-verified' };
+/** Search results come from reference-table inventory, not a live third-party
+ *  quote — 'suggested' tier until the traveler explicitly verifies via Verify
+ *  Live Price on the block. */
+const RESULT_PROVENANCE: CostProvenance = { tier: 'suggested', source: 'Inventory search', basis: 'Not yet price-verified' };
 
 function buildInitialParams(ctx: TripContext): BookingSearchParams {
   let origin = 'New Delhi (NDLS)';
@@ -97,14 +98,17 @@ export default function TrainCanvas({ onClose, tripContext, onAddToPlan }: Train
       const mapped = apiResults.map((train: any) => {
         const classes = train.meta?.classes || [];
         const baseClass: any = classes[0] || {};
-        const price = baseClass.price || 1500;
+        // A missing fact renders as absent, never a fabricated default —
+        // 'CDG' as a fallback train station code is Charles de Gaulle
+        // airport in Paris, not a real fallback for any Indian route.
+        const price = baseClass.price ?? null;
         return {
           id: train.id,
           trainNumber: train.code,
           name: train.title,
-          departure: { time: train.departure_time || '16:55', station: train.origin_code || 'NDLS', city: train.origin_city || searchParams.origin || 'Origin' },
-          arrival: { time: train.arrival_time || '08:35+1', station: train.destination_code || 'CDG', city: train.destination_city || searchParams.destination || 'Destination' },
-          duration: train.duration || '5h 30m',
+          departure: { time: train.departure_time || null, station: train.origin_code || null, city: train.origin_city || searchParams.origin || 'Origin' },
+          arrival: { time: train.arrival_time || null, station: train.destination_code || null, city: train.destination_city || searchParams.destination || 'Destination' },
+          duration: train.duration || null,
           classes,
           price,
           availability: baseClass.availability || 'Available',
@@ -131,13 +135,15 @@ export default function TrainCanvas({ onClose, tripContext, onAddToPlan }: Train
     const newItem: ItineraryItem = {
       id: `train-${pendingItem.id}-${Date.now()}`,
       type: 'train',
-      startTime: pendingItem.departure.time,
-      endTime: pendingItem.arrival.time,
+      startTime: pendingItem.departure.time ?? undefined,
+      endTime: pendingItem.arrival.time ?? undefined,
       title: `${pendingItem.name} (${pendingItem.trainNumber})`,
       subtitle: `${pendingItem.departure.city} to ${pendingItem.arrival.city}`,
-      price: `₹${pendingItem.price.toLocaleString()}`,
+      originCode: pendingItem.departure.station ?? undefined,
+      destinationCode: pendingItem.arrival.station ?? undefined,
+      price: pendingItem.price != null ? `₹${pendingItem.price.toLocaleString()}` : undefined,
       status: 'Pending',
-      details: `${pendingItem.duration} • ${pendingItem.availability}`,
+      details: [pendingItem.duration, pendingItem.availability].filter(Boolean).join(' • ') || undefined,
       cost: { amount: pendingItem.price, currency: 'INR', provenance: RESULT_PROVENANCE },
     };
     onAddToPlan(newItem);
@@ -202,9 +208,9 @@ export default function TrainCanvas({ onClose, tripContext, onAddToPlan }: Train
                       <p className="text-sm font-semibold text-slate-900">{train.name}</p>
                       <p className="text-xs text-slate-500">#{train.trainNumber}</p>
                       <div className="mt-2 flex items-center gap-3 text-xs">
-                        <div><p className="font-bold text-slate-900">{train.departure.time}</p><p className="text-slate-500">{train.departure.station}</p></div>
-                        <div className="flex-1 text-center"><p className="text-slate-400">{train.duration}</p><div className="my-1 h-px w-full bg-slate-200" /></div>
-                        <div className="text-right"><p className="font-bold text-slate-900">{train.arrival.time}</p><p className="text-slate-500">{train.arrival.station}</p></div>
+                        <div><p className="font-bold text-slate-900">{train.departure.time || '--:--'}</p><p className="text-slate-500">{train.departure.station || ''}</p></div>
+                        <div className="flex-1 text-center"><p className="text-slate-400">{train.duration || 'Duration TBD'}</p><div className="my-1 h-px w-full bg-slate-200" /></div>
+                        <div className="text-right"><p className="font-bold text-slate-900">{train.arrival.time || '--:--'}</p><p className="text-slate-500">{train.arrival.station || ''}</p></div>
                       </div>
                       <div className="mt-2 flex flex-wrap gap-1">
                         {train.classes?.slice(0, 3).map((cls: any, cIdx: number) => (
@@ -214,7 +220,7 @@ export default function TrainCanvas({ onClose, tripContext, onAddToPlan }: Train
 
                     </div>
                     <div className="ml-4 text-right shrink-0">
-                      <p className="text-xl font-bold text-slate-900">₹{train.price.toLocaleString()}</p>
+                      <p className="text-xl font-bold text-slate-900">{train.price != null ? `₹${train.price.toLocaleString()}` : 'Price on request'}</p>
                       <p className="text-xs text-green-600 font-semibold mb-1">{train.availability}</p>
                       <ProvenanceBadge provenance={RESULT_PROVENANCE} className="mb-1.5" />
                       <button onClick={() => setPendingItem(train)}
@@ -235,7 +241,7 @@ export default function TrainCanvas({ onClose, tripContext, onAddToPlan }: Train
         </div>
       </div>
       {pendingItem && onAddToPlan && (
-        <ReplaceConfirmBar newItemTitle={pendingItem.name} newItemPrice={`₹${pendingItem.price.toLocaleString()}`}
+        <ReplaceConfirmBar newItemTitle={pendingItem.name} newItemPrice={pendingItem.price != null ? `₹${pendingItem.price.toLocaleString()}` : undefined}
           tripContext={tripContext} confirmColor="bg-blue-700 hover:bg-blue-800"
           onCancel={() => setPendingItem(null)} onConfirm={handleConfirmReplace} />
       )}

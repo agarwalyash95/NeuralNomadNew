@@ -1,10 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Compass, Zap } from 'lucide-react';
 import { referenceService } from '@/services/reference.service';
-import { useAttractionStore } from '@/store/attractionStore';
-import { useActivityStore } from '@/store/activityStore';
 import { TripContext } from '../../types';
 import CanvasHeader from '../shared/CanvasHeader';
 import SearchSummaryBar from '../shared/SearchSummaryBar';
@@ -41,11 +40,7 @@ export default function AttractionsCanvas({ onClose, tripContext, onAddToPlan }:
   const [attractions, setAttractions] = useState<Suggestion[]>([]);
   const [activities, setActivities] = useState<Suggestion[]>([]);
 
-  // Zustand Stores for details caching
-  const getAttractionDetail = useAttractionStore(state => state.getAttractionDetail);
-  const setAttractionDetail = useAttractionStore(state => state.setAttractionDetail);
-  const getActivityDetail = useActivityStore(state => state.getActivityDetail);
-  const setActivityDetail = useActivityStore(state => state.setActivityDetail);
+  const queryClient = useQueryClient();
 
   // Set active tab based on active triggering node context
   useEffect(() => {
@@ -62,6 +57,11 @@ export default function AttractionsCanvas({ onClose, tripContext, onAddToPlan }:
   }, [tripContext.tripId, tripContext.activeNodeCityName, tripContext.destination]);
 
   const fetchData = async (query: string) => {
+    if (!query.trim()) {
+      setAttractions([]);
+      setActivities([]);
+      return;
+    }
     setLoading(true);
     try {
       const loc = tripContext.activeNodeCityName || tripContext.destination;
@@ -107,25 +107,17 @@ export default function AttractionsCanvas({ onClose, tripContext, onAddToPlan }:
       return;
     }
     setExpandedId(suggestion.id);
-
-    const cachedItem = activeTab === 'attractions' ? getAttractionDetail(suggestion.id) : getActivityDetail(suggestion.id);
-    if (cachedItem) {
-      setExpandedData(cachedItem);
-      return;
-    }
-
     setExpandedData(null);
     setDetailsLoading(true);
     try {
-      const resp = activeTab === 'attractions'
-        ? await referenceService.getAttractionDetails(suggestion.id)
-        : await referenceService.getActivityDetails(suggestion.id);
+      const resp = await queryClient.fetchQuery({
+        queryKey: ['place-details', activeTab === 'attractions' ? 'attraction' : 'activity', suggestion.id],
+        queryFn: () => (activeTab === 'attractions'
+          ? referenceService.getAttractionDetails(suggestion.id)
+          : referenceService.getActivityDetails(suggestion.id)),
+        staleTime: 30 * 60_000,
+      });
       setExpandedData(resp);
-      if (activeTab === 'attractions') {
-        setAttractionDetail(suggestion.id, resp);
-      } else {
-        setActivityDetail(suggestion.id, resp);
-      }
     } catch (err) {
       console.error('Error fetching attraction/activity details:', err);
     } finally {
@@ -143,8 +135,11 @@ export default function AttractionsCanvas({ onClose, tripContext, onAddToPlan }:
       subtitle: pendingItem.address || '',
       details: [pendingItem.duration_label, pendingItem.price_label].filter(Boolean).join(' • ') || undefined,
       status: 'Pending',
-      rating: pendingItem.rating != null ? Math.floor(pendingItem.rating) : undefined,
-      geoTag: pendingItem.address || '',
+      rating: pendingItem.rating != null ? Math.round(pendingItem.rating * 10) / 10 : undefined,
+      // A short location tag, not a repeat of `subtitle` (the full address) —
+      // GenericNode renders both side by side, so duplicating the address
+      // here showed the same string twice.
+      geoTag: tripContext.activeNodeCityName || tripContext.destination || '',
       image: pendingItem.image_url || undefined,
       latitude: pendingItem.latitude ?? undefined,
       longitude: pendingItem.longitude ?? undefined,
@@ -184,7 +179,7 @@ export default function AttractionsCanvas({ onClose, tripContext, onAddToPlan }:
             }`}
           >
             <Compass size={13} />
-            <span>🏛️ Attractions</span>
+            <span>Attractions</span>
             {visibleAttractions.length > 0 && (
               <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full ${
                 activeTab === 'attractions' ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-200 text-slate-600'
@@ -203,7 +198,7 @@ export default function AttractionsCanvas({ onClose, tripContext, onAddToPlan }:
             }`}
           >
             <Zap size={13} />
-            <span>⚡ Activities</span>
+            <span>Activities</span>
             {visibleActivities.length > 0 && (
               <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full ${
                 activeTab === 'activities' ? 'bg-rose-50 text-rose-800' : 'bg-slate-200 text-slate-600'
@@ -295,7 +290,9 @@ export default function AttractionsCanvas({ onClose, tripContext, onAddToPlan }:
             </div>
           ) : (
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-8 text-center">
-              <div className="mx-auto mb-3 text-4xl">🏛️</div>
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-200">
+                {activeTab === 'attractions' ? <Compass size={24} className="text-slate-400" /> : <Zap size={24} className="text-slate-400" />}
+              </div>
               <p className="text-sm font-semibold text-slate-600">No {activeTab === 'attractions' ? 'attractions' : 'activities'} found</p>
               <p className="mt-1 text-xs text-slate-500">Try adjusting the search query</p>
             </div>

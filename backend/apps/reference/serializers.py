@@ -3,8 +3,7 @@ from .models import (
     Country, State, City, Airport, Airline, AirportRoute,
     RailwayStation, TrainRoute, BusStation, BusRoute, MetroStation,
     HotelMaster, RestaurantMaster, AttractionMaster, ActivityMaster,
-    VisaRequirement, Currency, HolidayCalendar, WeatherNormals,
-    TravelSeason, GooglePlaceCache
+    HolidayCalendar, WeatherNormals, TravelSeason
 )
 
 class CountrySerializer(serializers.ModelSerializer):
@@ -83,16 +82,6 @@ class ActivityMasterSerializer(serializers.ModelSerializer):
         model = ActivityMaster
         fields = '__all__'
 
-class VisaRequirementSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = VisaRequirement
-        fields = '__all__'
-
-class CurrencySerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Currency
-        fields = '__all__'
-
 class HolidayCalendarSerializer(serializers.ModelSerializer):
     class Meta:
         model = HolidayCalendar
@@ -108,7 +97,3 @@ class TravelSeasonSerializer(serializers.ModelSerializer):
         model = TravelSeason
         fields = '__all__'
 
-class GooglePlaceCacheSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = GooglePlaceCache
-        fields = '__all__'

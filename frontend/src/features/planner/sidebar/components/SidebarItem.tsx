@@ -1,6 +1,6 @@
 import React from 'react';
 import { Trash2 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, clickableDivProps, FOCUS_RING_CLASS } from '@/lib/utils';
 
 interface SidebarItemProps {
   icon: React.ReactNode;
@@ -35,7 +35,7 @@ export function SidebarItem({
 
     if (isModified) {
       return (
-        <span className="text-[8px] font-bold tracking-wider uppercase bg-amber-100 text-amber-800 border border-amber-300/40 px-1.5 py-0.5 rounded-md shadow-3xs animate-pulse">
+        <span className="text-[8px] font-bold tracking-wider uppercase bg-amber-100 text-amber-800 border border-amber-300/40 px-1.5 py-0.5 rounded-md shadow-3xs motion-safe:animate-pulse">
           Modified
         </span>
       );
@@ -73,8 +73,11 @@ export function SidebarItem({
   return (
     <div
       onClick={onClick}
+      {...clickableDivProps(onClick)}
+      aria-current={isActive ? 'true' : undefined}
       className={cn(
         "group relative flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left cursor-pointer transition-all duration-300",
+        FOCUS_RING_CLASS,
         isActive
           ? "bg-white border border-[#d3cbbe] shadow-[0_6px_16px_-4px_rgba(139,124,103,0.12)] before:absolute before:left-0 before:top-2.5 before:bottom-2.5 before:w-1 before:rounded-r-md before:bg-[#bfa780]"
           : "bg-white/45 border border-[#e8e3d5]/30 hover:bg-white/85 hover:border-line-strong hover:shadow-[0_4px_12px_rgba(139,124,103,0.04)]"

@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { BedDouble } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { BedDouble, Calendar, Users, Info } from 'lucide-react';
 import { referenceService } from '@/services/reference.service';
-import { useHotelStore } from '@/store/hotelStore';
 import { TripContext } from '../../../types';
 import CanvasHeader from '../../shared/CanvasHeader';
 import SearchSummaryBar from '../../shared/SearchSummaryBar';
@@ -16,7 +16,7 @@ import { ItineraryItem, Suggestion } from '../../../plan-canvas/types';
 interface HotelCanvasProps {
   onClose?: () => void;
   tripContext: TripContext;
-  onAddToPlan?: (item: ItineraryItem) => void;
+  onAddToPlan?: (item: ItineraryItem, options?: { thenBook?: boolean }) => void;
 }
 
 const QUICK_FILTER_TAGS = ['All', '4+ Stars', 'Budget', 'Premium'];
@@ -36,8 +36,7 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
 
   const [results, setResults] = useState<Suggestion[]>([]);
 
-  const getHotelDetail = useHotelStore(state => state.getHotelDetail);
-  const setHotelDetail = useHotelStore(state => state.setHotelDetail);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     const loc = tripContext.activeNodeCityName || tripContext.destination;
@@ -45,6 +44,10 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
   }, [tripContext.tripId, tripContext.activeNodeCityName, tripContext.destination]);
 
   const fetchHotels = async (query: string) => {
+    if (!query.trim()) {
+      setResults([]);
+      return;
+    }
     setLoading(true);
     try {
       const loc = tripContext.activeNodeCityName || tripContext.destination;
@@ -64,6 +67,22 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
   };
 
   useEffect(() => { fetchHotels(searchQuery); }, [searchQuery]);
+
+  // Stay-context: the decision facts a hotel card alone can't carry — real
+  // dates/nights/guests derived from the trip's own city segment, never a
+  // guess. HotelMaster has no live nightly rate yet (see suggestions.py
+  // _hotel_fields) — that's stated honestly below rather than simulating a
+  // "checking rates..." step with a foregone unavailable result.
+  const stayContext = useMemo(() => {
+    const range = tripContext.activeNodeCityDateRange;
+    const [checkIn, checkOut] = range ? range.split(' to ') : [tripContext.activeNodeDateStr || tripContext.startDate, undefined];
+    return {
+      checkIn: checkIn || undefined,
+      checkOut: checkOut || checkIn || undefined,
+      nights: tripContext.activeNodeCityNights,
+      guests: tripContext.travellers || 1,
+    };
+  }, [tripContext.activeNodeCityDateRange, tripContext.activeNodeDateStr, tripContext.startDate, tripContext.activeNodeCityNights, tripContext.travellers]);
 
   // Don't recommend what's already planned for the day in view
   const plannedTitles = useMemo(
@@ -90,19 +109,15 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
       return;
     }
     setExpandedId(suggestion.id);
-
-    const cachedItem = getHotelDetail(suggestion.id);
-    if (cachedItem) {
-      setExpandedData(cachedItem);
-      return;
-    }
-
     setExpandedData(null);
     setDetailsLoading(true);
     try {
-      const resp = await referenceService.getHotelDetails(suggestion.id);
+      const resp = await queryClient.fetchQuery({
+        queryKey: ['place-details', 'hotel', suggestion.id],
+        queryFn: () => referenceService.getHotelDetails(suggestion.id),
+        staleTime: 30 * 60_000,
+      });
       setExpandedData(resp);
-      setHotelDetail(suggestion.id, resp);
     } catch (err) {
       console.error('Error fetching hotel details:', err);
     } finally {
@@ -120,13 +135,22 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
       subtitle: pendingItem.address || '',
       details: pendingItem.subtitle,
       status: 'Pending',
-      rating: pendingItem.rating != null ? Math.floor(pendingItem.rating) : undefined,
-      geoTag: pendingItem.address || '',
+      rating: pendingItem.rating != null ? Math.round(pendingItem.rating * 10) / 10 : undefined,
+      // A short location tag, not a repeat of `subtitle` (the full address) —
+      // GenericNode renders both side by side, so duplicating the address
+      // here showed the same string twice.
+      geoTag: tripContext.activeNodeCityName || tripContext.destination || '',
       image: pendingItem.image_url || undefined,
       latitude: pendingItem.latitude ?? undefined,
       longitude: pendingItem.longitude ?? undefined,
       place_id: pendingItem.place_id ?? undefined,
       cost: pendingItem.cost,
+      // Stay-span: how many of the city segment's days this booking covers,
+      // from the real city nights count — not a guess. A single night or
+      // unknown span (stayNights <= 1) renders no continuation ribbon.
+      stayNights: stayContext.nights,
+      checkIn: stayContext.checkIn,
+      checkOut: stayContext.checkOut,
     };
     onAddToPlan(newItem);
     setPendingItem(null);
@@ -146,6 +170,26 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
         onClose={onClose}
       />
       <CurrentlyBookedCard tripContext={tripContext} nodeType="hotel" />
+
+      {/* Stay-context bar — real dates/nights/guests from the trip itself,
+          so a hotel card doesn't have to guess what it's being booked for. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-slate-100 bg-indigo-50/40 px-4 py-2.5 text-[11px] font-semibold text-slate-700">
+        {stayContext.checkIn && (
+          <span className="flex items-center gap-1.5">
+            <Calendar size={12} className="text-indigo-500" />
+            {stayContext.checkIn}{stayContext.checkOut && stayContext.checkOut !== stayContext.checkIn ? ` → ${stayContext.checkOut}` : ''}
+            {stayContext.nights ? ` · ${stayContext.nights} night${stayContext.nights === 1 ? '' : 's'}` : ''}
+          </span>
+        )}
+        <span className="flex items-center gap-1.5">
+          <Users size={12} className="text-indigo-500" />
+          {stayContext.guests} guest{stayContext.guests === 1 ? '' : 's'}
+        </span>
+        <span className="ml-auto flex items-center gap-1 text-slate-400" title="HotelMaster listings don't carry a live nightly rate yet — prices need checking with the property directly.">
+          <Info size={11} />
+          No live rate yet
+        </span>
+      </div>
 
       <div className="custom-scrollbar flex-1 overflow-y-auto">
         {!isSearchExpanded && (
@@ -209,6 +253,7 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
           newItemPrice={pendingItem.price_label || undefined}
           tripContext={tripContext}
           confirmColor="bg-indigo-600 hover:bg-indigo-700"
+          confirmLabel="Add to trip"
           onCancel={() => setPendingItem(null)}
           onConfirm={handleConfirmReplace}
         />

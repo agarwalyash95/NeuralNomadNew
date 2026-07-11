@@ -1,12 +1,16 @@
 import React, { useState } from 'react';
-import { Star, MapPin, Trash2, Compass, Zap, Utensils, BedDouble, Camera } from 'lucide-react';
+import { Star, MapPin, Trash2, Camera, GripVertical } from 'lucide-react';
 import { ItineraryItem } from '../types';
+import { getCategoryStyle } from '../utils/categoryStyle';
 import NodeWrapper from './NodeWrapper';
 import Image from 'next/image';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { formatConvertedPrice } from '../utils/routeOptimizer';
 import { ProvenanceBadge } from '@/features/planner/components/ProvenanceBadge';
+import { BookingStateChip, bookedAccentClass } from '@/features/planner/components/BookingStateChip';
+import MoveToDaySelect, { DayOption } from './MoveToDaySelect';
+import { clickableDivProps, FOCUS_RING_CLASS } from '@/lib/utils';
 
 interface GenericNodeProps {
   item: ItineraryItem;
@@ -15,9 +19,14 @@ interface GenericNodeProps {
   onRemove?: () => void;
   onHover?: (isHovered: boolean) => void;
   onVerifyLivePrice?: (itemId: string) => void;
+  onTimeChange?: (field: 'start' | 'end', value: string) => void;
+  /** Cross-city/cross-day relocation — the accessible path drag-drop doesn't cover */
+  moveDayOptions?: DayOption[];
+  currentDayId?: string;
+  onMoveToDay?: (dayId: string) => void;
 }
 
-export default function GenericNode({ item, isLast, onClick, onRemove, onHover, onVerifyLivePrice }: GenericNodeProps) {
+function GenericNode({ item, isLast, onClick, onRemove, onHover, onVerifyLivePrice, onTimeChange, moveDayOptions, currentDayId, onMoveToDay }: GenericNodeProps) {
   const [isHovered, setIsHovered] = useState(false);
 
   // Derive gradient based on item type
@@ -74,7 +83,7 @@ export default function GenericNode({ item, isLast, onClick, onRemove, onHover, 
 
   return (
     <div ref={setNodeRef} style={style} className="relative">
-      <NodeWrapper type={item.type} time={item.startTime} endTime={item.endTime} isLast={isLast}>
+      <NodeWrapper type={item.type} time={item.startTime} endTime={item.endTime} isLast={isLast} onTimeChange={onTimeChange}>
         <div 
           className="relative group"
           onMouseEnter={() => {
@@ -87,11 +96,25 @@ export default function GenericNode({ item, isLast, onClick, onRemove, onHover, 
           }}
         >
           <div
-            {...attributes}
-            {...listeners}
-            onClick={onClick}
-            className={`flex cursor-pointer items-stretch justify-between gap-3 rounded-[16px] border ${gradientClass} p-3 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md touch-none overflow-hidden`}
+            className={`flex items-stretch rounded-[16px] border ${gradientClass} ${bookedAccentClass(item.blockStatus)} shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md overflow-hidden`}
           >
+            {/* Dedicated drag handle — the whole card used to carry dnd-kit's
+                listeners, which fought with text selection and made every
+                click a potential-drag. Now only this strip does. */}
+            <div
+              {...attributes}
+              {...listeners}
+              className="flex w-6 shrink-0 cursor-grab touch-none items-center justify-center text-slate-300 opacity-60 transition-opacity hover:bg-black/5 hover:text-slate-500 hover:opacity-100 active:cursor-grabbing export-hidden"
+              title="Drag to reorder"
+            >
+              <GripVertical size={14} />
+            </div>
+
+            <div
+              onClick={onClick}
+              {...clickableDivProps(onClick)}
+              className={`flex flex-1 min-w-0 cursor-pointer items-stretch justify-between gap-3 rounded-r-[16px] p-3 pl-1 ${FOCUS_RING_CLASS}`}
+            >
             <div className="flex flex-1 min-w-0 gap-3 items-stretch">
               {/* 25% Hero Image panel on side */}
               <div className="w-1/4 shrink-0 relative bg-slate-100/80 rounded-xl overflow-hidden min-h-[85px] border border-white/60 shadow-xs">
@@ -99,11 +122,13 @@ export default function GenericNode({ item, isLast, onClick, onRemove, onHover, 
                   <Image src={item.image} alt={item.title} fill className="object-cover" />
                 ) : (
                   <div className="flex items-center justify-center h-full w-full bg-slate-50 text-slate-400">
-                    {item.type === 'attraction' ? <Compass size={22} className="text-emerald-500" /> :
-                     item.type === 'activity' ? <Zap size={22} className="text-rose-500" /> :
-                     item.type === 'food' ? <Utensils size={22} className="text-orange-400" /> :
-                     item.type === 'hotel' ? <BedDouble size={22} className="text-indigo-400" /> :
-                     <Camera size={22} />}
+                    {(() => {
+                      const style = getCategoryStyle(item.type);
+                      const CategoryIcon = style.icon;
+                      return item.type in { hotel: 1, food: 1, activity: 1, attraction: 1, taxi: 1, cab: 1 }
+                        ? <CategoryIcon size={22} className={style.text} />
+                        : <Camera size={22} />;
+                    })()}
                   </div>
                 )}
               </div>
@@ -155,8 +180,9 @@ export default function GenericNode({ item, isLast, onClick, onRemove, onHover, 
                     ) : null;
                   })()}
                   
-                  {/* Provenance: where this price actually came from */}
+                  {/* Booking state + provenance: is this booked, and where did the price come from */}
                   <div className="mt-2 export-hidden flex flex-col items-end gap-1">
+                    <BookingStateChip status={item.blockStatus} />
                     <ProvenanceBadge provenance={item.cost?.provenance} />
                     {['hotel', 'flight', 'train', 'bus', 'taxi'].includes(item.type) &&
                       item.cost?.provenance?.tier !== 'verified' && (
@@ -197,14 +223,20 @@ export default function GenericNode({ item, isLast, onClick, onRemove, onHover, 
                   )}
                 </div>
               ) : <div />}
-              
-              <button 
-                onClick={(e) => { e.stopPropagation(); onRemove?.(); }}
-                className="mt-auto rounded-xl bg-rose-50 p-2 text-rose-500 border border-rose-100/80 shadow-xs hover:bg-rose-100 hover:text-rose-600 active:scale-95 transition-all cursor-pointer export-hidden"
-                title="Delete Item"
-              >
+
+              <div className="mt-auto flex items-center gap-1.5 export-hidden">
+                {moveDayOptions && currentDayId && onMoveToDay && (
+                  <MoveToDaySelect options={moveDayOptions} currentDayId={currentDayId} onMove={onMoveToDay} />
+                )}
+                <button
+                  onClick={(e) => { e.stopPropagation(); onRemove?.(); }}
+                  className="rounded-xl bg-rose-50 p-2 text-rose-500 border border-rose-100/80 shadow-xs hover:bg-rose-100 hover:text-rose-600 active:scale-95 transition-all cursor-pointer"
+                  title="Delete Item"
+                >
                 <Trash2 size={15} />
-              </button>
+                </button>
+              </div>
+            </div>
             </div>
           </div>
         </div>
@@ -220,3 +252,20 @@ export default function GenericNode({ item, isLast, onClick, onRemove, onHover, 
     </div>
   );
 }
+
+// The parent (ItineraryTimeline) recreates every callback prop as a fresh
+// inline closure on each of its own renders — a plain React.memo would never
+// bail out. This card only needs to redraw when its own data actually
+// changed, so we compare the data-bearing props and ignore callback
+// identity: a freshly-created `onClick` etc. is behaviorally identical to
+// the last one as long as `item` (and the other props below) are unchanged.
+function areEqual(prev: GenericNodeProps, next: GenericNodeProps): boolean {
+  return (
+    prev.item === next.item &&
+    prev.isLast === next.isLast &&
+    prev.currentDayId === next.currentDayId &&
+    prev.moveDayOptions === next.moveDayOptions
+  );
+}
+
+export default React.memo(GenericNode, areEqual);

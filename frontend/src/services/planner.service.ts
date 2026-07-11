@@ -10,10 +10,14 @@ import type {
   ChatResponse,
   PlannerTrip,
   PlanProposal,
+  PlanInsight,
   CommitmentStatus,
   TripLedger,
   TravelerFact,
+  TransportPreference,
+  TransportLegComparison,
   GenerationJobStatus,
+  RecommendedTrip,
 } from './planner.types';
 
 const BASE = '/planner/workspaces';
@@ -139,6 +143,12 @@ export const plannerService = {
   deleteTravelerFact: (key: string) =>
     apiClient.delete<{ deleted: number }>(`/planner/profile/?key=${encodeURIComponent(key)}`),
 
+  /** Cross-trip transport preference — Cheapest/Fastest/Comfort priority +
+   *  avoid-flights/avoid-overnight/minimal-transfers, read by booking
+   *  canvases as their default sort/filter. */
+  setTransportPreference: (value: TransportPreference) =>
+    apiClient.put<{ facts: TravelerFact[] }>(`/planner/profile/`, { transport_preference: value }),
+
   // ─── Price watches — standing tasks; findings arrive as proposals ──
 
   watchBlock: (workspaceId: string, blockId: string, thresholdAmount?: number) =>
@@ -168,4 +178,41 @@ export const plannerService = {
       `${BASE}/${workspaceId}/proposals/${proposalId}/reject/`,
       { reason }
     ),
+
+  // ─── Proactive insights — advisory, never a silent change ───
+
+  getInsights: (workspaceId: string) =>
+    apiClient.get<PlanInsight[]>(`${BASE}/${workspaceId}/insights/`),
+
+  dismissInsight: (workspaceId: string, contextHash: string) =>
+    apiClient.post<{ dismissed: boolean }>(`${BASE}/${workspaceId}/insights/${contextHash}/dismiss/`),
+
+  // ─── Transport mode comparison for one inter-city leg ────
+
+  compareLegs: (origin: string, destination: string, date?: string, travelers?: number) => {
+    const params = new URLSearchParams({ origin, destination });
+    if (date) params.set('date', date);
+    if (travelers) params.set('travelers', String(travelers));
+    return apiClient.get<TransportLegComparison>(`/planner/legs/compare/?${params.toString()}`);
+  },
+
+  // ─── Route optimization — always files a proposal, never mutates directly ──
+
+  optimizeRoute: (workspaceId: string) =>
+    apiClient.post<{ detail: string | null; proposal: PlanProposal | null }>(
+      `${BASE}/${workspaceId}/optimize-route/`
+    ),
+
+  // ─── Recommended Trips ───────────────────────────────────
+  // The `travel_intelligence` app (and this endpoint) was removed — it kept its
+  // own duplicate trip schema instead of deriving from real PlannerTrip data.
+  // Stubbed empty until the community PlanTemplate corpus (planner-master-plan.md
+  // §2) replaces it with real, anonymized, derived trips. RecommendedTripsSection
+  // already hides itself when the list is empty, so this is a safe no-op today.
+
+  listRecommendedTrips: async (): Promise<RecommendedTrip[]> => [],
+
+  copyRecommendedTrip: (_id: string): Promise<{ workspace_id: string; title: string }> => {
+    throw new Error('Recommended trips are temporarily unavailable.');
+  },
 };

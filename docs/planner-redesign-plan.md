@@ -3,6 +3,23 @@
 > Master plan for the full planner reimagining. Self-contained: usable from any future context window.
 > Created 2026-07-10. Decisions confirmed with user (see §2).
 
+## Execution status — ALL 8 PHASES SHIPPED 2026-07-10
+
+| Phase | Status | Delivered |
+|---|---|---|
+| 0 Foundations | ✅ | `GEMINI_API_KEY`/`RAPIDAPI_KEY`/provider selection + `LIVE_PROVIDERS_ENABLED` wired into settings; registry reads settings lazily; distance-matrix N×N/mispair bug fixed (per-pair parallel calls); orphans, phantom service endpoints, demo `mockData` payload, hardcoded Maps key removed; types → `plan-canvas/types.ts` |
+| 1 Swap fix + distances | ✅ | `workspace/services/blockMerge.ts` (`mergeReplacementItem` + `toRawActivity` for the add path); `place_id`/`masterRef` round-trip through planTransform; canvases stamp `place_id`; `useTransitDistances` (generation hint → debounced server batch → haversine); 22-assertion round-trip verification passed |
+| 2 Save/Book + sidebar | ✅ | `POST {id}/save/` + `POST {id}/book/` (strict, 409 `{blocking_blocks}`); serializer `bucket`; Recent/Saved/Booked sidebar with Modified badge; Save button in header; Checkout completion promotes trip to Booked; 5 API tests |
+| 3 DB-first generation | ✅ | `PlanGenerationJob` (migration 0010 applied); `services/plan_generation.py` 7-phase pipeline — skeleton LLM (no venues) → city resolve/geocode → real candidate pools (explore cache growth) → composing LLM restricted to catalog ids with hallucination rejection + heuristic fill → `transit_hints` → transport priced only via `lookup_live_price` → weather normals + persist; `POST plan/` → 202 + on_commit thread, `GET plan/status/` (90s staleness guard), `?sync=1` legacy; loading screen renders real phases/details; 6 tests |
+| 4 Tokens + Trip Overview | ✅ | Warm-paper tokens as RGB triplets (alpha-modifier-safe) + trust/category tokens + type scale in `globals.css`/`tailwind.config.ts`; hex classes migrated across planner; compact two-row header (inline rename, date/traveler chips, day/city/km stats, segmented committed/planned budget bar with tier hatching, kebab menu); prod build passes |
+| 5 Rich hover + weather | ✅ | `GET /reference/places/details/` unified resolver (Suggestion envelope); `RichHoverCard` (photo strip, rating+count, today's hours, phone, website, editorial summary) in AIInsightsPanel; `usePlaceDetails` idle-time batch prefetch; weather-normal chip on day headers labeled as seasonal average |
+| 6 Canvas upgrades | ✅ | FlightCanvas premium card (logo/monogram, route timeline, stop/cabin/fact chips) + **Add to trip / Add to booking** split (booking → block `priced` → Checkout opens); attraction/activity placeholder "facts" (₹1200, 3-4hrs, Moderate, guided/equipment) suppressed at ingest AND in envelope; cab fares computed from measured road distance with self-stating provenance |
+| 7 Chat SSE + chips | ✅ | `POST /planner/chat/stream/` + `workspaces/{id}/chat/stream/` (non-atomic, `X-Accel-Buffering: no`); events state→token→widgets→done with `suggested_replies`; fetch-based SSE client behind `NEXT_PUBLIC_CHAT_STREAMING=1` with automatic classic fallback + message-id reconciliation; proactive chips in PlannerChat ("Create my plan ✨" when ready); 3 tests |
+
+**Verification:** 16 backend tests green (`test_chat_stream`, `test_plan_generation`, `test_lifecycle_api`, `test_conversation_api`), `tsc --noEmit` clean, `next build` passes.
+
+**Deferred debt:** rotate the leaked Google Maps key (was hardcoded in PlannerMap) · flip `LIVE_PROVIDERS_ENABLED` in staging and contract-test live provider shapes · true streaming LLM reply (SSE currently chunks the completed engine reply; §4c's two-call split is the refinement) · backend `blocks/{bid}/replace/` authority endpoint · §9 items.
+
 ---
 
 ## 1. Context — why this redesign

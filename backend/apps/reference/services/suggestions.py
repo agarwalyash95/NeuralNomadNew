@@ -46,6 +46,9 @@ def _restaurant_fields(r):
             "national_phone_number": r.national_phone_number,
             "website_uri": r.website_uri,
             "editorial_summary": r.editorial_summary,
+            "reservation_policy": r.reservation_policy,
+            "typical_lead_time_days": r.typical_lead_time_days,
+            "dietary_accommodations": r.dietary_accommodations or {},
         },
     }
 
@@ -75,6 +78,7 @@ def _attraction_fields(a):
             "national_phone_number": a.national_phone_number,
             "website_uri": a.website_uri,
             "editorial_summary": a.editorial_summary,
+            "accessibility_detail": a.accessibility_detail or {},
         },
     }
 
@@ -102,6 +106,7 @@ def _activity_fields(a):
             "national_phone_number": a.national_phone_number,
             "website_uri": a.website_uri,
             "editorial_summary": a.editorial_summary,
+            "accessibility_detail": a.accessibility_detail or {},
         },
     }
 
@@ -123,6 +128,11 @@ def _hotel_fields(h):
             "national_phone_number": h.national_phone_number,
             "website_uri": h.website_uri,
             "editorial_summary": h.editorial_summary,
+            "seasonal_amenities": h.seasonal_amenities or [],
+            "room_tiers": [
+                {"tier_name": t.tier_name, "price_premium_pct": t.price_premium_pct, "feature_tags": t.feature_tags}
+                for t in h.room_tiers.all()
+            ] if h.pk else [],
         },
     }
 
@@ -135,9 +145,63 @@ _CATEGORY_FIELDS = {
 }
 
 
+def _place_insights(instance):
+    """
+    Cached AI judgment synthesis (apps.knowledge.services.enrichment) — real
+    for whatever's actually been enriched, an empty dict for everything else
+    rather than a placeholder. See docs/travel-intelligence-implementation-roadmap.md §1.
+    """
+    try:
+        from django.contrib.contenttypes.models import ContentType
+
+        from apps.knowledge.models import PlaceInsight
+    except Exception:
+        return {}
+
+    content_type = ContentType.objects.get_for_model(instance)
+    rows = PlaceInsight.objects.filter(content_type=content_type, object_id=str(instance.pk))
+    out = {}
+    for row in rows:
+        out[row.insight_type] = {
+            "text": row.text or None,
+            **row.structured,
+            "provenance": row.provenance,
+        }
+    return out
+
+
+def _local_tips(instance):
+    """
+    Approved local tips (apps.knowledge.services.enrichment) attached to this
+    place — scam warnings, etiquette, safety notes. Only tips that have
+    cleared the human-review gate surface here; unreviewed auto-generated
+    tips (default for scam_warning/after_dark/safety/emergency_prep) are
+    withheld rather than shown as suggested-tier, because a wrong safety
+    claim isn't proportionally bad the way a wrong restaurant tip is — see
+    docs/travel-intelligence-implementation-roadmap.md §1.
+    """
+    try:
+        from django.contrib.contenttypes.models import ContentType
+
+        from apps.knowledge.models import LocalTip
+    except Exception:
+        return []
+
+    content_type = ContentType.objects.get_for_model(instance)
+    rows = LocalTip.objects.filter(
+        content_type=content_type, object_id=str(instance.pk), needs_human_review=False
+    ).order_by("category")[:3]
+    return [
+        {"category": row.category, "text": row.tip_text, "confidence": row.confidence}
+        for row in rows
+    ]
+
+
 def to_suggestion(instance, category, distance_km=None):
     """Shape a single master-table instance into the normalized Suggestion envelope."""
     fields = _CATEGORY_FIELDS[category](instance)
+    fields["details"]["insights"] = _place_insights(instance)
+    fields["details"]["local_tips"] = _local_tips(instance)
 
     return {
         "id": instance.id,

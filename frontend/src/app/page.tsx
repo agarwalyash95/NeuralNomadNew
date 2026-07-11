@@ -5,6 +5,7 @@ import Hero from '@/components/home/hero';
 import SmartInsightsBar from '@/components/home/smart-insights-bar';
 import MoodDestinationSection from '@/components/home/mood-destination-section';
 import AIFeaturesStrip from '@/components/home/ai-features-strip';
+import RecommendedTripsSection from '@/components/home/recommended-trips-section';
 import { useHomepage } from '@/hooks/use-homepage';
 
 export default function HomePage() {
@@ -40,6 +41,9 @@ export default function HomePage() {
 
         {/* AI feature tiles */}
         <AIFeaturesStrip features={features} />
+
+        {/* Curated draft workspaces library */}
+        <RecommendedTripsSection />
 
         {/* Minimal CTA footer */}
         <section className="py-12 text-center">

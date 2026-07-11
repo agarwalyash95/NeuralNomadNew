@@ -52,7 +52,7 @@ export function ChatInput({
               {isCreatingPlan ? (
                 <Loader2 size={14} className="animate-spin" />
               ) : (
-                <Sparkles size={14} className={isHighlighted ? 'animate-pulse' : ''} />
+                <Sparkles size={14} className={isHighlighted ? 'motion-safe:animate-pulse' : ''} />
               )}
               {isCreatingPlan ? 'Creating...' : 'Create Plan'}
             </motion.button>

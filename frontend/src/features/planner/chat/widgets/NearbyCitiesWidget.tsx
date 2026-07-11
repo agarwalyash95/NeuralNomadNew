@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Sparkles, MapPin, Navigation, Clock, Plus, Check } from 'lucide-react';
 import type { WidgetData } from '@/services/planner.types';
+import { clickableDivProps, FOCUS_RING_CLASS } from '@/lib/utils';
 
 interface NearbyCitiesWidgetProps {
   widget: WidgetData;
@@ -53,7 +54,7 @@ export function NearbyCitiesWidget({ widget, onSubmit }: NearbyCitiesWidgetProps
           <p className="mt-0.5 text-[10px] text-slate-400">Add nearby cities to make it a multi-city trip</p>
         </div>
         <span className="flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-600">
-          <Sparkles size={10} className="animate-pulse" /> AI Curated
+          <Sparkles size={10} className="motion-safe:animate-pulse" /> AI Curated
         </span>
       </div>
 
@@ -64,7 +65,9 @@ export function NearbyCitiesWidget({ widget, onSubmit }: NearbyCitiesWidgetProps
             <div
               key={idx}
               onClick={() => handleToggle(item.city)}
-              className={`relative flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-all ${isSelected
+              {...clickableDivProps(() => handleToggle(item.city))}
+              aria-pressed={isSelected}
+              className={`relative flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-all ${FOCUS_RING_CLASS} ${isSelected
                   ? 'border-indigo-200 bg-indigo-50/30 shadow-sm'
                   : 'border-slate-100 bg-slate-50/40 hover:border-slate-200 hover:bg-slate-50/80'
                 } ${submitted ? 'pointer-events-none opacity-70' : ''}`}

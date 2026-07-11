@@ -1,25 +1,49 @@
+import requests
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from django.conf import settings
+from django.core.cache import cache
+from django.http import HttpResponse
 from django_filters.rest_framework import DjangoFilterBackend
 from .models import (
     Country, State, City, Airport, Airline, AirportRoute,
     RailwayStation, TrainRoute, BusStation, BusRoute, MetroStation,
     HotelMaster, RestaurantMaster, AttractionMaster, ActivityMaster,
-    VisaRequirement, Currency, HolidayCalendar, WeatherNormals,
-    TravelSeason, GooglePlaceCache
+    HolidayCalendar, WeatherNormals, TravelSeason
 )
 from .serializers import (
     CountrySerializer, StateSerializer, CitySerializer, AirportSerializer, AirlineSerializer,
     AirportRouteSerializer, RailwayStationSerializer, TrainRouteSerializer, BusStationSerializer,
     BusRouteSerializer, MetroStationSerializer, HotelMasterSerializer, RestaurantMasterSerializer,
-    AttractionMasterSerializer, ActivityMasterSerializer, VisaRequirementSerializer,
-    CurrencySerializer, HolidayCalendarSerializer, WeatherNormalsSerializer,
-    TravelSeasonSerializer, GooglePlaceCacheSerializer
+    AttractionMasterSerializer, ActivityMasterSerializer,
+    HolidayCalendarSerializer, WeatherNormalsSerializer, TravelSeasonSerializer
 )
-from .services.places_explore import explore_places, extract_photos, extract_opening_hours, extract_editorial_summary
 from .services.suggestions import to_suggestion, to_suggestion_list
+
+# The four explore() actions below all delegate to KnowledgeEngine.resolve()
+# (apps.knowledge.services.engine), imported locally in each action to avoid
+# a reference->knowledge->reference import cycle at module load time. Field
+# masks / Places query templates / field mappers live in one place now:
+# apps.reference.services.places_explore._category_config().
+
+
+def _trigger_enrichment_if_needed(category, instance):
+    """
+    Fire-and-forget LLM enrichment the first time a place is actually looked
+    at (details view — every replace/select flow in the planner hits this
+    before confirming). Without this, a place only gets PlaceInsight rows if
+    it happens to win a slot in run_enrichment_pass's popularity-ordered
+    batch — new/replaced places start at popularity_score=0 and can wait
+    indefinitely for that. See apps.knowledge.services.enrichment.
+    """
+    from apps.knowledge.services.enrichment import needs_enrichment
+
+    if needs_enrichment(category, instance):
+        from apps.reference.tasks import enrich_place
+        enrich_place.delay(category, instance.pk)
 
 
 def _parse_coords(request):
@@ -32,130 +56,10 @@ def _parse_coords(request):
             pass
     return None, None
 
-
-# ── Google Places field mappers ──────────────────────────────────────────
-# Each maps a Places API result dict to the model-specific create() kwargs
-# (city/place_id are supplied by explore_places itself).
-
-def _map_restaurant(p, api_key):
-    price_map = {
-        "PRICE_LEVEL_FREE": 0, "PRICE_LEVEL_INEXPENSIVE": 1,
-        "PRICE_LEVEL_MODERATE": 2, "PRICE_LEVEL_EXPENSIVE": 3, "PRICE_LEVEL_VERY_EXPENSIVE": 4,
-    }
-    image_url, secondary_images = extract_photos(p.get('photos', []), api_key)
-    return dict(
-        name=p.get('displayName', {}).get('text', 'Unknown')[:250],
-        primary_type=p.get('primaryType', ''),
-        price_level=price_map.get(p.get('priceLevel', ''), None),
-        user_rating=p.get('rating'),
-        user_ratings_total=p.get('userRatingCount', 0),
-        address=p.get('formattedAddress', ''),
-        latitude=p.get('location', {}).get('latitude'),
-        longitude=p.get('location', {}).get('longitude'),
-        outdoor_seating=p.get('outdoorSeating'),
-        good_for_groups=p.get('goodForGroups'),
-        allows_dogs=p.get('allowsDogs'),
-        good_for_children=p.get('goodForChildren'),
-        menu_for_children=p.get('menuForChildren'),
-        serves_vegetarian_food=p.get('servesVegetarianFood'),
-        dine_in=p.get('dineIn'),
-        takeout=p.get('takeout'),
-        delivery=p.get('delivery'),
-        parking_options=p.get('parkingOptions', {}),
-        payment_options=p.get('paymentOptions', {}),
-        reviews=p.get('reviews', [])[:5],
-        opening_hours=extract_opening_hours(p),
-        national_phone_number=p.get('nationalPhoneNumber'),
-        website_uri=p.get('websiteUri'),
-        editorial_summary=extract_editorial_summary(p),
-        image_url=image_url,
-        secondary_images=secondary_images,
-    )
-
-
-def _map_attraction(p, api_key):
-    image_url, secondary_images = extract_photos(p.get('photos', []), api_key)
-    access_opts = p.get('accessibilityOptions', {})
-    return dict(
-        name=p.get('displayName', {}).get('text', 'Unknown')[:250],
-        primary_type=p.get('primaryType', 'tourist_attraction'),
-        category=p.get('primaryType', 'sightseeing'),
-        user_rating=p.get('rating'),
-        user_ratings_total=p.get('userRatingCount', 0),
-        address=p.get('formattedAddress', ''),
-        latitude=p.get('location', {}).get('latitude'),
-        longitude=p.get('location', {}).get('longitude'),
-        good_for_children=p.get('goodForChildren'),
-        wheelchair_accessible=access_opts.get('wheelchairAccessibleEntrance'),
-        good_for_groups=p.get('goodForGroups'),
-        reviews=p.get('reviews', [])[:5],
-        opening_hours=extract_opening_hours(p),
-        national_phone_number=p.get('nationalPhoneNumber'),
-        website_uri=p.get('websiteUri'),
-        editorial_summary=extract_editorial_summary(p),
-        image_url=image_url,
-        secondary_images=secondary_images,
-        # No real duration/ticket data from Places — honest gaps, not defaults
-        suggested_duration_mins=None,
-        ticket_price_estimate="",
-    )
-
-
-def _map_activity(p, api_key):
-    image_url, secondary_images = extract_photos(p.get('photos', []), api_key)
-    return dict(
-        name=p.get('displayName', {}).get('text', 'Unknown')[:250],
-        primary_type=p.get('primaryType', 'activity'),
-        category=p.get('primaryType', 'adventure'),
-        user_rating=p.get('rating'),
-        user_ratings_total=p.get('userRatingCount', 0),
-        address=p.get('formattedAddress', ''),
-        latitude=p.get('location', {}).get('latitude'),
-        longitude=p.get('location', {}).get('longitude'),
-        good_for_children=p.get('goodForChildren'),
-        good_for_groups=p.get('goodForGroups'),
-        # Google Places has no data for these — leave honest gaps rather
-        # than stamping invented specifics (guided_tour, price, difficulty).
-        guided_tour=None,
-        equipment_included=None,
-        reviews=p.get('reviews', [])[:5],
-        opening_hours=extract_opening_hours(p),
-        national_phone_number=p.get('nationalPhoneNumber'),
-        website_uri=p.get('websiteUri'),
-        editorial_summary=extract_editorial_summary(p),
-        image_url=image_url,
-        secondary_images=secondary_images,
-        price_estimate=None,
-        suggested_duration="",
-        difficulty_level="",
-    )
-
-
-def _map_hotel(p, api_key):
-    price_map = {
-        "PRICE_LEVEL_FREE": '', "PRICE_LEVEL_INEXPENSIVE": '$',
-        "PRICE_LEVEL_MODERATE": '$$', "PRICE_LEVEL_EXPENSIVE": '$$$', "PRICE_LEVEL_VERY_EXPENSIVE": '$$$$',
-    }
-    image_url, secondary_images = extract_photos(p.get('photos', []), api_key)
-    return dict(
-        name=p.get('displayName', {}).get('text', 'Unknown')[:250],
-        primary_type=p.get('primaryType', 'lodging'),
-        price_range=price_map.get(p.get('priceLevel', ''), None),
-        user_rating=p.get('rating'),
-        user_ratings_total=p.get('userRatingCount', 0),
-        address=p.get('formattedAddress', ''),
-        latitude=p.get('location', {}).get('latitude'),
-        longitude=p.get('location', {}).get('longitude'),
-        parking_options=p.get('parkingOptions', {}),
-        payment_options=p.get('paymentOptions', {}),
-        reviews=p.get('reviews', [])[:5],
-        opening_hours=extract_opening_hours(p),
-        national_phone_number=p.get('nationalPhoneNumber'),
-        website_uri=p.get('websiteUri'),
-        editorial_summary=extract_editorial_summary(p),
-        image_url=image_url,
-        secondary_images=secondary_images,
-    )
+# Field mappers (map_hotel/map_restaurant/map_attraction/map_activity) now live
+# in services/places_explore.py — service logic, not view logic — and are
+# imported above under their original `_map_*` names so the four explore()
+# actions below don't need to change.
 
 
 class BaseReferenceViewSet(viewsets.ReadOnlyModelViewSet):
@@ -237,21 +141,8 @@ class HotelMasterViewSet(BaseReferenceViewSet):
             return Response({'error': 'Location is required'}, status=status.HTTP_400_BAD_REQUEST)
         lat_val, lng_val = _parse_coords(request)
 
-        field_mask = (
-            "places.id,places.displayName,places.primaryType,places.rating,places.userRatingCount,"
-            "places.priceLevel,places.formattedAddress,places.location,places.parkingOptions,"
-            "places.paymentOptions,places.reviews,places.regularOpeningHours,places.nationalPhoneNumber,"
-            "places.websiteUri,places.editorialSummary,places.photos"
-        )
-        source, places, error = explore_places(
-            model=HotelMaster,
-            location=location,
-            lat_val=lat_val, lng_val=lng_val,
-            google_query=f"hotels in {location}",
-            included_type="lodging",
-            field_mask=field_mask,
-            field_mapper=_map_hotel,
-        )
+        from apps.knowledge.services.engine import KnowledgeEngine
+        source, places, error = KnowledgeEngine.resolve('hotel', location, lat=lat_val, lng=lng_val)
         if error and not places:
             return Response({'error': error}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         return Response({'source': source, 'results': to_suggestion_list(places, 'hotel')})
@@ -259,6 +150,7 @@ class HotelMasterViewSet(BaseReferenceViewSet):
     @action(detail=True, methods=['get'])
     def details(self, request, pk=None):
         hotel = self.get_object()
+        _trigger_enrichment_if_needed('hotel', hotel)
         return Response({'source': 'database', 'data': to_suggestion(hotel, 'hotel')})
 
 class RestaurantMasterViewSet(BaseReferenceViewSet):
@@ -274,23 +166,8 @@ class RestaurantMasterViewSet(BaseReferenceViewSet):
             return Response({'error': 'Location is required'}, status=status.HTTP_400_BAD_REQUEST)
         lat_val, lng_val = _parse_coords(request)
 
-        field_mask = (
-            "places.id,places.displayName,places.primaryType,places.rating,places.userRatingCount,"
-            "places.priceLevel,places.formattedAddress,places.location,places.outdoorSeating,"
-            "places.goodForGroups,places.allowsDogs,places.goodForChildren,places.menuForChildren,"
-            "places.servesVegetarianFood,places.dineIn,places.takeout,places.delivery,"
-            "places.parkingOptions,places.paymentOptions,places.reviews,places.regularOpeningHours,"
-            "places.nationalPhoneNumber,places.websiteUri,places.editorialSummary,places.photos"
-        )
-        source, places, error = explore_places(
-            model=RestaurantMaster,
-            location=location,
-            lat_val=lat_val, lng_val=lng_val,
-            google_query=f"best restaurants in {location}",
-            included_type="restaurant",
-            field_mask=field_mask,
-            field_mapper=_map_restaurant,
-        )
+        from apps.knowledge.services.engine import KnowledgeEngine
+        source, places, error = KnowledgeEngine.resolve('restaurant', location, lat=lat_val, lng=lng_val)
         if error and not places:
             return Response({'error': error}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         return Response({'source': source, 'results': to_suggestion_list(places, 'restaurant')})
@@ -298,6 +175,7 @@ class RestaurantMasterViewSet(BaseReferenceViewSet):
     @action(detail=True, methods=['get'])
     def details(self, request, pk=None):
         restaurant = self.get_object()
+        _trigger_enrichment_if_needed('restaurant', restaurant)
         return Response({'source': 'database', 'data': to_suggestion(restaurant, 'restaurant')})
 
 class AttractionMasterViewSet(BaseReferenceViewSet):
@@ -313,21 +191,8 @@ class AttractionMasterViewSet(BaseReferenceViewSet):
             return Response({'error': 'Location is required'}, status=status.HTTP_400_BAD_REQUEST)
         lat_val, lng_val = _parse_coords(request)
 
-        field_mask = (
-            "places.id,places.displayName,places.primaryType,places.rating,places.userRatingCount,"
-            "places.formattedAddress,places.location,places.goodForChildren,places.goodForGroups,"
-            "places.accessibilityOptions,places.reviews,places.regularOpeningHours,"
-            "places.nationalPhoneNumber,places.websiteUri,places.editorialSummary,places.photos"
-        )
-        source, places, error = explore_places(
-            model=AttractionMaster,
-            location=location,
-            lat_val=lat_val, lng_val=lng_val,
-            google_query=f"top tourist attractions, heritage sites and landmarks in {location}",
-            included_type="tourist_attraction",
-            field_mask=field_mask,
-            field_mapper=_map_attraction,
-        )
+        from apps.knowledge.services.engine import KnowledgeEngine
+        source, places, error = KnowledgeEngine.resolve('attraction', location, lat=lat_val, lng=lng_val)
         if error and not places:
             return Response({'error': error}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         return Response({'source': source, 'results': to_suggestion_list(places, 'attraction')})
@@ -335,6 +200,7 @@ class AttractionMasterViewSet(BaseReferenceViewSet):
     @action(detail=True, methods=['get'])
     def details(self, request, pk=None):
         attraction = self.get_object()
+        _trigger_enrichment_if_needed('attraction', attraction)
         return Response({'source': 'database', 'data': to_suggestion(attraction, 'attraction')})
 
 class ActivityMasterViewSet(BaseReferenceViewSet):
@@ -350,21 +216,8 @@ class ActivityMasterViewSet(BaseReferenceViewSet):
             return Response({'error': 'Location is required'}, status=status.HTTP_400_BAD_REQUEST)
         lat_val, lng_val = _parse_coords(request)
 
-        field_mask = (
-            "places.id,places.displayName,places.primaryType,places.rating,places.userRatingCount,"
-            "places.formattedAddress,places.location,places.goodForChildren,places.goodForGroups,"
-            "places.reviews,places.regularOpeningHours,places.nationalPhoneNumber,places.websiteUri,"
-            "places.editorialSummary,places.photos"
-        )
-        source, places, error = explore_places(
-            model=ActivityMaster,
-            location=location,
-            lat_val=lat_val, lng_val=lng_val,
-            google_query=f"top adventure activities, outdoor sports and tours in {location}",
-            included_type=None,
-            field_mask=field_mask,
-            field_mapper=_map_activity,
-        )
+        from apps.knowledge.services.engine import KnowledgeEngine
+        source, places, error = KnowledgeEngine.resolve('activity', location, lat=lat_val, lng=lng_val)
         if error and not places:
             return Response({'error': error}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         return Response({'source': source, 'results': to_suggestion_list(places, 'activity')})
@@ -372,17 +225,8 @@ class ActivityMasterViewSet(BaseReferenceViewSet):
     @action(detail=True, methods=['get'])
     def details(self, request, pk=None):
         activity = self.get_object()
+        _trigger_enrichment_if_needed('activity', activity)
         return Response({'source': 'database', 'data': to_suggestion(activity, 'activity')})
-
-class VisaRequirementViewSet(BaseReferenceViewSet):
-    queryset = VisaRequirement.objects.all()
-    serializer_class = VisaRequirementSerializer
-    filterset_fields = ['nationality', 'destination', 'status']
-
-class CurrencyViewSet(BaseReferenceViewSet):
-    queryset = Currency.objects.all()
-    serializer_class = CurrencySerializer
-    search_fields = ['name', 'code']
 
 class HolidayCalendarViewSet(BaseReferenceViewSet):
     queryset = HolidayCalendar.objects.all()
@@ -400,14 +244,86 @@ class TravelSeasonViewSet(BaseReferenceViewSet):
     serializer_class = TravelSeasonSerializer
     filterset_fields = ['city', 'month', 'season_type']
 
-class GooglePlaceCacheViewSet(BaseReferenceViewSet):
-    queryset = GooglePlaceCache.objects.all()
-    serializer_class = GooglePlaceCacheSerializer
-    search_fields = ['name', 'place_id']
+
+class CityBriefingView(APIView):
+    """
+    GET /reference/city-briefing/?name=<city>&month=<1-12, optional>
+
+    Aggregates only real, already-shipped destination facts for the
+    collapsed-by-default City Briefing shown under CityHeaderNode: weather
+    normals, reviewed LocalTips, and TravelSeason. Absence over invention —
+    any domain with nothing on file is simply omitted from the response
+    (null/empty) rather than backfilled with a placeholder, so the frontend
+    renders a real "nothing on file yet" gap instead of a fabricated one.
+
+    Resolves the city by case-insensitive name only, same as
+    apps.planner.services.plan_generation._resolve_cities /
+    _stamp_weather_normals — the persisted trip JSON carries city names, not
+    reference.City ids, so this is the one lookup key both sides agree on.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        name = request.query_params.get('name', '').strip()
+        if not name:
+            return Response({"error": "name is required"}, status=400)
+
+        city = City.objects.filter(name__iexact=name).first()
+        if city is None:
+            return Response({"error": "No matching city on file"}, status=404)
+
+        month = None
+        month_param = request.query_params.get('month')
+        if month_param:
+            try:
+                parsed = int(month_param)
+                if 1 <= parsed <= 12:
+                    month = parsed
+            except ValueError:
+                pass
+
+        weather = None
+        season = None
+        if month:
+            normal = WeatherNormals.objects.filter(city=city, month=month).first()
+            if normal:
+                weather = {
+                    "month": month,
+                    "avg_temp_c": float(normal.avg_temp_c) if normal.avg_temp_c is not None else None,
+                    "precipitation_mm": float(normal.precipitation_mm) if normal.precipitation_mm is not None else None,
+                    "feels_like_bucket": normal.feels_like_bucket or None,
+                    "packing_note": normal.packing_note or None,
+                }
+            season_row = TravelSeason.objects.filter(city=city, month=month).first()
+            if season_row:
+                season = {
+                    "month": month,
+                    "season_type": season_row.season_type,
+                    "natural_phenomena": season_row.natural_phenomena or [],
+                }
+
+        from django.contrib.contenttypes.models import ContentType
+
+        from apps.knowledge.models import LocalTip
+
+        content_type = ContentType.objects.get_for_model(City)
+        tip_rows = LocalTip.objects.filter(
+            content_type=content_type, object_id=str(city.pk), needs_human_review=False
+        ).order_by('category')[:6]
+        local_tips = [
+            {"category": row.category, "text": row.tip_text, "confidence": row.confidence}
+            for row in tip_rows
+        ]
+
+        return Response({
+            "city": city.name,
+            "country": city.country.name,
+            "weather": weather,
+            "season": season,
+            "local_tips": local_tips,
+        })
 
 
-from rest_framework.views import APIView
-from rest_framework.permissions import AllowAny
 from datetime import datetime
 from django.db.models import Q
 from .models import TravelPriceHistory
@@ -475,6 +391,151 @@ class PlaceDetailsView(APIView):
         for category in categories:
             instance = self._MODELS[category].objects.filter(place_id=place_id).first()
             if instance is not None:
+                _trigger_enrichment_if_needed(category, instance)
                 return Response({"source": "database", "data": to_suggestion(instance, category)})
 
         return Response({"error": "No place found for this place_id"}, status=404)
+
+
+class SemanticSearchView(APIView):
+    """
+    Hybrid-ready semantic search — GET /reference/search/?q=...&category=restaurant
+    Cosine-similarity over EntityEmbedding (apps.knowledge.services.embeddings),
+    resolved back to the Suggestion envelope. Lexical/full-text fusion is not
+    added yet (see docs/travel-knowledge-engine-plan.md §10) — this is the
+    semantic half on its own, already useful standalone.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        query = request.query_params.get("q", "").strip()
+        if not query:
+            return Response({"error": "q is required"}, status=400)
+
+        category = request.query_params.get("category", "").strip().lower() or None
+        categories = [category] if category else None
+        try:
+            limit = min(int(request.query_params.get("limit", 10)), 25)
+        except ValueError:
+            limit = 10
+
+        from apps.knowledge.services.embeddings import semantic_search
+
+        results = semantic_search(query, categories=categories, limit=limit)
+        return Response({
+            "results": [
+                {**to_suggestion(r["instance"], r["category"]), "semantic_distance": round(float(r["distance"]), 4)}
+                for r in results
+            ],
+        })
+
+
+class PlacePhotoProxyView(APIView):
+    """
+    Streams a Google Places photo through this backend so the Places API key
+    never reaches the browser. `photo_ref` is the raw Places `photos[].name`
+    resource path (e.g. "places/ChIJ.../photos/AUq...") — see
+    apps.reference.services.places_explore.extract_photos, which stamps
+    HotelMaster/RestaurantMaster/AttractionMaster/ActivityMaster.image_url
+    and .secondary_images with URLs pointing at this endpoint instead of
+    Google's directly.
+    """
+    permission_classes = [AllowAny]
+    _CACHE_TIMEOUT = 60 * 60 * 24 * 7  # 7 days — Places photo content is stable
+
+    def get(self, request, photo_ref):
+        api_key = getattr(settings, "GOOGLE_PLACES_API_KEY", "")
+        if not api_key:
+            return Response({"error": "Photo service not configured"}, status=503)
+
+        try:
+            max_h = int(request.query_params.get("h", 800))
+            max_w = int(request.query_params.get("w", 800))
+        except ValueError:
+            max_h, max_w = 800, 800
+
+        cache_key = f"place-photo:{photo_ref}:{max_w}x{max_h}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            content, content_type = cached
+            resp = HttpResponse(content, content_type=content_type)
+            resp["Cache-Control"] = f"public, max-age={self._CACHE_TIMEOUT}"
+            return resp
+
+        try:
+            upstream = requests.get(
+                f"https://places.googleapis.com/v1/{photo_ref}/media",
+                params={"maxHeightPx": max_h, "maxWidthPx": max_w, "key": api_key},
+                timeout=6,
+            )
+        except requests.RequestException:
+            return Response({"error": "Photo fetch failed"}, status=502)
+
+        if upstream.status_code != 200:
+            return Response({"error": "Photo not found"}, status=404)
+
+        content_type = upstream.headers.get("Content-Type", "image/jpeg")
+        cache.set(cache_key, (upstream.content, content_type), self._CACHE_TIMEOUT)
+
+        resp = HttpResponse(upstream.content, content_type=content_type)
+        resp["Cache-Control"] = f"public, max-age={self._CACHE_TIMEOUT}"
+        return resp
+
+
+class ExploreAllView(APIView):
+    """
+    Combined search across tourist attractions, restaurants, and outdoor activities.
+    Uses KnowledgeEngine.resolve() to trigger cache-on-miss Google Places loading.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        location = request.query_params.get('location', '')
+        lat_val, lng_val = _parse_coords(request)
+
+        # Reverse geocode if coordinates are provided but location string is missing
+        if not location and (lat_val is not None and lng_val is not None):
+            api_key = getattr(settings, 'GOOGLE_PLACES_API_KEY', '')
+            if api_key:
+                geocode_url = f"https://maps.googleapis.com/maps/api/geocode/json?latlng={lat_val},{lng_val}&key={api_key}"
+                try:
+                    resp = requests.get(geocode_url, timeout=5)
+                    data = resp.json()
+                    if data.get('results'):
+                        # Try to find locality
+                        for component in data['results'][0]['address_components']:
+                            if 'locality' in component['types']:
+                                location = component['long_name']
+                                break
+                        if not location:
+                            # Fallback to administrative_area_level_1 or something else
+                            location = data['results'][0]['address_components'][0]['long_name']
+                except Exception as e:
+                    print(f"Error reverse geocoding coords in explore-all: {e}")
+
+        if not location:
+            return Response({'error': 'Location is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        from apps.knowledge.services.engine import KnowledgeEngine
+
+        categories = ['attraction', 'restaurant', 'activity']
+        results = []
+        overall_source = 'cache'
+
+        for category in categories:
+            try:
+                source, places, error = KnowledgeEngine.resolve(category, location, lat=lat_val, lng=lng_val)
+                if not error and places:
+                    if source == 'google_places':
+                        overall_source = 'google_places'
+                    results.extend(to_suggestion_list(places, category))
+            except Exception as e:
+                # Log the error, but don't crash the whole view if one category fails
+                print(f"Error resolving {category} in explore-all: {e}")
+                pass
+
+        # Sort the overall results by rating (highest first)
+        results.sort(key=lambda x: x.get('rating') or 0, reverse=True)
+
+        return Response({'source': overall_source, 'location': location, 'results': results})
+

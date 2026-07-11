@@ -12,8 +12,67 @@ from apps.planner.serializers import (
     PlannerWorkspaceSerializer,
     PlanProposalSerializer,
     TripDraftStateSerializer,
+    TripSerializer,
 )
 from apps.planner.services.conversation_service import ConversationService
+
+
+def _trigger_enrichment_for_trip_blocks(trip):
+    """
+    A replaced/newly-added hotel/restaurant/attraction/activity block only
+    gets its `metadata.master_ref` the moment the plan is saved here — the
+    Helper Canvas selection and the details/hover views that would otherwise
+    trigger enrichment (apps.reference.views._trigger_enrichment_if_needed)
+    may never be hit again for that exact block afterward if the user
+    doesn't linger on it. Kick enrichment off right at save time instead, so
+    it has a head start on the ~5-15s Gemini call before anyone looks.
+
+    Cheap even on every autosave: needs_enrichment() is a single indexed
+    PlaceInsight lookup per block, and already-enriched blocks no-op.
+    """
+    from apps.knowledge.services.enrichment import needs_enrichment
+    from apps.reference.services.places_explore import _category_config
+
+    models_by_category = {cat: cfg["model"] for cat, cfg in _category_config().items()}
+    seen = set()
+
+    def _maybe_trigger(activity):
+        if not activity:
+            return
+        master_ref = (activity.get("metadata") or {}).get("master_ref")
+        if not master_ref:
+            return
+        category = master_ref.get("table")
+        object_id = master_ref.get("id")
+        model = models_by_category.get(category)
+        if model is None or object_id is None or (category, object_id) in seen:
+            return
+        seen.add((category, object_id))
+        instance = model.objects.filter(pk=object_id).first()
+        if instance is not None and needs_enrichment(category, instance):
+            from apps.reference.tasks import enrich_place
+            enrich_place.delay(category, instance.pk)
+
+    for day in trip.days or []:
+        for activity in day.get("activities", []) or []:
+            _maybe_trigger(activity)
+    for city in trip.cities or []:
+        _maybe_trigger(city.get("transitToNext"))
+
+
+def _maybe_propose_day_retitle(workspace, old_days):
+    """
+    Replace-context refresh (docs/planner-product-audit-2026-07.md R2): if a
+    PATCH just renamed a block that was its day's naming anchor, file a
+    proposal to refresh the day title too. Best-effort — a failure here must
+    never break the actual plan save that already succeeded.
+    """
+    try:
+        from apps.planner.services.replace_context import propose_day_retitle
+
+        propose_day_retitle(workspace, old_days, workspace.trip.days)
+    except Exception as exc:
+        print(f"propose_day_retitle failed (non-fatal): {exc}")
 
 
 def get_planner_user(request):
@@ -124,11 +183,14 @@ class PlannerWorkspaceViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Plan has not been created yet."}, status=status.HTTP_404_NOT_FOUND)
 
         if request.method == "PATCH":
+            old_days = list(workspace.trip.days or [])
             serializer = PlannerTripSerializer(workspace.trip, data=request.data, partial=True)
             serializer.is_valid(raise_exception=True)
             serializer.save()
             workspace.is_modified = True
             workspace.save(update_fields=["is_modified", "updated_at"])
+            _trigger_enrichment_for_trip_blocks(workspace.trip)
+            _maybe_propose_day_retitle(workspace, old_days)
             return Response(serializer.data)
 
         return Response(PlannerTripSerializer(workspace.trip).data)
@@ -225,6 +287,17 @@ class PlannerWorkspaceViewSet(viewsets.ModelViewSet):
         workspace.status = PlannerWorkspace.STATUS_BOOKED
         workspace.is_modified = False
         workspace.save(update_fields=["status", "is_modified", "updated_at"])
+
+        # Fire-and-forget: feeds this traveler's *next* trip via the
+        # _compose_days context injection, not this one. A failure here must
+        # never block the booking response itself.
+        try:
+            from apps.planner.tasks import infer_traveler_facts
+
+            infer_traveler_facts.delay(str(workspace.id))
+        except Exception as exc:
+            print(f"infer_traveler_facts dispatch failed (non-fatal): {exc}")
+
         return Response({
             "workspace": PlannerWorkspaceSerializer(workspace).data,
             "trip": PlannerTripSerializer(trip).data,
@@ -327,6 +400,27 @@ class PlannerWorkspaceViewSet(viewsets.ModelViewSet):
         return Response(ledger)
 
     # ── Proposals — every agent/tool change flows through accept/reject ──────
+
+    @action(detail=True, methods=["post"], url_path="optimize-route")
+    def optimize_route(self, request, pk=None):
+        """
+        Computes a shorter stop order per day server-side and files the
+        result as a PlanProposal — never mutates the plan directly. See
+        apps.planner.services.route_optimizer.
+        """
+        workspace = self.get_object()
+        if not hasattr(workspace, "trip"):
+            return Response({"detail": "Plan has not been created yet."}, status=status.HTTP_404_NOT_FOUND)
+
+        from apps.planner.services.route_optimizer import propose_route_optimization
+
+        proposal = propose_route_optimization(workspace)
+        if proposal is None:
+            return Response({
+                "detail": "Your routes are already efficient — reordering would not save meaningful travel time.",
+                "proposal": None,
+            })
+        return Response({"detail": None, "proposal": PlanProposalSerializer(proposal).data}, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["get", "post"], url_path="proposals")
     def proposals(self, request, pk=None):
@@ -478,6 +572,54 @@ class PlannerWorkspaceViewSet(viewsets.ModelViewSet):
         )
         return Response({"watching": True, "block_id": watch.block_id}, status=status.HTTP_201_CREATED)
 
+    # ── Proactive insights — advisory only; dismissal is persisted per plan-version ──
+
+    @action(detail=True, methods=["get"], url_path="insights")
+    def insights(self, request, pk=None):
+        """
+        Runs PlanInsightEngine fresh against the current trip (cheap — pure
+        Python over already-loaded JSON, no external calls) and filters out
+        anything already dismissed for this exact plan content. See
+        apps.planner.services.insight_engine and
+        docs/travel-intelligence-implementation-roadmap.md §2.6.
+        """
+        workspace = self.get_object()
+        if not hasattr(workspace, "trip"):
+            return Response([])
+
+        import hashlib
+
+        from apps.knowledge.models import PlanInsightDismissal
+        from apps.planner.services.insight_engine import PlanInsightEngine
+
+        trip = workspace.trip
+        dismissed = set(
+            PlanInsightDismissal.objects.filter(workspace=workspace).values_list("context_hash", flat=True)
+        )
+
+        result = []
+        for insight in PlanInsightEngine.run(trip):
+            # Scoped to this exact plan version, not "forever" — once the
+            # trip changes enough to move updated_at, a dismissed insight is
+            # eligible to resurface (it may no longer even apply, or a new
+            # variant of it will get a new hash).
+            basis = f"{insight['rule']}:{insight.get('day_number')}:{trip.updated_at.isoformat()}"
+            context_hash = hashlib.sha256(basis.encode()).hexdigest()[:32]
+            if context_hash in dismissed:
+                continue
+            result.append({**insight, "context_hash": context_hash})
+
+        return Response(result)
+
+    @action(detail=True, methods=["post"], url_path=r"insights/(?P<context_hash>[^/]+)/dismiss")
+    def dismiss_insight(self, request, pk=None, context_hash=None):
+        workspace = self.get_object()
+
+        from apps.knowledge.models import PlanInsightDismissal
+
+        PlanInsightDismissal.objects.get_or_create(workspace=workspace, context_hash=context_hash)
+        return Response({"dismissed": True})
+
 
 # ── SSE chat streaming ───────────────────────────────────────────────────
 
@@ -617,12 +759,15 @@ def lazy_chat(request):
     return Response(ChatResponseSerializer(result).data, status=status.HTTP_201_CREATED)
 
 
-@api_view(["GET", "DELETE"])
+@api_view(["GET", "PUT", "DELETE"])
 @permission_classes([AllowAny])
 def traveler_profile(request):
     """
     The consent surface for traveler memory. GET lists every remembered fact
-    with its provenance and source trip; DELETE ?key=... forgets one.
+    with its provenance and source trip; DELETE ?key=... forgets one; PUT
+    sets the transport_preference fact (the one fact this surface accepts a
+    direct write for — a generic "write any fact" endpoint is a bigger trust
+    surface than the transport preferences panel needs).
     Memory the user cannot inspect and delete is memory we don't keep.
     """
     from apps.planner.models import TravelerProfile
@@ -638,6 +783,13 @@ def traveler_profile(request):
         profile.facts = [f for f in (profile.facts or []) if f.get("key") != key]
         profile.save(update_fields=["facts", "updated_at"])
         return Response({"deleted": before - len(profile.facts)})
+
+    if request.method == "PUT":
+        value = request.data.get("transport_preference")
+        if value is None:
+            return Response({"detail": "transport_preference is required"}, status=status.HTTP_400_BAD_REQUEST)
+        profile.upsert_fact("transport_preference", value, provenance="stated")
+        profile.save(update_fields=["facts", "updated_at"])
 
     return Response({"facts": profile.facts or []})
 
@@ -657,4 +809,73 @@ def batch_distances(request):
     from apps.planner.services.distance_service import DistanceService
     results = DistanceService.fetch_batch_distances(pairs, mode=mode)
     return Response({"distances": results})
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def compare_transport_legs(request):
+    """
+    GET /api/planner/legs/compare/?origin=X&destination=Y&date=YYYY-MM-DD
+    Flight/train/bus/cab compared for one inter-city leg — real durations
+    from reference routes, real prices from lookup_live_price, a templated
+    (not LLM-authored) WHY line. See apps.planner.services.transport_compare.
+    """
+    origin = request.query_params.get("origin")
+    destination = request.query_params.get("destination")
+    date_str = request.query_params.get("date", "")
+    travelers = int(request.query_params.get("travelers") or 1)
+
+    if not origin or not destination:
+        return Response({"detail": "origin and destination are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    from apps.planner.services.transport_compare import compare_legs
+
+    result = compare_legs(origin, destination, date_str, travelers=travelers)
+    return Response(result)
+
+
+class TripViewSet(viewsets.ModelViewSet):
+    serializer_class = TripSerializer
+    permission_classes = [AllowAny]
+
+    def get_queryset(self):
+        user = get_planner_user(self.request)
+        return (
+            PlannerWorkspace.objects.filter(user=user, is_deleted=False)
+            .prefetch_related("chat_messages")
+            .select_related("draft_state", "draft_state__destination_city", "trip")
+        )
+
+    def perform_create(self, serializer):
+        from apps.planner.models import TripDraftState
+        workspace = serializer.save(user=get_planner_user(self.request))
+        TripDraftState.objects.get_or_create(workspace=workspace)
+
+    @action(detail=False, methods=["get"], url_path="upcoming")
+    def upcoming(self, request):
+        from datetime import date
+        user = get_planner_user(request)
+        today = date.today()
+        workspaces = (
+            PlannerWorkspace.objects.filter(user=user, is_deleted=False, status="booked", draft_state__start_date__gt=today)
+            .select_related("draft_state", "draft_state__destination_city", "trip")
+        )
+        if not workspaces.exists():
+            workspaces = (
+                PlannerWorkspace.objects.filter(user=user, is_deleted=False)
+                .exclude(draft_state__end_date__lt=today)
+                .select_related("draft_state", "draft_state__destination_city", "trip")
+            )
+        return Response(self.get_serializer(workspaces, many=True).data)
+
+    @action(detail=False, methods=["get"], url_path="past")
+    def past(self, request):
+        from datetime import date
+        user = get_planner_user(request)
+        today = date.today()
+        workspaces = (
+            PlannerWorkspace.objects.filter(user=user, is_deleted=False, draft_state__end_date__lt=today)
+            .select_related("draft_state", "draft_state__destination_city", "trip")
+        )
+        return Response(self.get_serializer(workspaces, many=True).data)
 

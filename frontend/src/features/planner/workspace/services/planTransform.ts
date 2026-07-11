@@ -29,12 +29,26 @@ const formatCost = (cost: BlockCost | undefined): string | undefined => {
   return `${cost.currency} ${cost.amount}`;
 };
 
+// Typical live-forecast horizon — inside this window a traveler could
+// reasonably expect real forecast data, so "avg" alone undersells how
+// different game-day conditions might be. Past it, a seasonal normal is
+// the honest ceiling regardless, so the shorter label is enough. When a
+// real forecast API lands (IN5, deferred), this is the one branch to swap:
+// check for day.forecast first and only fall back to weather_normal.
+const FORECAST_HORIZON_DAYS = 14;
+
 /** Month climate normals (stamped by plan generation) → a display chip.
  *  Real historical averages only — never presented as a forecast. */
-const formatWeatherNormal = (normal: any): string | undefined => {
+const formatWeatherNormal = (normal: any, dateStr?: string | null): string | undefined => {
   if (!normal || typeof normal !== 'object') return undefined;
   const parts: string[] = [];
-  if (normal.avg_temp_c != null) parts.push(`~${Math.round(normal.avg_temp_c)}°C avg`);
+  if (normal.avg_temp_c != null) {
+    const daysOut = dateStr ? Math.round((new Date(dateStr).getTime() - Date.now()) / 86_400_000) : null;
+    const label = daysOut !== null && daysOut >= 0 && daysOut <= FORECAST_HORIZON_DAYS
+      ? 'seasonal avg, no live forecast yet'
+      : 'avg';
+    parts.push(`~${Math.round(normal.avg_temp_c)}°C ${label}`);
+  }
   if (normal.precipitation_mm != null && normal.precipitation_mm > 50) parts.push('rainy season');
   return parts.length ? parts.join(' · ') : undefined;
 };
@@ -66,6 +80,11 @@ function activityToItem(a: any, trip: PlannerTrip, fallbackCity: string): Itiner
     geoTag: a.geoTag || a.geo_tag || (metadata.geoTag as string) || fallbackCity,
     place_id: a.place_id || (metadata.place_id as string | undefined) || undefined,
     masterRef: (metadata.master_ref as ItineraryItem['masterRef']) || undefined,
+    originCode: (metadata.origin_code as string | undefined) || undefined,
+    destinationCode: (metadata.destination_code as string | undefined) || undefined,
+    stayNights: (metadata.stay_nights as number | undefined) || undefined,
+    checkIn: (metadata.check_in as string | undefined) || undefined,
+    checkOut: (metadata.check_out as string | undefined) || undefined,
     _aiInsights: a._aiInsights || metadata._aiInsights,
     isInactive,
     _rawActivity: a,
@@ -113,7 +132,7 @@ export function transformTripData(trip: PlannerTrip): TripViewModel {
       items,
       transitHints: (day as any).transit_hints || undefined,
       // Real month normals from reference data; absent otherwise
-      weather: formatWeatherNormal((day as any).weather_normal),
+      weather: formatWeatherNormal((day as any).weather_normal, day.date),
     };
 
     const lastSegment = sequentialCities[sequentialCities.length - 1];
@@ -146,6 +165,8 @@ export function transformTripData(trip: PlannerTrip): TripViewModel {
               ? 'Confirmed'
               : 'Pending',
           image: transit.image,
+          originCode: (transit.metadata?.origin_code as string | undefined) || undefined,
+          destinationCode: (transit.metadata?.destination_code as string | undefined) || undefined,
           isInactive: isTransitInactive,
           _rawActivity: transit,
         } as ItineraryItem;
@@ -276,7 +297,11 @@ export function serializePlanUpdate(data: TripViewModel): {
             cost: city.transitToNext.cost,
             block_status: city.transitToNext.blockStatus,
             is_active: !city.transitToNext.isInactive,
-            status: city.transitToNext.isInactive ? 'inactive' : 'booked',
+            status: city.transitToNext.isInactive
+              ? 'inactive'
+              : city.transitToNext.status === 'Confirmed'
+                ? 'booked'
+                : 'pending',
           }
         : null,
     };

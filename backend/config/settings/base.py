@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.contrib.postgres",  # required for pgvector's HnswIndex (knowledge.EntityEmbedding)
     # Third party packages
     "rest_framework",
     "rest_framework_simplejwt",
@@ -44,6 +45,7 @@ INSTALLED_APPS = [
     "apps.accounts",
     "apps.planner",
     "apps.reference",
+    "apps.knowledge",  # Travel Knowledge Engine — generic FKs use django.contrib.contenttypes above
     "apps.bookings",
     "apps.notifications",
     "apps.wallet",
@@ -89,30 +91,25 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
-# Database Configuration — defaults to Azure PostgreSQL, supports local SQLite fallback via USE_LOCAL_DB=True
-if os.getenv("USE_LOCAL_DB", "").lower() in ("true", "1", "yes") or os.getenv("DB_ENGINE") == "django.db.backends.sqlite3":
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-        }
+# Database Configuration — PostgreSQL only (pgvector image via docker-compose).
+# There is deliberately no SQLite fallback: the knowledge app's EntityEmbedding
+# (pgvector) and every JSON query path must run against the same engine in
+# dev, tests, and production. One engine, no split-brain.
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.getenv("DB_NAME", "neuralnomad"),
+        "USER": os.getenv("DB_USER", "postgres"),
+        "PASSWORD": os.getenv("DB_PASSWORD", ""),
+        "HOST": os.getenv("DB_HOST", "localhost"),
+        "PORT": os.getenv("DB_PORT", "5433"),
+        "ATOMIC_REQUESTS": True,
+        "CONN_MAX_AGE": 600,
+        "OPTIONS": {
+            # "sslmode": "require",  # enable for managed/cloud PostgreSQL
+        },
     }
-else:
-    DATABASES = {
-        "default": {
-            "ENGINE": os.getenv("DB_ENGINE", "django.db.backends.postgresql"),
-            "NAME": os.getenv("DB_NAME", "neuralnomad"),
-            "USER": os.getenv("DB_USER", "postgres"),
-            "PASSWORD": os.getenv("DB_PASSWORD", "Yashpdf1@"),
-            "HOST": os.getenv("DB_HOST", "localhost"),
-            "PORT": os.getenv("DB_PORT", "5433"),
-            "ATOMIC_REQUESTS": True,
-            "CONN_MAX_AGE": 600,
-            "OPTIONS": {
-                # "sslmode": "require",  # Crucial for Azure PostgreSQL
-            },
-        }
-    }
+}
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -205,6 +202,11 @@ CHANNEL_LAYERS = {
 # Google Places API Key configuration
 GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY", "")
 
+# Absolute base URL this backend is reachable at — used only to build fully-qualified
+# URLs (e.g. the photo proxy, see apps.reference.views.place_photo_proxy) for values
+# that get persisted to the database and read back outside of a request context.
+BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://localhost:8000")
+
 # LLM (Gemini) — the google-genai client also reads GEMINI_API_KEY from the
 # environment directly; exposing it here makes the dependency explicit.
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
@@ -218,4 +220,61 @@ HOTEL_PROVIDER = os.getenv("HOTEL_PROVIDER", "booking_com")
 TRAIN_PROVIDER = os.getenv("TRAIN_PROVIDER", "live_train")
 BUS_PROVIDER = os.getenv("BUS_PROVIDER", "redbus")
 CAB_PROVIDER = os.getenv("CAB_PROVIDER", "booking_taxi")
+
+# Celery — broker/backend/redis packages were already installed but never
+# configured, so Celery ran with no settings and nothing was ever scheduled
+# (see docs/travel-knowledge-engine-plan.md §4). Values match the Redis
+# databases already documented in .env.example.
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/1")
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/2")
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_BEAT_SCHEDULE = {
+    # Previously a management command nothing ever scheduled — the PriceWatch
+    # feature promised monitoring and silently did nothing. See apps.planner.tasks.
+    "run-price-watches": {
+        "task": "apps.planner.tasks.run_price_watches",
+        "schedule": 60 * 30,  # every 30 minutes
+    },
+    "refresh-stale-entities": {
+        "task": "apps.reference.tasks.refresh_stale_entities",
+        "schedule": 60 * 60 * 3,  # every 3 hours; popularity-ordered, bounded batch per category
+    },
+    "run-enrichment-pass": {
+        "task": "apps.reference.tasks.run_enrichment_pass",
+        "schedule": 60 * 60 * 6,  # every 6 hours; small LLM-call batch per category, popularity-ordered
+    },
+    "run-safety-etiquette-pass": {
+        "task": "apps.reference.tasks.run_safety_etiquette_pass",
+        "schedule": 60 * 60 * 12,  # every 12 hours; scam/after-dark tips need needs_human_review=True regardless
+    },
+    "compute-embeddings-backlog": {
+        "task": "apps.reference.tasks.compute_embeddings_backlog",
+        "schedule": 60 * 15,  # every 15 minutes; small batch per category, source_text_hash skips unchanged rows
+    },
+    # recompute_popularity_scores lands here once EntityInteractionLog has
+    # real traffic — see docs/travel-knowledge-engine-plan.md §4.
+}
+
+# Cache — django-redis was installed but CACHES was never configured, so
+# Django's default local-memory (per-process, non-shared) cache was silently
+# active instead. Used by the Knowledge Engine's caching layer and the photo
+# proxy (apps.reference.views.PlacePhotoProxyView).
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": os.getenv("REDIS_URL", "redis://localhost:6379/0"),
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            # A cache is an optimization, not a hard dependency — if Redis is
+            # down (e.g. not installed/started in local dev), cache.get/set
+            # should behave like a permanent miss instead of 500ing every
+            # request that touches it.
+            "IGNORE_EXCEPTIONS": True,
+        },
+    }
+}
+DJANGO_REDIS_LOG_IGNORED_EXCEPTIONS = True
 

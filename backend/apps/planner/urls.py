@@ -3,7 +3,9 @@ from rest_framework.routers import DefaultRouter
 
 from apps.planner.views import (
     PlannerWorkspaceViewSet,
+    TripViewSet,
     batch_distances,
+    compare_transport_legs,
     lazy_chat,
     lazy_chat_stream,
     traveler_profile,
@@ -12,6 +14,7 @@ from apps.planner.views import (
 
 router = DefaultRouter()
 router.register("workspaces", PlannerWorkspaceViewSet, basename="planner-workspace")
+router.register("trips", TripViewSet, basename="planner-trip")
 
 urlpatterns = [
     path("chat/", lazy_chat, name="planner-lazy-chat"),
@@ -22,6 +25,7 @@ urlpatterns = [
         name="planner-workspace-chat-stream",
     ),
     path("distances/", batch_distances, name="planner-batch-distances"),
+    path("legs/compare/", compare_transport_legs, name="planner-compare-transport-legs"),
     path("profile/", traveler_profile, name="planner-traveler-profile"),
     path("", include(router.urls)),
 ]

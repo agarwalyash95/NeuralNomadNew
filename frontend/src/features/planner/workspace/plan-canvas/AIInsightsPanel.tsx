@@ -2,38 +2,82 @@
 
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Compass, 
-  MapPin, 
-  Star, 
-  Sparkles, 
-  AlertCircle, 
-  Clock, 
-  Plane, 
-  Home, 
-  Utensils, 
-  Camera, 
-  Car, 
-  Train, 
-  Bus
+import {
+  Compass,
+  MapPin,
+  Star,
+  Sparkles,
+  Clock,
+  Plane,
+  Train,
+  Bus,
+  Pin,
+  PinOff,
 } from 'lucide-react';
 
 import { ItineraryItem } from './types';
 import { ProvenanceBadge } from '@/features/planner/components/ProvenanceBadge';
 import RichHoverCard from './RichHoverCard';
+import { calculateHaversineDistanceKm } from './utils/routeOptimizer';
+import { parsePriceToInteger } from './utils/priceParser';
+import { getCategoryStyle } from './utils/categoryStyle';
+import { usePlannerHoverStore } from '@/store/planner-hover.store';
+
+/**
+ * buildComparativeReason — the "why is this a good swap" line the mandate
+ * asks for, computed entirely from data already in hand (no LLM call). Picks
+ * the single most persuasive real difference vs the current occupant rather
+ * than listing every fact — a rating bump, then a meaningful price delta,
+ * then distance, in that order; nothing shown if no difference clears a
+ * reporting threshold (an honest "no reason" beats a manufactured one).
+ */
+function buildComparativeReason(current: ItineraryItem, candidate: ItineraryItem): string | null {
+  if (candidate.rating != null && current.rating != null) {
+    const delta = candidate.rating - current.rating;
+    if (delta >= 0.3) return `${delta.toFixed(1)}★ higher rated`;
+    if (delta <= -0.3) return `${Math.abs(delta).toFixed(1)}★ lower rated`;
+  }
+
+  const currentPrice = parsePriceToInteger(current.price);
+  const candidatePrice = parsePriceToInteger(candidate.price);
+  if (currentPrice > 0 && candidatePrice > 0) {
+    const delta = currentPrice - candidatePrice;
+    if (Math.abs(delta) >= Math.max(50, currentPrice * 0.1)) {
+      return delta > 0 ? `₹${delta.toLocaleString()} cheaper` : `₹${Math.abs(delta).toLocaleString()} pricier`;
+    }
+  }
+
+  if (candidate.latitude != null && candidate.longitude != null && current.latitude != null && current.longitude != null) {
+    const distKm = calculateHaversineDistanceKm(candidate.latitude, candidate.longitude, current.latitude, current.longitude, candidate, current);
+    if (distKm > 0.3) return `${distKm} km from ${current.title}`;
+  }
+
+  return null;
+}
 
 interface AIInsightsPanelProps {
-  item: ItineraryItem | null;
+  /** A deliberately pinned item always wins over ambient hover. */
+  pinnedItem?: ItineraryItem | null;
+  /** Shown when nothing is hovered or pinned (e.g. the trip's first block). */
+  defaultItem?: ItineraryItem | null;
   onSwapItem?: (newItem: ItineraryItem) => void;
   /** Opens the matching Helper Canvas to search real alternatives */
   onExplore?: (item: ItineraryItem) => void;
+  /** Whether `item` is pinned — survives the pointer moving elsewhere */
+  isPinned?: boolean;
+  onTogglePin?: () => void;
 }
 
-export default function AIInsightsPanel({ item, onSwapItem, onExplore }: AIInsightsPanelProps) {
+export default function AIInsightsPanel({ pinnedItem, defaultItem, onSwapItem, onExplore, isPinned, onTogglePin }: AIInsightsPanelProps) {
+  // Subscribed locally so hover changes only re-render this panel, never the
+  // parent workspace or the timeline — see planner-hover.store.ts.
+  const ambientHovered = usePlannerHoverStore((s) => s.hoveredItem);
+  const item = pinnedItem || ambientHovered || defaultItem || null;
+
   if (!item) {
     return (
       <div className="flex h-full w-full flex-col items-center justify-center p-6 text-center bg-paper-1">
-        <Compass size={40} className="text-slate-300 animate-pulse mb-3" />
+        <Compass size={40} className="text-slate-300 motion-safe:animate-pulse mb-3" />
         <h4 className="text-sm font-bold text-slate-800 uppercase tracking-widest">No Item Selected</h4>
         <p className="mt-1 max-w-xs text-xs text-slate-400">Hover over any itinerary item on the left to instantly reveal smart AI insights and coordinates details.</p>
       </div>
@@ -43,23 +87,32 @@ export default function AIInsightsPanel({ item, onSwapItem, onExplore }: AIInsig
   // Only real, pre-computed insights are shown — we never invent alternatives
   const cachedInsights = (item as any)?._aiInsights;
 
-  const candidates: ItineraryItem[] = cachedInsights?.candidates
-    ? cachedInsights.candidates.map((c: any) => ({
-        id: c.id || `candidate-${c.title}-${item.id}`,
-        type: item.type,
-        title: c.title,
-        subtitle: c.subtitle || '',
-        price: c.price,
-        rating: c.rating,
-        status: 'Pending',
-        aiTip: c.aiTip,
-        latitude: c.latitude,
-        longitude: c.longitude,
-      }))
+  const candidates: (ItineraryItem & { comparativeReason: string | null })[] = cachedInsights?.candidates
+    ? cachedInsights.candidates.map((c: any) => {
+        const candidate: ItineraryItem = {
+          id: c.id || `candidate-${c.title}-${item.id}`,
+          type: item.type,
+          title: c.title,
+          subtitle: c.subtitle || '',
+          price: c.price,
+          rating: c.rating,
+          status: 'Pending',
+          aiTip: c.aiTip,
+          latitude: c.latitude,
+          longitude: c.longitude,
+        };
+        return { ...candidate, comparativeReason: buildComparativeReason(item, candidate) };
+      })
     : [];
 
 
-  // Derive styles and icons based on item type
+  // Derive styles and icons based on item type. Flight/train/bus keep their
+  // own distinct accents (matching TransportNode's specialized per-mode
+  // scheme) — hotel/food/activity/attraction/taxi/cab come from the shared
+  // categoryStyle map so the same object reads the same way on every
+  // surface (this panel previously disagreed with GenericNode/SuggestionCard
+  // on hotel — violet here vs indigo there — and on activity — emerald here
+  // vs rose there — plus fell through to a generic gray for attraction).
   const getCategoryTheme = () => {
     switch (item.type as string) {
       case 'flight':
@@ -69,44 +122,6 @@ export default function AIInsightsPanel({ item, onSwapItem, onExplore }: AIInsig
           gradient: 'from-indigo-50/20 to-indigo-100/10',
           cardBorder: 'border-indigo-100',
           focusColor: 'text-indigo-600',
-          localTip: 'Carry a printed copy of your ticket for easy entry at Indian airports. Bag drop lines can get extremely long during holiday weekends.'
-        };
-      case 'hotel':
-        return {
-          icon: <Home size={18} className="text-violet-600" />,
-          badgeBg: 'bg-violet-50 border-violet-100 text-violet-700',
-          gradient: 'from-violet-50/20 to-violet-100/10',
-          cardBorder: 'border-violet-100',
-          focusColor: 'text-violet-600',
-          localTip: 'Physical Aadhaar card or Voter ID is highly recommended for check-ins in India. Ensure your stay has hot water and room heating, especially in northern regions.'
-        };
-      case 'food':
-        return {
-          icon: <Utensils size={18} className="text-orange-600" />,
-          badgeBg: 'bg-orange-50 border-orange-100 text-orange-700',
-          gradient: 'from-orange-50/20 to-orange-100/10',
-          cardBorder: 'border-orange-100',
-          focusColor: 'text-orange-600',
-          localTip: 'Most riverside cafes accept GPay/UPI, but connection is highly unstable. Always check for network signals or have cash on hand.'
-        };
-      case 'activity':
-        return {
-          icon: <Camera size={18} className="text-emerald-600" />,
-          badgeBg: 'bg-emerald-50 border-emerald-100 text-emerald-700',
-          gradient: 'from-emerald-50/20 to-emerald-100/10',
-          cardBorder: 'border-emerald-100',
-          focusColor: 'text-emerald-600',
-          localTip: 'Avoid peak visiting hours (11 AM - 3 PM) to miss the tourist buses. Carry small cash change (Rs 10/20/50 notes) for local guides or snacks.'
-        };
-      case 'taxi':
-      case 'cab':
-        return {
-          icon: <Car size={18} className="text-amber-600" />,
-          badgeBg: 'bg-amber-50 border-amber-100 text-amber-700',
-          gradient: 'from-amber-50/20 to-amber-100/10',
-          cardBorder: 'border-amber-100',
-          focusColor: 'text-amber-600',
-          localTip: 'Himalayan cab unions do not allow outside cabs (Ola/Uber) to operate for local sightseeing. Pre-book local drivers to prevent spot rate negotiation.'
         };
       case 'train':
         return {
@@ -115,7 +130,6 @@ export default function AIInsightsPanel({ item, onSwapItem, onExplore }: AIInsig
           gradient: 'from-sky-50/20 to-sky-100/10',
           cardBorder: 'border-sky-100',
           focusColor: 'text-sky-600',
-          localTip: 'Double check your coach number and platform status on NTES app before arriving. Major Indian stations can be overwhelming.'
         };
       case 'bus':
         return {
@@ -124,8 +138,23 @@ export default function AIInsightsPanel({ item, onSwapItem, onExplore }: AIInsig
           gradient: 'from-teal-50/20 to-teal-100/10',
           cardBorder: 'border-teal-100',
           focusColor: 'text-teal-600',
-          localTip: 'The overnight winding highway curves to hilly locations can cause motion sickness. Avoid heavy meals right before boarding.'
         };
+      case 'hotel':
+      case 'food':
+      case 'activity':
+      case 'attraction':
+      case 'taxi':
+      case 'cab': {
+        const style = getCategoryStyle(item.type);
+        const Icon = style.icon;
+        return {
+          icon: <Icon size={18} className={style.text} />,
+          badgeBg: `${style.bg} ${style.border} ${style.text}`,
+          gradient: style.gradient,
+          cardBorder: style.border,
+          focusColor: style.text,
+        };
+      }
       default:
         return {
           icon: <Compass size={18} className="text-slate-600" />,
@@ -133,7 +162,6 @@ export default function AIInsightsPanel({ item, onSwapItem, onExplore }: AIInsig
           gradient: 'from-slate-50/20 to-slate-100/10',
           cardBorder: 'border-slate-100',
           focusColor: 'text-slate-600',
-          localTip: 'Keep offline Google Maps downloaded for the entire region. Mobile connectivity can drop significantly between cities.'
         };
     }
   };
@@ -162,12 +190,29 @@ export default function AIInsightsPanel({ item, onSwapItem, onExplore }: AIInsig
                 
                 {item.status && (
                   <span className={`rounded-full border px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
-                    item.status === 'Confirmed' 
-                      ? 'bg-emerald-50 border-emerald-100 text-emerald-700' 
+                    item.status === 'Confirmed'
+                      ? 'bg-emerald-50 border-emerald-100 text-emerald-700'
                       : 'bg-amber-50 border-amber-100 text-amber-700'
                   }`}>
                     {item.status}
                   </span>
+                )}
+
+                {onTogglePin && (
+                  <button
+                    type="button"
+                    onClick={onTogglePin}
+                    aria-pressed={isPinned}
+                    title={isPinned ? 'Unpin — panel will follow hover again' : 'Pin — keep showing this item while you look elsewhere'}
+                    className={`ml-auto flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider transition-colors cursor-pointer ${
+                      isPinned
+                        ? 'border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                        : 'border-slate-200 bg-white text-slate-400 hover:border-slate-300 hover:text-slate-600'
+                    }`}
+                  >
+                    {isPinned ? <PinOff size={11} /> : <Pin size={11} />}
+                    {isPinned ? 'Pinned' : 'Pin'}
+                  </button>
                 )}
               </div>
 
@@ -227,19 +272,11 @@ export default function AIInsightsPanel({ item, onSwapItem, onExplore }: AIInsig
               </div>
             )}
 
-            {/* 2. Local Indian Context */}
-            <div className="rounded-[18px] border border-slate-200/80 p-3 bg-white/60 shadow-2xs">
-              <div className="flex items-center gap-1.5 text-slate-800">
-                <AlertCircle size={15} className="text-amber-500" />
-                <h4 className="text-[11px] font-extrabold uppercase tracking-widest text-slate-800">Local Travel Tip</h4>
-              </div>
-              <p className="mt-1.5 text-[11px] font-semibold leading-relaxed text-slate-600">
-                {theme.localTip}
-              </p>
-            </div>
-
-            {/* 3. Details & Logistics */}
-            <div className="rounded-[18px] border border-slate-200/80 p-3 bg-white/60 shadow-2xs flex flex-col justify-between">
+            {/* 2. Details & Logistics — real local tips now come from
+                RichHoverCard's reviewed local_tips pipeline above, not an
+                invented per-category note (a Himalaya-specific "cab union"
+                tip used to render on every trip regardless of destination). */}
+            <div className="col-span-1 md:col-span-2 rounded-[18px] border border-slate-200/80 p-3 bg-white/60 shadow-2xs flex flex-col justify-between">
               <div>
                 <div className="flex items-center gap-1.5 text-slate-800">
                   <Clock size={15} className="text-slate-500" />
@@ -291,6 +328,12 @@ export default function AIInsightsPanel({ item, onSwapItem, onExplore }: AIInsig
                           </span>
                         )}
                       </div>
+                      {cand.comparativeReason && (
+                        <p className="flex items-center gap-1 text-[10px] font-semibold text-blue-600 truncate">
+                          <Sparkles size={9} className="shrink-0" />
+                          {cand.comparativeReason}
+                        </p>
+                      )}
                       {cand.aiTip && <p className="text-[10px] text-slate-500 truncate">{cand.aiTip}</p>}
                     </div>
 

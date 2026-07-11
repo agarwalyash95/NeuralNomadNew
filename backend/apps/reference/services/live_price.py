@@ -9,9 +9,10 @@ Provenance semantics (the product trust grammar):
     return an unrelated record as if it were this item's price.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from django.db.models import Q
+from django.db.models import Avg, Count, Q
+from django.utils import timezone
 
 from apps.reference.models import TravelPriceHistory
 
@@ -46,7 +47,44 @@ def _result_from_record(service_type, record, tier, basis):
         "code": record.code,
         "details": record.details,
         "provenance": make_provenance(tier, source=record.provider or "provider", basis=basis),
+        "price_trend": _compute_price_trend(service_type, record.code, record.price),
     }
+
+
+def _compute_price_trend(service_type, code, current_price):
+    """
+    A pure statistic — 30-day moving average vs. the current price — never
+    LLM-authored. Powers copy like "12% below the 30-day average" (roadmap
+    §1.4); returns None rather than a trend computed from too little history.
+    """
+    if not code or current_price is None:
+        return None
+    cutoff = timezone.now().date() - timedelta(days=30)
+    qs = TravelPriceHistory.objects.filter(service_type=service_type, code=code, date__gte=cutoff)
+    stats = qs.aggregate(avg_price=Avg("price"), n=Count("id"))
+    avg_price, n = stats["avg_price"], stats["n"]
+    if avg_price is None or n < 3 or float(avg_price) == 0:
+        return None
+    delta_pct = round((float(current_price) - float(avg_price)) / float(avg_price) * 100, 1)
+    direction = "down" if delta_pct < -1 else ("up" if delta_pct > 1 else "flat")
+    return {
+        "direction": direction,
+        "magnitude_pct": abs(delta_pct),
+        "basis": f"{n}-point 30-day average",
+    }
+
+
+def _record_tier(record):
+    """
+    A record's tier is whatever was stored on it at write time — never
+    re-derived from "did *this* request just call a live provider." Previously
+    every row read back from the DB was unconditionally tagged "estimated"
+    even if it originated from a live provider lookup moments earlier, which
+    meant "verified" only ever appeared on the exact request that wrote the
+    row (see docs/travel-knowledge-engine-plan.md §1). Falls back to
+    "estimated" only for rows written before this field existed.
+    """
+    return record.provenance_tier or "estimated"
 
 
 def lookup_live_price(service_type, date_str, provider="", code="", origin="", destination=""):
@@ -87,10 +125,13 @@ def lookup_live_price(service_type, date_str, provider="", code="", origin="", d
 
     price_record = TravelPriceHistory.objects.filter(query).first()
     if price_record:
-        return _result_from_record(
-            service_type, price_record, "estimated",
-            basis=f"historical price for {date.isoformat()}",
+        tier = _record_tier(price_record)
+        basis = (
+            f"historical price for {date.isoformat()}"
+            if tier == "estimated"
+            else "live provider lookup, cached"
         )
+        return _result_from_record(service_type, price_record, tier, basis=basis)
 
     # Live fetch from real providers — this is the "verified" path
     from apps.bookings.providers.registry import provider_registry
@@ -154,6 +195,7 @@ def lookup_live_price(service_type, date_str, provider="", code="", origin="", d
             provider=matched_res.get("title", provider or "Provider"),
             code=matched_res.get("code", code or "Code"),
             details=matched_res.get("meta", {}),
+            provenance_tier="verified",
             **fk_params,
         )
     except Exception as exc:

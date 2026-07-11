@@ -1,11 +1,14 @@
 import React from 'react';
-import { Trash2, Plane, Train, Bus, Car, Eye } from 'lucide-react';
+import { Trash2, Plane, Train, Bus, Car, Eye, GripVertical } from 'lucide-react';
 import { ItineraryItem } from '../types';
 import NodeWrapper from './NodeWrapper';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { formatConvertedPrice } from '../utils/routeOptimizer';
 import { ProvenanceBadge } from '@/features/planner/components/ProvenanceBadge';
+import { BookingStateChip, bookedAccentClass } from '@/features/planner/components/BookingStateChip';
+import MoveToDaySelect, { DayOption } from './MoveToDaySelect';
+import { clickableDivProps, FOCUS_RING_CLASS } from '@/lib/utils';
 
 interface TransportNodeProps {
   item: ItineraryItem;
@@ -16,6 +19,10 @@ interface TransportNodeProps {
   onVerifyLivePrice?: (itemId: string) => void;
   /** Starts a standing price watch — findings arrive later as proposals */
   onWatchPrice?: (itemId: string) => void;
+  onTimeChange?: (field: 'start' | 'end', value: string) => void;
+  moveDayOptions?: DayOption[];
+  currentDayId?: string;
+  onMoveToDay?: (dayId: string) => void;
 }
 
 /**
@@ -25,7 +32,7 @@ interface TransportNodeProps {
  *
  * (Previously FlightNode — merged so all transit types share one premium layout)
  */
-export default function TransportNode({ item, isLast, onClick, onRemove, onHover, onVerifyLivePrice, onWatchPrice }: TransportNodeProps) {
+function TransportNode({ item, isLast, onClick, onRemove, onHover, onVerifyLivePrice, onWatchPrice, onTimeChange, moveDayOptions, currentDayId, onMoveToDay }: TransportNodeProps) {
   const {
     attributes,
     listeners,
@@ -93,29 +100,40 @@ export default function TransportNode({ item, isLast, onClick, onRemove, onHover
 
   const config = typeConfig[item.type as keyof typeof typeConfig] ?? typeConfig.flight;
 
-  // Parse "Origin to Destination" from subtitle or title
-  let origin = 'DEP';
-  let dest = 'ARR';
+  // Real codes only for flight/train, and only when the block actually
+  // carries them — a truncated city name is not an airport/station code
+  // (this used to render "Manali" as "MAN", Manchester's IATA code).
+  // Bus/cab never had codes to begin with; always shown as city names.
+  const hasRealCodes = (item.type === 'flight' || item.type === 'train') && Boolean(item.originCode && item.destinationCode);
   const titleParts = (item.subtitle || item.title || '').split(' to ');
-  if (titleParts.length >= 2 && titleParts[0] && titleParts[1]) {
-    origin = titleParts[0].substring(0, 3).toUpperCase();
-    dest = titleParts[1].substring(0, 3).toUpperCase();
-  }
+  const originCity = titleParts[0]?.trim() || 'Origin';
+  const destCity = titleParts[1]?.trim() || 'Destination';
+  const origin = hasRealCodes ? item.originCode! : originCity;
+  const dest = hasRealCodes ? item.destinationCode! : destCity;
 
   return (
     <div ref={setNodeRef} style={style} className="relative">
-      <NodeWrapper type={item.type as any} time={item.startTime} endTime={item.endTime} isLast={isLast}>
+      <NodeWrapper type={item.type as any} time={item.startTime} endTime={item.endTime} isLast={isLast} onTimeChange={onTimeChange}>
         <div 
           className="relative group"
           onMouseEnter={() => onHover?.(true)}
           onMouseLeave={() => onHover?.(false)}
         >
           <div
-            {...attributes}
-            {...listeners}
-            onClick={onClick}
-            className={`group flex cursor-pointer flex-col gap-4 rounded-[20px] border bg-gradient-to-br ${config.gradient} p-4 px-5 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md touch-none`}
+            className={`group flex flex-col rounded-[20px] border bg-gradient-to-br ${config.gradient} ${bookedAccentClass(item.blockStatus)} shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md overflow-hidden`}
           >
+            {/* Dedicated drag handle strip — see GenericNode for why this
+                moved off the whole-card listeners. */}
+            <div
+              {...attributes}
+              {...listeners}
+              className="flex h-4 w-full shrink-0 cursor-grab touch-none items-center justify-center text-slate-400/60 opacity-60 transition-opacity hover:bg-black/5 hover:opacity-100 active:cursor-grabbing export-hidden"
+              title="Drag to reorder"
+            >
+              <GripVertical size={12} className="rotate-90" />
+            </div>
+
+            <div onClick={onClick} {...clickableDivProps(onClick)} className={`flex cursor-pointer flex-col gap-4 rounded-b-[16px] p-4 px-5 pt-1 ${FOCUS_RING_CLASS}`}>
             {/* Header */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
@@ -129,19 +147,24 @@ export default function TransportNode({ item, isLast, onClick, onRemove, onHover
                   <h4 className="mt-0.5 text-lg font-bold text-slate-900 tracking-tight">{item.title}</h4>
                 </div>
               </div>
-              <button
-                onClick={(e) => { e.stopPropagation(); onRemove?.(); }}
-                className="rounded-xl bg-rose-50 p-2 text-rose-500 border border-rose-100/80 shadow-xs hover:bg-rose-100 hover:text-rose-600 active:scale-95 transition-all cursor-pointer shrink-0 export-hidden"
-                title={`Delete ${config.label}`}
-              >
-                <Trash2 size={15} />
-              </button>
+              <div className="flex shrink-0 items-center gap-1.5 export-hidden">
+                {moveDayOptions && currentDayId && onMoveToDay && (
+                  <MoveToDaySelect options={moveDayOptions} currentDayId={currentDayId} onMove={onMoveToDay} />
+                )}
+                <button
+                  onClick={(e) => { e.stopPropagation(); onRemove?.(); }}
+                  className="rounded-xl bg-rose-50 p-2 text-rose-500 border border-rose-100/80 shadow-xs hover:bg-rose-100 hover:text-rose-600 active:scale-95 transition-all cursor-pointer"
+                  title={`Delete ${config.label}`}
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
             </div>
 
             {/* Departure → Arrival pill */}
             <div className="flex items-center justify-between rounded-xl bg-white/60 p-3 px-4 shadow-sm backdrop-blur-sm border border-white">
-              <div className="text-center">
-                <p className="text-lg font-bold text-slate-900">{origin}</p>
+              <div className="text-center max-w-[90px]">
+                <p className={hasRealCodes ? 'text-lg font-bold text-slate-900' : 'text-xs font-bold text-slate-900 truncate'} title={origin}>{origin}</p>
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{item.startTime || 'TBD'}</p>
               </div>
 
@@ -159,8 +182,8 @@ export default function TransportNode({ item, isLast, onClick, onRemove, onHover
                 </p>
               </div>
 
-              <div className="text-center">
-                <p className="text-lg font-bold text-slate-900">{dest}</p>
+              <div className="text-center max-w-[90px]">
+                <p className={hasRealCodes ? 'text-lg font-bold text-slate-900' : 'text-xs font-bold text-slate-900 truncate'} title={dest}>{dest}</p>
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{item.endTime || 'TBD'}</p>
               </div>
             </div>
@@ -172,6 +195,7 @@ export default function TransportNode({ item, isLast, onClick, onRemove, onHover
               ) : <div className="flex-1" />}
               
               <div className="shrink-0 export-hidden flex items-center gap-1.5">
+                <BookingStateChip status={item.blockStatus} />
                 <ProvenanceBadge provenance={item.cost?.provenance} />
                 {item.cost?.provenance?.tier !== 'verified' && (
                   <button
@@ -203,9 +227,23 @@ export default function TransportNode({ item, isLast, onClick, onRemove, onHover
                 )}
               </div>
             </div>
+            </div>
           </div>
         </div>
       </NodeWrapper>
     </div>
   );
 }
+
+// See GenericNode.tsx for why this ignores callback-prop identity: the
+// parent recreates every closure each render, so a plain memo never bails.
+function areEqual(prev: TransportNodeProps, next: TransportNodeProps): boolean {
+  return (
+    prev.item === next.item &&
+    prev.isLast === next.isLast &&
+    prev.currentDayId === next.currentDayId &&
+    prev.moveDayOptions === next.moveDayOptions
+  );
+}
+
+export default React.memo(TransportNode, areEqual);

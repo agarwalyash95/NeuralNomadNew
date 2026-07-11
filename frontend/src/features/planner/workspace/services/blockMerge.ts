@@ -33,8 +33,18 @@ export function toRawActivity(
   delete metadata.aiTip;
   delete metadata.ai_tip;
   delete metadata.geoTag;
+  delete metadata.origin_code;
+  delete metadata.destination_code;
+  delete metadata.stay_nights;
+  delete metadata.check_in;
+  delete metadata.check_out;
   if (item.place_id) metadata.place_id = item.place_id;
   if (item.masterRef) metadata.master_ref = item.masterRef;
+  if (item.originCode) metadata.origin_code = item.originCode;
+  if (item.destinationCode) metadata.destination_code = item.destinationCode;
+  if (item.stayNights) metadata.stay_nights = item.stayNights;
+  if (item.checkIn) metadata.check_in = item.checkIn;
+  if (item.checkOut) metadata.check_out = item.checkOut;
 
   const raw: Record<string, any> = {
     ...base,

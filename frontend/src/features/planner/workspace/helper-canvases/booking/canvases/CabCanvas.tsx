@@ -22,9 +22,10 @@ interface CabCanvasProps {
 
 const QUICK_FILTER_TAGS = ['Full Day', 'Half Day', 'SUV', 'Sedan', 'Group (10 Seater)'];
 
-/** Search results are real inventory, but not yet price-locked — 'estimated'
- *  until the traveler explicitly verifies via Verify Live Price on the block. */
-const RESULT_PROVENANCE: CostProvenance = { tier: 'estimated', source: 'Live search', basis: 'Not yet price-verified' };
+/** Search results come from reference-table inventory, not a live third-party
+ *  quote — 'suggested' tier until the traveler explicitly verifies via Verify
+ *  Live Price on the block. */
+const RESULT_PROVENANCE: CostProvenance = { tier: 'suggested', source: 'Inventory search', basis: 'Not yet price-verified' };
 
 /** ₹/km rate card by vehicle class + base fare — used only when the real
  *  road distance is known, so the fare states its own arithmetic. */
@@ -120,8 +121,9 @@ export default function CabCanvas({ onClose, tripContext, onAddToPlan }: CabCanv
     return () => { cancelled = true; };
   }, [params.pickup, params.drop]);
 
-  /** Distance-based fare when the route is measured; provider price otherwise */
-  const fareFor = (cab: any): { price: number; provenance: CostProvenance; basisLabel: string } => {
+  /** Distance-based fare when the route is measured; provider price otherwise.
+   *  A missing fare renders as absent, never a fabricated ₹2,800 default. */
+  const fareFor = (cab: any): { price: number | null; provenance: CostProvenance; basisLabel: string } => {
     if (routeInfo) {
       const rate = ratePerKm(cab.cabTypes?.[0]?.type || '');
       const price = Math.round(BASE_FARE + routeInfo.km * rate);
@@ -134,6 +136,9 @@ export default function CabCanvas({ onClose, tripContext, onAddToPlan }: CabCanv
         },
         basisLabel: `₹${rate}/km × ${routeInfo.km} km`,
       };
+    }
+    if (cab.price == null) {
+      return { price: null, provenance: { tier: 'suggested', source: 'Inventory search', basis: 'No fare on file' }, basisLabel: 'No rate available' };
     }
     return { price: cab.price, provenance: RESULT_PROVENANCE, basisLabel: 'fixed rate' };
   };
@@ -150,7 +155,7 @@ export default function CabCanvas({ onClose, tripContext, onAddToPlan }: CabCanv
           origin: cab.origin_city || tripContext.destination,
           cabTypes: cab.meta?.cab_types || [],
           duration: cab.duration || 'Full Day',
-          price: cabType?.base_fare || 2800,
+          price: cabType?.base_fare ?? null,
           providers: cab.providers || [],
         };
       });
@@ -180,7 +185,7 @@ export default function CabCanvas({ onClose, tripContext, onAddToPlan }: CabCanv
       subtitle: routeInfo
         ? `${params.pickup} → ${params.drop} • ~${routeInfo.km} km`
         : `${pendingItem.origin} • ${pendingItem.duration}`,
-      price: `₹${fare.price.toLocaleString()}`,
+      price: fare.price != null ? `₹${fare.price.toLocaleString()}` : undefined,
       status: 'Pending',
       details: pendingItem.cabTypes?.[0]?.type || 'SUV',
       cost: { amount: fare.price, currency: 'INR', provenance: fare.provenance },
@@ -262,7 +267,7 @@ export default function CabCanvas({ onClose, tripContext, onAddToPlan }: CabCanv
                         </div>
                       </div>
                       <div className="ml-4 text-right shrink-0">
-                        <p className="text-xl font-bold tabular-nums text-slate-900">₹{fare.price.toLocaleString()}</p>
+                        <p className="text-xl font-bold tabular-nums text-slate-900">{fare.price != null ? `₹${fare.price.toLocaleString()}` : 'Price on request'}</p>
                         <p className="text-xs text-slate-500 mb-1">{fare.basisLabel}</p>
                         <ProvenanceBadge provenance={fare.provenance} className="mb-1.5" />
                         <button onClick={() => setPendingItem(cab)}
@@ -284,7 +289,7 @@ export default function CabCanvas({ onClose, tripContext, onAddToPlan }: CabCanv
         </div>
       </div>
       {pendingItem && onAddToPlan && (
-        <ReplaceConfirmBar newItemTitle={pendingItem.title} newItemPrice={`₹${fareFor(pendingItem).price.toLocaleString()}`}
+        <ReplaceConfirmBar newItemTitle={pendingItem.title} newItemPrice={fareFor(pendingItem).price != null ? `₹${fareFor(pendingItem).price!.toLocaleString()}` : undefined}
           tripContext={tripContext} confirmColor="bg-amber-600 hover:bg-amber-700"
           onCancel={() => setPendingItem(null)} onConfirm={handleConfirmReplace} />
       )}

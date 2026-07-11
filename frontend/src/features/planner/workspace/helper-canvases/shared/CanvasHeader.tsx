@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { X } from 'lucide-react';
+import { X, MapPin } from 'lucide-react';
 import { TripContext } from '../../types';
 
 interface CanvasHeaderProps {
@@ -48,7 +48,7 @@ export default function CanvasHeader({
         <div className="flex items-center gap-2 shrink-0 ml-2">
           {tripContext?.destination && (
             <div className="hidden sm:flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-600">
-              <span>📍</span>
+              <MapPin size={11} />
               <span>{tripContext.destination}</span>
               {tripContext.travellers > 1 && (
                 <>

@@ -73,8 +73,8 @@ export default function PlanLoadingScreen({
     >
       {/* ── Floating Glow Blobs (ambient background) ── */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-indigo-100/40 rounded-full blur-[120px] animate-pulse" style={{ animationDuration: '8s' }} />
-        <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-purple-100/40 rounded-full blur-[120px] animate-pulse" style={{ animationDuration: '10s' }} />
+        <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-indigo-100/40 rounded-full blur-[120px] motion-safe:animate-pulse" style={{ animationDuration: '8s' }} />
+        <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-purple-100/40 rounded-full blur-[120px] motion-safe:animate-pulse" style={{ animationDuration: '10s' }} />
       </div>
 
       <div className="relative z-10 flex flex-col items-center justify-center max-w-lg w-full">
@@ -93,7 +93,7 @@ export default function PlanLoadingScreen({
           className="w-full rounded-[32px] border border-white/50 bg-white/70 p-6 sm:p-8 shadow-[0_30px_100px_-20px_rgba(79,70,229,0.12)] backdrop-blur-2xl"
         >
           <div className="mx-auto mb-4 flex items-center justify-center gap-2 rounded-full bg-indigo-50 px-3.5 py-1 border border-indigo-100/40 w-fit">
-            <Sparkles size={13} className="text-indigo-600 animate-pulse" />
+            <Sparkles size={13} className="text-indigo-600 motion-safe:animate-pulse" />
             <span className="text-[10px] font-bold text-indigo-700 tracking-wider uppercase">AI Planner Active</span>
           </div>
 

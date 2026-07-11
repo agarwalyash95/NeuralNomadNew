@@ -8,10 +8,13 @@ import {
   Globe
 } from 'lucide-react';
 import { MockTripData, ItineraryItem } from './types';
+import { CATEGORY_STYLE } from './utils/categoryStyle';
+import { usePlannerHoverStore } from '@/store/planner-hover.store';
 
 interface PlannerMapProps {
   planData: MockTripData;
-  hoveredItem: ItineraryItem | null;
+  /** A deliberately pinned item always wins over ambient hover. */
+  pinnedItem?: ItineraryItem | null;
   focusedDayId?: string | null;
   onPinClick?: (item: ItineraryItem) => void;
 }
@@ -28,33 +31,25 @@ interface MapPinNode {
   cityName: string;
   dayNumber: number;
   dayId: string;
+  // True when this item had no real latitude/longitude and was placed at a
+  // computed fallback position — never presented with the same visual
+  // confidence as a real location. See docs/travel-intelligence-implementation-roadmap.md §2.5.
+  isPositionFallback: boolean;
 }
 
 // No fallback key on purpose: a missing NEXT_PUBLIC_GOOGLE_MAPS_API_KEY must
 // fail visibly (map error state) rather than silently bill a shared key.
 const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
 
-// Fallback images based on node category types
-function getFallbackImageUrl(type: string): string {
-  if (type === 'hotel') {
-    return 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=80&h=80&fit=crop';
-  }
-  if (type === 'food') {
-    return 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=80&h=80&fit=crop';
-  }
-  if (['flight', 'train', 'bus', 'cab', 'transit'].includes(type)) {
-    return 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=80&h=80&fit=crop';
-  }
-  return 'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=80&h=80&fit=crop';
-}
-
 // Synchronous placeholder canvas
 function getPlaceholderPin(type: string, isHovered: boolean) {
-  let color = '#64748b';
-  if (type === 'hotel') color = '#6366f1';
-  else if (type === 'food') color = '#f97316';
-  else if (type === 'activity' || type === 'attraction') color = '#f43f5e';
-  else if (['flight', 'train', 'bus', 'cab', 'transit'].includes(type)) color = '#3b82f6';
+  // Same hex values GenericNode/AIInsightsPanel/SuggestionCard use — a pin
+  // used to lump activity and attraction into one color even though the
+  // timeline tells them apart. Transport modes stay one blue on the map
+  // (a map cares "this is a transit leg", not which specific mode).
+  const color = ['flight', 'train', 'bus', 'cab', 'transit'].includes(type)
+    ? '#3b82f6'
+    : (CATEGORY_STYLE as Record<string, { hex: string }>)[type]?.hex ?? '#64748b';
 
   const size = isHovered ? 44 : 32;
   const canvas = document.createElement('canvas');
@@ -160,7 +155,11 @@ function createCircularMarkerImage(imageUrl: string, isHovered: boolean, callbac
   };
 }
 
-export default function PlannerMap({ planData, hoveredItem, focusedDayId, onPinClick }: PlannerMapProps) {
+export default function PlannerMap({ planData, pinnedItem, focusedDayId, onPinClick }: PlannerMapProps) {
+  // Subscribed locally so hover changes only re-render the map, never the
+  // parent workspace or the timeline — see planner-hover.store.ts.
+  const ambientHovered = usePlannerHoverStore((s) => s.hoveredItem);
+  const hoveredItem = pinnedItem || ambientHovered;
   const containerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
@@ -173,6 +172,8 @@ export default function PlannerMap({ planData, hoveredItem, focusedDayId, onPinC
   // 1. Load Google Maps JS API script
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    // No key → don't inject a doomed script; the render shows a setup hint
+    if (!GOOGLE_MAPS_API_KEY) return;
 
     const win = window as any;
     if (win.google && win.google.maps) {
@@ -207,19 +208,38 @@ export default function PlannerMap({ planData, hoveredItem, focusedDayId, onPinC
 
 
   // 2. Derive pin list
-  const mainCityName = planData.cities[0]?.cityName || 'Darjeeling';
+  // No hardcoded destination fallback — an empty string skips the geocode
+  // call below rather than silently centering an unrelated trip on Darjeeling.
+  const mainCityName = planData.cities[0]?.cityName || '';
 
   const pins: MapPinNode[] = useMemo(() => {
     const list: MapPinNode[] = [];
     planData.cities.forEach((city) => {
+      // A real fallback center for this city, computed from whatever items in
+      // it do have coordinates — never a hardcoded location from an unrelated
+      // city. Only if the whole city has zero geo-located items do we fall
+      // back further (the map's own initial center, itself geocoded from the
+      // trip's actual destination — see the mainCityName geocode below).
+      const knownCoords = city.days
+        .flatMap((d) => d.items)
+        .filter((it) => !it.isInactive && !it.isDeleting && it.latitude != null && it.longitude != null);
+      const cityCenter = knownCoords.length
+        ? {
+            lat: knownCoords.reduce((s, it) => s + (it.latitude as number), 0) / knownCoords.length,
+            lng: knownCoords.reduce((s, it) => s + (it.longitude as number), 0) / knownCoords.length,
+          }
+        : null;
+
       let itemIdx = 0;
       city.days.forEach((day) => {
         if (!isRouteView && focusedDayId && day.id !== focusedDayId) return;
 
         day.items.forEach((item) => {
           if (item.isInactive || item.isDeleting) return;
-          const lat = item.latitude || 27.0360 + (itemIdx * 0.004);
-          const lng = item.longitude || 88.2627 + (itemIdx * 0.004);
+          const hasRealCoords = item.latitude != null && item.longitude != null;
+          const fallbackCenter = cityCenter || { lat: 20.5937, lng: 78.9629 }; // India centroid — last-resort only
+          const lat = hasRealCoords ? (item.latitude as number) : fallbackCenter.lat + (itemIdx * 0.004);
+          const lng = hasRealCoords ? (item.longitude as number) : fallbackCenter.lng + (itemIdx * 0.004);
 
           list.push({
             id: item.id,
@@ -231,6 +251,7 @@ export default function PlannerMap({ planData, hoveredItem, focusedDayId, onPinC
             cityName: city.cityName,
             dayNumber: day.dayNumber,
             dayId: day.id,
+            isPositionFallback: !hasRealCoords,
           });
           itemIdx++;
         });
@@ -245,7 +266,9 @@ export default function PlannerMap({ planData, hoveredItem, focusedDayId, onPinC
     const win = window as any;
     if (!win.google?.maps) return;
 
-    const initialCenter = { lat: 27.0360, lng: 88.2627 };
+    // Last-resort initial center only — geocode below re-centers on the
+    // trip's actual destination (mainCityName) as soon as it resolves.
+    const initialCenter = { lat: 20.5937, lng: 78.9629 };
     const map = new win.google.maps.Map(containerRef.current, {
       center: initialCenter,
       zoom: 12,
@@ -255,13 +278,16 @@ export default function PlannerMap({ planData, hoveredItem, focusedDayId, onPinC
     });
     mapInstanceRef.current = map;
 
-    // Geocode primary city dynamically
-    const geocoder = new win.google.maps.Geocoder();
-    geocoder.geocode({ address: mainCityName }, (results: any, status: any) => {
-      if (status === 'OK' && results[0] && mapInstanceRef.current) {
-        mapInstanceRef.current.setCenter(results[0].geometry.location);
-      }
-    });
+    // Geocode primary city dynamically — skipped entirely when there's no
+    // real destination yet, rather than geocoding a hardcoded placeholder city.
+    if (mainCityName) {
+      const geocoder = new win.google.maps.Geocoder();
+      geocoder.geocode({ address: mainCityName }, (results: any, status: any) => {
+        if (status === 'OK' && results[0] && mapInstanceRef.current) {
+          mapInstanceRef.current.setCenter(results[0].geometry.location);
+        }
+      });
+    }
   }, [isLoaded, mainCityName, mapTheme]);
 
   // 4. Update Map Type
@@ -301,7 +327,10 @@ export default function PlannerMap({ planData, hoveredItem, focusedDayId, onPinC
       const marker = new win.google.maps.Marker({
         position: pos,
         map: mapInstanceRef.current,
-        title: pin.title,
+        title: pin.isPositionFallback ? `${pin.title} (exact location unknown)` : pin.title,
+        // Fallback-positioned pins render visibly faded — "we don't know
+        // where this is" stays honest instead of looking like a real location.
+        opacity: pin.isPositionFallback ? 0.55 : 1,
         icon: {
           url: placeholderIcon,
           size: new win.google.maps.Size(38, 38),
@@ -312,34 +341,36 @@ export default function PlannerMap({ planData, hoveredItem, focusedDayId, onPinC
 
       (marker as any).pinId = pin.id;
       (marker as any).pinType = pin.type;
-      (marker as any).imageUrl = pin.item.image || getFallbackImageUrl(pin.type);
       (marker as any).standardIconUrl = placeholderIcon;
       (marker as any).hoveredIconUrl = getPlaceholderPin(pin.type, true);
 
-      // Pre-load place image circular data URLs (standard and hovered)
-      const targetImgUrl = (marker as any).imageUrl;
-      createCircularMarkerImage(targetImgUrl, false, (stdUrl) => {
-        (marker as any).standardIconUrl = stdUrl;
-        if (hoveredItem?.id !== pin.id) {
-          marker.setIcon({
-            url: stdUrl,
-            size: new win.google.maps.Size(38, 38),
-            scaledSize: new win.google.maps.Size(38, 38),
-            anchor: new win.google.maps.Point(19, 19),
-          });
-        }
-      });
-      createCircularMarkerImage(targetImgUrl, true, (hovUrl) => {
-        (marker as any).hoveredIconUrl = hovUrl;
-        if (hoveredItem?.id === pin.id) {
-          marker.setIcon({
-            url: hovUrl,
-            size: new win.google.maps.Size(54, 54),
-            scaledSize: new win.google.maps.Size(54, 54),
-            anchor: new win.google.maps.Point(27, 27),
-          });
-        }
-      });
+      // A photo of *some* hotel on *your* hotel's pin is fabricated data in
+      // miniature — the circular-crop fetch only runs when this place has
+      // its own real photo. No image stays the honest category-glyph pin.
+      if (pin.item.image) {
+        createCircularMarkerImage(pin.item.image, false, (stdUrl) => {
+          (marker as any).standardIconUrl = stdUrl;
+          if (hoveredItem?.id !== pin.id) {
+            marker.setIcon({
+              url: stdUrl,
+              size: new win.google.maps.Size(38, 38),
+              scaledSize: new win.google.maps.Size(38, 38),
+              anchor: new win.google.maps.Point(19, 19),
+            });
+          }
+        });
+        createCircularMarkerImage(pin.item.image, true, (hovUrl) => {
+          (marker as any).hoveredIconUrl = hovUrl;
+          if (hoveredItem?.id === pin.id) {
+            marker.setIcon({
+              url: hovUrl,
+              size: new win.google.maps.Size(54, 54),
+              scaledSize: new win.google.maps.Size(54, 54),
+              anchor: new win.google.maps.Point(27, 27),
+            });
+          }
+        });
+      }
 
       marker.addListener('click', () => {
         setClickedPin(pin);
@@ -413,8 +444,21 @@ export default function PlannerMap({ planData, hoveredItem, focusedDayId, onPinC
     <div className="relative h-full w-full overflow-hidden bg-slate-900">
       {!isLoaded && (
         <div className="flex h-full w-full flex-col items-center justify-center bg-slate-900 text-white">
-          <Loader2 className="mb-3 h-8 w-8 animate-spin text-blue-500" />
-          <p className="text-xs font-medium text-slate-400">Loading Google Maps...</p>
+          {GOOGLE_MAPS_API_KEY ? (
+            <>
+              <Loader2 className="mb-3 h-8 w-8 animate-spin text-blue-500" />
+              <p className="text-xs font-medium text-slate-400">Loading Google Maps...</p>
+            </>
+          ) : (
+            <div className="max-w-xs px-6 text-center">
+              <MapIcon className="mx-auto mb-3 h-8 w-8 text-slate-500" />
+              <p className="text-xs font-bold text-slate-300">Map key not configured</p>
+              <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
+                Set <code className="rounded bg-slate-800 px-1 py-0.5 text-[10px] text-slate-300">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</code> in{' '}
+                <code className="rounded bg-slate-800 px-1 py-0.5 text-[10px] text-slate-300">frontend/.env.local</code> and restart the dev server.
+              </p>
+            </div>
+          )}
         </div>
       )}
 

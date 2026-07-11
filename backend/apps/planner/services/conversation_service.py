@@ -113,6 +113,13 @@ class ConversationService:
         workspace.last_activity_at = timezone.now()
         workspace.save(update_fields=["last_activity_at", "updated_at"])
 
+        # Chat-edit intents (docs/planner-product-audit-2026-07.md CH1): a
+        # narrow re-time detector, additive only — never alters the reply
+        # above, never raises into this transaction.
+        from apps.planner.services.chat_edit_intents import propose_retime_from_chat
+
+        propose_retime_from_chat(workspace, message)
+
         return {
             "workspace": workspace,
             "draft_state": draft,

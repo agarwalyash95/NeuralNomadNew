@@ -1,9 +1,11 @@
 version: "3.9"
 
 services:
-  # PostgreSQL Database
+  # PostgreSQL Database — pgvector-enabled image (adds the `vector` extension
+  # used by EntityEmbedding for semantic search, see
+  # docs/travel-knowledge-engine-plan.md §10). Same Postgres 16 underneath.
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: neuralnomad_postgres
     environment:
       POSTGRES_DB: ${DB_NAME:-neuralnomad_db}
@@ -14,6 +16,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init-pgvector.sql:/docker-entrypoint-initdb.d/init-pgvector.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-neuralnomad_user}"]
       interval: 10s

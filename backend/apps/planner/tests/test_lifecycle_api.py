@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from apps.planner.models import PlannerWorkspace, PlannerTrip
+from apps.planner.models import PlannerWorkspace, PlannerTrip, PlanProposal
 
 
 def make_trip(workspace, **overrides):
@@ -109,3 +109,53 @@ class PlanLifecycleApiTests(TestCase):
         bare = PlannerWorkspace.objects.create(user=self.user, title="No plan yet")
         response = self.client.post(f"/api/planner/workspaces/{bare.id}/save/")
         self.assertEqual(response.status_code, 404)
+
+    def test_replacing_a_days_anchor_block_proposes_a_retitle(self):
+        # "Old Manali Walk" literally names the day — swap it for something
+        # else and the day title should be offered a refresh, not left stale.
+        self.trip.days[0]["title"] = "Old Manali Walk & Café Crawl"
+        self.trip.save(update_fields=["days"])
+
+        new_days = [dict(self.trip.days[0])]
+        new_days[0]["activities"] = [
+            self.trip.days[0]["activities"][0],
+            {**self.trip.days[0]["activities"][1], "title": "Vashisht Temple Visit"},
+        ]
+        response = self.client.patch(
+            f"{self.base}/plan/",
+            {"days": new_days, "cities": self.trip.cities},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        proposals = PlanProposal.objects.filter(workspace=self.workspace, kind=PlanProposal.KIND_PLAN_EDIT)
+        self.assertEqual(proposals.count(), 1)
+        proposal = proposals.first()
+        self.assertIn("Vashisht Temple Visit", proposal.diff["after"]["days"][0]["title"])
+        self.assertEqual(proposal.diff["after"]["days"][0]["title"], "Vashisht Temple Visit & Café Crawl")
+
+        # A second identical PATCH (e.g. an unrelated autosave) must not pile up dupes
+        response2 = self.client.patch(
+            f"{self.base}/plan/",
+            {"days": new_days, "cities": self.trip.cities},
+            format="json",
+        )
+        self.assertEqual(response2.status_code, 200)
+        self.assertEqual(
+            PlanProposal.objects.filter(workspace=self.workspace, kind=PlanProposal.KIND_PLAN_EDIT).count(), 1
+        )
+
+    def test_reordering_blocks_without_renaming_proposes_nothing(self):
+        # A drag reorder changes activity order but no titles — must not
+        # trigger a retitle proposal (the detector keys on title changes).
+        reordered = dict(self.trip.days[0])
+        reordered["activities"] = list(reversed(self.trip.days[0]["activities"]))
+        response = self.client.patch(
+            f"{self.base}/plan/",
+            {"days": [reordered], "cities": self.trip.cities},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            PlanProposal.objects.filter(workspace=self.workspace, kind=PlanProposal.KIND_PLAN_EDIT).count(), 0
+        )

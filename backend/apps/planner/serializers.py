@@ -177,3 +177,110 @@ class PlanProposalSerializer(serializers.ModelSerializer):
             "resolved_at",
         ]
         read_only_fields = ["id", "status", "rejection_reason", "created_at", "resolved_at"]
+
+
+class TripSerializer(serializers.ModelSerializer):
+    destination = serializers.SerializerMethodField()
+    destination_country = serializers.SerializerMethodField()
+    destination_city = serializers.SerializerMethodField()
+    start_date = serializers.SerializerMethodField()
+    end_date = serializers.SerializerMethodField()
+    budget = serializers.SerializerMethodField()
+    estimated_budget = serializers.SerializerMethodField()
+    actual_budget = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
+    trip_type = serializers.SerializerMethodField()
+    description = serializers.SerializerMethodField()
+    cover_image = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PlannerWorkspace
+        fields = [
+            "id",
+            "destination",
+            "destination_country",
+            "destination_city",
+            "start_date",
+            "end_date",
+            "budget",
+            "estimated_budget",
+            "actual_budget",
+            "status",
+            "trip_type",
+            "description",
+            "cover_image",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_destination(self, obj):
+        draft = getattr(obj, "draft_state", None)
+        return draft.destination_text if draft else obj.title
+
+    def get_destination_country(self, obj):
+        draft = getattr(obj, "draft_state", None)
+        if draft and draft.destination_city:
+            return draft.destination_city.country
+        return ""
+
+    def get_destination_city(self, obj):
+        draft = getattr(obj, "draft_state", None)
+        if draft and draft.destination_city:
+            return draft.destination_city.name
+        return ""
+
+    def get_start_date(self, obj):
+        draft = getattr(obj, "draft_state", None)
+        return draft.start_date.isoformat() if draft and draft.start_date else ""
+
+    def get_end_date(self, obj):
+        draft = getattr(obj, "draft_state", None)
+        return draft.end_date.isoformat() if draft and draft.end_date else ""
+
+    def get_budget(self, obj):
+        draft = getattr(obj, "draft_state", None)
+        return float(draft.budget_amount) if draft and draft.budget_amount else 0.0
+
+    def get_estimated_budget(self, obj):
+        return self.get_budget(obj)
+
+    def get_actual_budget(self, obj):
+        trip = getattr(obj, "trip", None)
+        return float(trip.spent_budget) if trip else 0.0
+
+    def get_status(self, obj):
+        from datetime import date
+        draft = getattr(obj, "draft_state", None)
+        start = getattr(draft, "start_date", None)
+        end = getattr(draft, "end_date", None)
+        today = date.today()
+
+        if end and end < today:
+            return "completed"
+        if obj.status == "booked":
+            if start and start <= today and (not end or today <= end):
+                return "ongoing"
+            return "booked"
+        return "planning"
+
+    def get_trip_type(self, obj):
+        draft = getattr(obj, "draft_state", None)
+        intent = getattr(draft, "intent", "") if draft else ""
+        if "adventure" in intent:
+            return "adventure"
+        if "business" in intent:
+            return "business"
+        return "leisure"
+
+    def get_description(self, obj):
+        trip = getattr(obj, "trip", None)
+        return trip.summary if trip else obj.title
+
+    def get_cover_image(self, obj):
+        draft = getattr(obj, "draft_state", None)
+        city = draft.destination_city.name.lower() if draft and draft.destination_city else ""
+        if "goa" in city:
+            return "https://images.unsplash.com/photo-1614082242765-7c98ca0f3df3?w=800&q=80"
+        if "delhi" in city:
+            return "https://images.unsplash.com/photo-1587474260584-136574528ed5?w=800&q=80"
+        return "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80"

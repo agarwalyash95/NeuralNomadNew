@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Utensils } from 'lucide-react';
 import { referenceService } from '@/services/reference.service';
-import { useRestaurantStore } from '@/store/restaurantStore';
 import { TripContext } from '../../types';
 import CanvasHeader from '../shared/CanvasHeader';
 import SearchSummaryBar from '../shared/SearchSummaryBar';
@@ -36,9 +36,7 @@ export default function RestaurantsCanvas({ onClose, tripContext, onAddToPlan }:
 
   const [results, setResults] = useState<Suggestion[]>([]);
 
-  // Zustand Store
-  const getRestaurantDetail = useRestaurantStore(state => state.getRestaurantDetail);
-  const setRestaurantDetail = useRestaurantStore(state => state.setRestaurantDetail);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     const loc = tripContext.activeNodeCityName || tripContext.destination;
@@ -46,6 +44,10 @@ export default function RestaurantsCanvas({ onClose, tripContext, onAddToPlan }:
   }, [tripContext.tripId, tripContext.activeNodeCityName, tripContext.destination]);
 
   const fetchRestaurants = async (query: string) => {
+    if (!query.trim()) {
+      setResults([]);
+      return;
+    }
     setLoading(true);
     try {
       const loc = tripContext.activeNodeCityName || tripContext.destination;
@@ -82,19 +84,15 @@ export default function RestaurantsCanvas({ onClose, tripContext, onAddToPlan }:
       return;
     }
     setExpandedId(suggestion.id);
-
-    const cachedItem = getRestaurantDetail(suggestion.id);
-    if (cachedItem) {
-      setExpandedData(cachedItem);
-      return;
-    }
-
     setExpandedData(null);
     setDetailsLoading(true);
     try {
-      const resp = await referenceService.getRestaurantDetails(suggestion.id);
+      const resp = await queryClient.fetchQuery({
+        queryKey: ['place-details', 'restaurant', suggestion.id],
+        queryFn: () => referenceService.getRestaurantDetails(suggestion.id),
+        staleTime: 30 * 60_000,
+      });
       setExpandedData(resp);
-      setRestaurantDetail(suggestion.id, resp);
     } catch (err) {
       console.error('Error fetching details:', err);
     } finally {
@@ -111,8 +109,11 @@ export default function RestaurantsCanvas({ onClose, tripContext, onAddToPlan }:
       subtitle: pendingItem.address || '',
       details: pendingItem.price_label || undefined,
       status: 'Pending',
-      rating: pendingItem.rating != null ? Math.floor(pendingItem.rating) : undefined,
-      geoTag: pendingItem.address || '',
+      rating: pendingItem.rating != null ? Math.round(pendingItem.rating * 10) / 10 : undefined,
+      // A short location tag, not a repeat of `subtitle` (the full address) —
+      // GenericNode renders both side by side, so duplicating the address
+      // here showed the same string twice.
+      geoTag: tripContext.activeNodeCityName || tripContext.destination || '',
       image: pendingItem.image_url || undefined,
       latitude: pendingItem.latitude ?? undefined,
       longitude: pendingItem.longitude ?? undefined,

@@ -27,15 +27,19 @@ class City(models.Model):
     state = models.ForeignKey(State, on_delete=models.CASCADE, related_name="cities", blank=True, null=True)
     country = models.ForeignKey(Country, on_delete=models.CASCADE, related_name="cities")
     name = models.CharField(max_length=255)
+    place_id = models.CharField(max_length=255, blank=True, null=True, unique=True)
     latitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
     longitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
     timezone = models.CharField(max_length=100, blank=True, null=True)
 
     def __str__(self):
         return f"{self.name}, {self.country.code}"
-    
+
     class Meta:
         verbose_name_plural = "Cities"
+        # Previously unconstrained — "Springfield" resolved to whichever row was
+        # created first, in whichever country (see docs/travel-knowledge-engine-plan.md §3a).
+        unique_together = ("name", "state", "country")
 
 
 # ==========================================
@@ -116,7 +120,24 @@ class MetroStation(models.Model):
 # ENTITIES (Hotels, Restaurants, Attractions)
 # ==========================================
 
-class HotelMaster(models.Model):
+class EnrichmentMixin(models.Model):
+    """
+    Freshness/quality metadata for Knowledge-Engine-cached entities. Applied to
+    the four master tables below (each of which already functions as a cache,
+    populated by apps.reference.services.places_explore's cache-on-miss path)
+    so "cached" finally has an expiry — see docs/travel-knowledge-engine-plan.md §3a/§4.
+    """
+    last_enriched_at = models.DateTimeField(null=True, blank=True)
+    enrichment_ttl_days = models.PositiveSmallIntegerField(default=30)
+    data_completeness_score = models.FloatField(default=0.0)
+    popularity_score = models.FloatField(default=0.0, db_index=True)
+    source = models.CharField(max_length=40, default="google_places")
+
+    class Meta:
+        abstract = True
+
+
+class HotelMaster(EnrichmentMixin, models.Model):
     city = models.ForeignKey(City, on_delete=models.CASCADE)
     place_id = models.CharField(max_length=255, blank=True, null=True, unique=True)
     name = models.CharField(max_length=255)
@@ -141,10 +162,27 @@ class HotelMaster(models.Model):
     website_uri = models.URLField(max_length=1000, blank=True, null=True)
     editorial_summary = models.TextField(blank=True, null=True)
 
+    # [{"amenity": "rooftop pool", "active_months": [5,6,7,8,9]}] — inferred from
+    # editorial data at enrichment time, tagged "estimated" (see PlaceInsight)
+    seasonal_amenities = models.JSONField(default=list, blank=True)
+
     def __str__(self):
         return self.name
 
-class RestaurantMaster(models.Model):
+
+class HotelRoomTier(models.Model):
+    """Real room-tier data from live provider rate responses — never synthesized."""
+    hotel = models.ForeignKey(HotelMaster, on_delete=models.CASCADE, related_name="room_tiers")
+    tier_name = models.CharField(max_length=120)
+    price_premium_pct = models.FloatField(blank=True, null=True)
+    feature_tags = models.JSONField(default=list, blank=True)
+    source = models.CharField(max_length=40, default="provider_rate_data")
+
+    def __str__(self):
+        return f"{self.hotel.name} — {self.tier_name}"
+
+
+class RestaurantMaster(EnrichmentMixin, models.Model):
     city = models.ForeignKey(City, on_delete=models.CASCADE)
     place_id = models.CharField(max_length=255, blank=True, null=True, unique=True)
     name = models.CharField(max_length=255)
@@ -180,10 +218,19 @@ class RestaurantMaster(models.Model):
     website_uri = models.URLField(max_length=1000, blank=True, null=True)
     editorial_summary = models.TextField(blank=True, null=True)
 
+    reservation_policy = models.CharField(max_length=20, blank=True, null=True, choices=[
+        ("walk_in", "walk_in"), ("recommended", "recommended"), ("required", "required"),
+    ])
+    typical_lead_time_days = models.PositiveSmallIntegerField(blank=True, null=True)
+    # {"vegetarian": "full_menu"|"some_options"|"limited", "vegan": ..., "gluten_free": ..., "halal": ..., "kosher": ...}
+    # supersedes the flat booleans above as the source of card copy; the booleans
+    # stay as a fast-filter fallback (see docs/travel-intelligence-implementation-roadmap.md §1.2)
+    dietary_accommodations = models.JSONField(default=dict, blank=True)
+
     def __str__(self):
         return self.name
 
-class AttractionMaster(models.Model):
+class AttractionMaster(EnrichmentMixin, models.Model):
     city = models.ForeignKey(City, on_delete=models.CASCADE)
     place_id = models.CharField(max_length=255, blank=True, null=True, unique=True)
     name = models.CharField(max_length=255)
@@ -212,10 +259,14 @@ class AttractionMaster(models.Model):
     website_uri = models.URLField(max_length=1000, blank=True, null=True)
     editorial_summary = models.TextField(blank=True, null=True)
 
+    # {"step_free": bool|null, "terrain": "paved"|"uneven"|"steep"|null,
+    #  "typical_walk_distance_m": int|null, "difficulty_level": "easy"|"moderate"|"strenuous"|null}
+    accessibility_detail = models.JSONField(default=dict, blank=True)
+
     def __str__(self):
         return self.name
 
-class ActivityMaster(models.Model):
+class ActivityMaster(EnrichmentMixin, models.Model):
     city = models.ForeignKey(City, on_delete=models.CASCADE)
     place_id = models.CharField(max_length=255, blank=True, null=True, unique=True)
     name = models.CharField(max_length=255)
@@ -245,35 +296,33 @@ class ActivityMaster(models.Model):
     website_uri = models.URLField(max_length=1000, blank=True, null=True)
     editorial_summary = models.TextField(blank=True, null=True)
 
+    accessibility_detail = models.JSONField(default=dict, blank=True)
+
     def __str__(self):
         return self.name
+
+
+class TransferProfile(models.Model):
+    """
+    General orientation notes for an airport/station hub (typical minimum
+    connection time, whether terminal changes are common) — deliberately a
+    rough prior, not schedule-accurate data. Seeded via LLM general knowledge,
+    upgraded if a provider ever supplies real connection-time data.
+    """
+    location_code = models.CharField(max_length=10, unique=True)  # IATA/station code
+    typical_min_connection_mins = models.PositiveSmallIntegerField(blank=True, null=True)
+    terminal_change_common = models.BooleanField(default=False)
+    stair_heavy = models.BooleanField(blank=True, null=True)
+    notes = models.CharField(max_length=255, blank=True)
+    source = models.CharField(max_length=40, default="general_knowledge")
+
+    def __str__(self):
+        return self.location_code
 
 
 # ==========================================
 # UTILITIES
 # ==========================================
-
-class VisaRequirement(models.Model):
-    nationality = models.ForeignKey(Country, on_delete=models.CASCADE, related_name="visa_requirements")
-    destination = models.ForeignKey(Country, on_delete=models.CASCADE, related_name="visa_policies")
-    status = models.CharField(max_length=100) # e.g. Visa Required, Visa Free, eVisa
-    allowed_stay_days = models.IntegerField(blank=True, null=True)
-    notes = models.TextField(blank=True, null=True)
-
-    def __str__(self):
-        return f"{self.nationality.code} -> {self.destination.code}: {self.status}"
-
-class Currency(models.Model):
-    code = models.CharField(max_length=3, unique=True)
-    name = models.CharField(max_length=100)
-    symbol = models.CharField(max_length=10, blank=True, null=True)
-    exchange_rate_to_usd = models.DecimalField(max_digits=20, decimal_places=6, blank=True, null=True)
-
-    def __str__(self):
-        return f"{self.code} - {self.name}"
-    
-    class Meta:
-        verbose_name_plural = "Currencies"
 
 class HolidayCalendar(models.Model):
     country = models.ForeignKey(Country, on_delete=models.CASCADE)
@@ -290,25 +339,33 @@ class WeatherNormals(models.Model):
     avg_temp_c = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True)
     precipitation_mm = models.DecimalField(max_digits=6, decimal_places=2, blank=True, null=True)
 
+    # Computed from a fixed temp/precipitation lookup table, not generated —
+    # a wrong packing suggestion has real consequences (see
+    # docs/travel-intelligence-implementation-roadmap.md §1.6).
+    feels_like_bucket = models.CharField(max_length=20, blank=True, null=True)
+    packing_note = models.CharField(max_length=255, blank=True)
+
     def __str__(self):
         return f"{self.city.name} - Month {self.month}"
+
+    class Meta:
+        unique_together = ("city", "month")  # previously unconstrained — duplicate month rows were possible
 
 class TravelSeason(models.Model):
     city = models.ForeignKey(City, on_delete=models.CASCADE)
     month = models.IntegerField() # 1-12
     season_type = models.CharField(max_length=50) # Peak, Shoulder, Off-Peak
 
+    # [{"name": "cherry blossom", "typical_window": ["03-25","04-10"], "year_variability_days": 7}]
+    # Always carries a variability window — never a single confident date.
+    natural_phenomena = models.JSONField(default=list, blank=True)
+
     def __str__(self):
         return f"{self.city.name} - Month {self.month}: {self.season_type}"
 
-class GooglePlaceCache(models.Model):
-    place_id = models.CharField(max_length=255, unique=True)
-    name = models.CharField(max_length=255)
-    data = models.JSONField()
-    updated_at = models.DateTimeField(auto_now=True)
+    class Meta:
+        unique_together = ("city", "month")
 
-    def __str__(self):
-        return self.name
 
 
 class TravelPriceHistory(models.Model):
@@ -329,7 +386,16 @@ class TravelPriceHistory(models.Model):
     currency = models.CharField(max_length=3, default='INR')
     provider = models.CharField(max_length=100, db_index=True)
     code = models.CharField(max_length=50, blank=True, help_text='Flight number, train number, room type, cab type')
-    
+
+    # Stored on the row rather than re-derived at read time — previously a price
+    # was tagged "verified" only on the request that first called a live
+    # provider; every later read of the same row silently downgraded to
+    # "estimated" (see docs/travel-knowledge-engine-plan.md §1). The actual
+    # read-path fix (live_price.py) lands in K2; this is the schema half.
+    provenance_tier = models.CharField(max_length=12, blank=True, null=True, choices=[
+        ("verified", "verified"), ("estimated", "estimated"), ("suggested", "suggested"),
+    ])
+
     # ForeignKeys linking to reference master tables
     airport_route = models.ForeignKey(AirportRoute, on_delete=models.CASCADE, null=True, blank=True, related_name='historical_prices')
     train_route = models.ForeignKey(TrainRoute, on_delete=models.CASCADE, null=True, blank=True, related_name='historical_prices')

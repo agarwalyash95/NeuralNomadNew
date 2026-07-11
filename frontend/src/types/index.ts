@@ -209,4 +209,7 @@ export interface ApiError {
   message: string;
   status: number;
   code: string;
+  /** Raw response body — some endpoints (e.g. 409 book/) carry structured
+   *  fields beyond message/status/code, such as `blocking_blocks`. */
+  data?: any;
 }

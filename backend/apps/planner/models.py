@@ -413,29 +413,6 @@ class PlannerIntentFlow(BaseModel):
         return f"{self.intent} / {self.destination_text} (rate={self.completion_rate:.0%})"
 
 
-class LocationDistanceCache(BaseModel):
-    """
-    Caches calculated travel distance and duration between locations using Google Maps API or coordinates.
-    indexed by origin_key and destination_key for instant 0ms DB queries.
-    """
-    origin_key = models.CharField(max_length=255, db_index=True)
-    destination_key = models.CharField(max_length=255, db_index=True)
-    mode = models.CharField(max_length=20, default="driving", db_index=True)
-    distance_km = models.FloatField(default=0.0)
-    duration_mins = models.IntegerField(default=0)
-
-    class Meta:
-        db_table = "planner_distance_cache"
-        unique_together = ("origin_key", "destination_key", "mode")
-        indexes = [
-            models.Index(fields=["origin_key", "destination_key", "mode"]),
-        ]
-
-    def __str__(self):
-        return f"{self.origin_key} -> {self.destination_key} ({self.distance_km}km, {self.duration_mins}m)"
-
-
-
 class PlanProposal(BaseModel):
     """
     An agent- or tool-initiated change to a plan, awaiting the traveler's
@@ -450,6 +427,7 @@ class PlanProposal(BaseModel):
     KIND_ROUTE_OPTIMIZATION = "route_optimization"
     KIND_PLAN_EDIT = "plan_edit"
     KIND_PRICE_WATCH = "price_watch"
+    KIND_INSIGHT = "insight"  # PlanInsightEngine rules with a concrete corrective diff (K5+)
 
     STATUS_OPEN = "open"
     STATUS_ACCEPTED = "accepted"

@@ -52,14 +52,6 @@ PHASES = [
 ]
 _PHASE_PROGRESS = {key: pct for key, _label, pct in PHASES}
 
-# Google Places field masks per category — kept in sync with the explore
-# actions in apps/reference/views.py (same cache the canvases read).
-_FIELD_MASK_COMMON = (
-    "places.id,places.displayName,places.primaryType,places.rating,places.userRatingCount,"
-    "places.formattedAddress,places.location,places.reviews,places.regularOpeningHours,"
-    "places.nationalPhoneNumber,places.websiteUri,places.editorialSummary,places.photos"
-)
-
 
 class GenerationFailed(Exception):
     pass
@@ -422,62 +414,36 @@ def _geocode_city(name):
 def _build_candidate_pool(city_obj, per_category=12):
     """
     Real candidates per category, best-rated first. Thin pools grow through
-    the same explore path the canvases use (Google Places → cached into the
-    master tables), so generation and canvases share one cache.
+    the same KnowledgeEngine.resolve() path the canvases use (Google Places
+    -> cached into the master tables), so generation and canvases share one
+    cache and one field-mask config instead of two hand-kept-in-sync copies.
     """
     from apps.reference.models import ActivityMaster, AttractionMaster, HotelMaster, RestaurantMaster
 
-    configs = {
-        "attraction": (AttractionMaster, "top tourist attractions, heritage sites and landmarks in {city}", "tourist_attraction"),
-        "activity": (ActivityMaster, "adventure activities, tours and experiences in {city}", None),
-        "restaurant": (RestaurantMaster, "best restaurants in {city}", "restaurant"),
-        "hotel": (HotelMaster, "hotels in {city}", "lodging"),
+    models_by_category = {
+        "attraction": AttractionMaster, "activity": ActivityMaster,
+        "restaurant": RestaurantMaster, "hotel": HotelMaster,
     }
 
     pool = {}
-    for category, (model, query_tpl, included_type) in configs.items():
+    for category, model in models_by_category.items():
         rows = list(model.objects.filter(city=city_obj))
         if len(rows) < 5:
-            rows = _grow_pool_via_places(model, city_obj, query_tpl, included_type, category) or rows
+            rows = _grow_pool_via_places(city_obj, category) or rows
         rows.sort(key=lambda r: float(r.user_rating or 0), reverse=True)
         pool[category] = rows[:per_category]
     return pool
 
 
-def _grow_pool_via_places(model, city_obj, query_tpl, included_type, category):
+def _grow_pool_via_places(city_obj, category):
     """Fetch live Places results into the master-table cache. Failure means
     'use what we have', never a crash."""
     try:
-        from apps.reference.services.places_explore import explore_places
-        from apps.reference.views import _map_activity, _map_attraction, _map_hotel, _map_restaurant
-
-        mappers = {
-            "attraction": _map_attraction,
-            "activity": _map_activity,
-            "restaurant": _map_restaurant,
-            "hotel": _map_hotel,
-        }
-        masks = {
-            "attraction": _FIELD_MASK_COMMON + ",places.goodForChildren,places.goodForGroups,places.accessibilityOptions",
-            "activity": _FIELD_MASK_COMMON + ",places.goodForChildren,places.goodForGroups",
-            "restaurant": _FIELD_MASK_COMMON + ",places.priceLevel,places.outdoorSeating,places.goodForGroups,"
-            "places.allowsDogs,places.goodForChildren,places.menuForChildren,places.servesVegetarianFood,"
-            "places.dineIn,places.takeout,places.delivery,places.parkingOptions,places.paymentOptions",
-            "hotel": _FIELD_MASK_COMMON + ",places.priceLevel,places.parkingOptions,places.paymentOptions",
-        }
+        from apps.knowledge.services.engine import KnowledgeEngine
 
         lat = float(city_obj.latitude) if city_obj.latitude else None
         lng = float(city_obj.longitude) if city_obj.longitude else None
-        _source, places, _error = explore_places(
-            model=model,
-            location=city_obj.name,
-            lat_val=lat,
-            lng_val=lng,
-            google_query=query_tpl.format(city=city_obj.name),
-            included_type=included_type,
-            field_mask=masks[category],
-            field_mapper=mappers[category],
-        )
+        _source, places, _error = KnowledgeEngine.resolve(category, city_obj.name, lat=lat, lng=lng)
         return list(places) if places else None
     except Exception as exc:
         logger.warning("Pool growth via Places failed for %s/%s: %s", city_obj.name, category, exc)
@@ -503,6 +469,29 @@ def _candidate_catalog_lines(pools):
                 elif category == "hotel" and getattr(row, "price_range", ""):
                     extra = f", {row.price_range}"
                 lines.append(f"  {category}:{row.pk} | {row.name[:60]} ({rating}{extra})")
+    return "\n".join(lines)
+
+
+def _traveler_context_summary(user):
+    """
+    Known TravelerProfile facts, formatted for prompt injection — previously
+    collected (stated/inferred/confirmed) but never actually read by
+    generation, a gap the original adversarial audit flagged explicitly
+    ("engine does not yet prefill from TravelerProfile facts"). See
+    docs/travel-intelligence-implementation-roadmap.md §1.9.
+    """
+    if user is None:
+        return ""
+    try:
+        from apps.planner.models import TravelerProfile
+
+        profile = TravelerProfile.objects.filter(user=user).first()
+    except Exception:
+        return ""
+    if not profile or not profile.facts:
+        return ""
+
+    lines = [f"- {f['key']}: {f['value']}" for f in profile.facts if f.get("key") and f.get("value")]
     return "\n".join(lines)
 
 
@@ -548,6 +537,11 @@ def _compose_days(draft, skeleton, pools, city_objs):
         "The final day ends with a departure transport leg.",
     )
     origin = (draft.metadata or {}).get("origin") or (draft.metadata or {}).get("origin_text") or ""
+    traveler_context = _traveler_context_summary(getattr(draft.workspace, "user", None))
+    traveler_context_block = (
+        f"\nKNOWN TRAVELER CONTEXT (apply silently, do not ask about these again):\n{traveler_context}\n"
+        if traveler_context else ""
+    )
 
     prompt = f"""Schedule this trip using ONLY the real candidates below.
 
@@ -558,7 +552,7 @@ Origin city (for arrival/departure transport): {origin or 'not specified'}
 Travelers: {draft.adults} adults, {draft.children} children
 Interests: {draft.interests}
 Budget tier: {draft.budget_tier}
-
+{traveler_context_block}
 CANDIDATE CATALOG (id | name (rating, extra)):
 {_candidate_catalog_lines(pools)}
 

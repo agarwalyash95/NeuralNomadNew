@@ -163,9 +163,14 @@ class ApiClient {
     if (error.response) {
       // Server responded with error status
       return {
-        message: error.response.data?.detail || error.response.data?.message || 'An error occurred',
+        message:
+          error.response.data?.detail ||
+          error.response.data?.message ||
+          error.response.data?.error ||
+          'An error occurred',
         status: error.response.status,
         code: error.response.data?.code || 'UNKNOWN_ERROR',
+        data: error.response.data,
       };
     } else if (error.request) {
       // Request made but no response

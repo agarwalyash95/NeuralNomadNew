@@ -2,13 +2,13 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
+import { MapPin, Sparkles, RefreshCw } from 'lucide-react';
+// exportPdf (and jsPDF within it) is dynamically imported inside
+// handleExport instead of here — it was loading on every workspace visit
+// for a button most users never click. See PF4, docs/planner-product-audit-2026-07.md.
 
 // ── Plan Canvas Components & Utilities ─────────────────────────────────────
-import { optimizeDayRoute } from './plan-canvas/utils/routeOptimizer';
 import { parsePriceToInteger } from './plan-canvas/utils/priceParser';
-import { prefetchWorkspaceData } from './utils/workspacePrefetch';
 import { ProposalCard } from '../components/ProposalCard';
 import DockedChat from '../chat/DockedChat';
 
@@ -19,6 +19,7 @@ import HotelCanvas from './helper-canvases/booking/canvases/HotelCanvas';
 import TrainCanvas from './helper-canvases/booking/canvases/TrainCanvas';
 import BusCanvas from './helper-canvases/booking/canvases/BusCanvas';
 import CabCanvas from './helper-canvases/booking/canvases/CabCanvas';
+import TransportCompareCanvas from './helper-canvases/booking/canvases/TransportCompareCanvas';
 import CheckoutCanvas from './helper-canvases/booking/canvases/CheckoutCanvas';
 import WalletCanvas from './helper-canvases/booking/canvases/WalletCanvas';
 import AttractionsCanvas from './helper-canvases/explore/AttractionsCanvas';
@@ -35,6 +36,7 @@ import PlannerMap from './plan-canvas/PlannerMap';
 import AIInsightsPanel from './plan-canvas/AIInsightsPanel';
 import PlannerHeader from './plan-canvas/PlannerHeader';
 import ItineraryTimeline from './plan-canvas/ItineraryTimeline';
+import InsightStrip from './plan-canvas/InsightStrip';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 import { TripContext, NodeClickPayload } from './types';
@@ -48,14 +50,18 @@ import {
   useWorkspace,
   useSavePlan,
   useBookTrip,
+  useOptimizeRoute,
   plannerKeys,
 } from '@/features/planner/hooks/usePlannerQueries';
 import { useQueryClient } from '@tanstack/react-query';
+import { usePlannerHoverStore } from '@/store/planner-hover.store';
+import { useIsMobile } from '@/hooks/use-is-mobile';
+import MobileWorkspace from './mobile/MobileWorkspace';
 
 
-type ContextPanelType =
+export type ContextPanelType =
   | 'none'
-  | 'flight' | 'hotel' | 'train' | 'bus' | 'cab'
+  | 'flight' | 'hotel' | 'train' | 'bus' | 'cab' | 'compare'
   | 'attractions' | 'restaurants' | 'activities'
   | 'forex' | 'visa'
   | 'checkout'
@@ -66,11 +72,37 @@ export interface PlannerWorkspaceProps {
 }
 
 export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps) {
+  const isMobile = useIsMobile();
   const [activePanel, setActivePanel] = useState<ContextPanelType>('none');
   const [isExporting, setIsExporting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [planData, setPlanData] = useState<TripViewModel | null>(null);
-  const [hoveredItem, setHoveredItem] = useState<ItineraryItem | null>(null);
+  // Undo/redo command stacks over TripViewModel snapshots — reset whenever
+  // the workspace changes so switching trips doesn't carry over history.
+  const [undoStack, setUndoStack] = useState<TripViewModel[]>([]);
+  const [redoStack, setRedoStack] = useState<TripViewModel[]>([]);
+  useEffect(() => {
+    setUndoStack([]);
+    setRedoStack([]);
+  }, [workspaceId]);
+  // Hover lives in a Zustand store (planner-hover.store.ts), not component
+  // state — writing to it here never re-renders PlannerWorkspace or the
+  // timeline; only the map/insights panel subscribe to the value, so a
+  // sweep down a long timeline no longer re-renders the whole tree per node.
+  const setHoveredItem = usePlannerHoverStore((s) => s.setHoveredItem);
+  // A deliberately-selected item's insights survive mouse movement elsewhere
+  // — unlike hover, which used to strobe the panel on every node the pointer
+  // crossed while sweeping down the timeline. Stored by id and re-resolved
+  // from planData below so a pin never shows stale data after an edit —
+  // if the block was deleted/replaced, the pin naturally clears instead of
+  // holding a frozen snapshot of a block that no longer exists.
+  const [pinnedItemId, setPinnedItemId] = useState<string | null>(null);
+  const hoverIntentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleItemHover = (item: ItineraryItem | null) => {
+    if (hoverIntentTimer.current) clearTimeout(hoverIntentTimer.current);
+    if (!item) return; // leaving a node keeps showing whatever was last hovered/pinned
+    hoverIntentTimer.current = setTimeout(() => setHoveredItem(item), 150);
+  };
   const [focusedDayId, setFocusedDayId] = useState<string | null>(null);
   const [activeCityId, setActiveCityId] = useState<string | null>(null);
 
@@ -83,7 +115,9 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
   const { data: openProposals = [] } = useProposals(workspaceId);
   const acceptProposal = useAcceptProposal(workspaceId);
   const rejectProposal = useRejectProposal(workspaceId);
+  const optimizeRoute = useOptimizeRoute(workspaceId);
   const [optimizeNotice, setOptimizeNotice] = useState<string | null>(null);
+  const [optimizeNoticeTone, setOptimizeNoticeTone] = useState<'success' | 'info'>('success');
 
   // ── Replace Node state ─────────────────────────────────────────────────
   const [activeNodePayload, setActiveNodePayload] = useState<NodeClickPayload | null>(null);
@@ -119,6 +153,18 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
     return null;
   }, [planData, focusedDayId]);
 
+  const pinnedItem = useMemo(() => {
+    if (!pinnedItemId || !planData) return null;
+    for (const city of planData.cities) {
+      if (city.transitToNext?.id === pinnedItemId) return city.transitToNext;
+      for (const day of city.days) {
+        const found = day.items.find(i => i.id === pinnedItemId);
+        if (found) return found;
+      }
+    }
+    return null; // deleted/replaced since pinning — pin naturally clears
+  }, [pinnedItemId, planData]);
+
   // Titles already planned for whichever day is "in play" (explicit click's
   // day, else the focused day) — Helper Canvases use this to avoid
   // suggesting something already sitting in that day's plan.
@@ -149,6 +195,10 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
 
     const allCities = planData.cities.map(c => c.cityName);
     const firstCity = planData.cities[0];
+    const activeCityName = activeNodePayload?.cityName ?? focusedDayContext?.cityName;
+    const activeCitySegment = activeCityName
+      ? planData.cities.find(c => c.cityName.toLowerCase() === activeCityName.toLowerCase())
+      : undefined;
 
     return {
       tripId: workspaceId,
@@ -172,6 +222,8 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
       activeNodeStartTime: activeNodePayload?.startTime,
       activeNodeCityName: activeNodePayload?.cityName ?? focusedDayContext?.cityName,
       activeNodeDateStr: activeNodePayload?.dateStr ?? focusedDayContext?.dateStr,
+      activeNodeCityNights: activeCitySegment?.nights,
+      activeNodeCityDateRange: activeCitySegment?.dateRange,
       activeNodeLatitude: activeNodePayload?.latitude ?? focusedDayContext?.latitude,
       activeNodeLongitude: activeNodePayload?.longitude ?? focusedDayContext?.longitude,
       activeNodePrice: activeNodePayload?.price,
@@ -181,20 +233,60 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
   }, [planData, workspaceId, activeNodePayload, focusedDayContext, activeDayItemTitles]);
 
   // ── Sync initial active city/day & trigger background prefetching ─────
+  // Runs once per workspace load, not on every edit — `planData` is replaced
+  // wholesale on every mutation (drag, replace, delete...), and this effect
+  // used to fire every time, yanking focus back to city[0]/day[0] mid-edit.
+  const initializedWorkspaceRef = useRef<string | null>(null);
   useEffect(() => {
-    if (planData?.cities?.[0]) {
-      setActiveCityId(planData.cities[0].id);
-      if (planData.cities[0].days?.[0]) {
-        setFocusedDayId(planData.cities[0].days[0].id);
-      }
-      // Asynchronously pre-fetch hotel/flight/activities for destination in background
-      prefetchWorkspaceData(planData.cities[0].cityName);
+    if (!planData?.cities?.[0]) return;
+    if (initializedWorkspaceRef.current === workspaceId) return;
+    initializedWorkspaceRef.current = workspaceId;
+    setActiveCityId(planData.cities[0].id);
+    if (planData.cities[0].days?.[0]) {
+      setFocusedDayId(planData.cities[0].days[0].id);
     }
+  }, [planData, workspaceId]);
+
+  // ── Scroll-spy for the city/day nav chips ──────────────────────────────
+  // Previously hover-driven (mousing over a day section set the "active"
+  // chip), which meant scrolling the timeline with the mouse parked
+  // anywhere never moved the chips, and a mouse sweep flickered them. Hover
+  // still drives only the map/insights preview (handleItemHover) — this
+  // drives just the chip highlight + which day Helper Canvases default to.
+  useEffect(() => {
+    const container = exportRef.current;
+    if (!container || !planData) return;
+    const dayEls = Array.from(container.querySelectorAll<HTMLElement>('[id^="day-"]'));
+    if (dayEls.length === 0) return;
+
+    const dayIdByNumber = new Map<number, string>();
+    const cityIdByDayNumber = new Map<number, string>();
+    planData.cities.forEach((city) => {
+      city.days.forEach((day) => {
+        dayIdByNumber.set(day.dayNumber, day.id);
+        cityIdByDayNumber.set(day.dayNumber, city.id);
+      });
+    });
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries.filter((e) => e.isIntersecting);
+        if (visible.length === 0) return;
+        const topMost = visible.reduce((a, b) => (a.boundingClientRect.top < b.boundingClientRect.top ? a : b));
+        const dayNumber = parseInt(topMost.target.id.replace('day-', ''), 10);
+        const dayId = dayIdByNumber.get(dayNumber);
+        const cityId = cityIdByDayNumber.get(dayNumber);
+        if (dayId) setFocusedDayId(dayId);
+        if (cityId) setActiveCityId(cityId);
+      },
+      // A thin band near the top of the scroll container — whichever day
+      // header has just crossed it is "the one currently in view".
+      { root: container, rootMargin: '-10% 0px -70% 0px', threshold: 0 }
+    );
+
+    dayEls.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
   }, [planData]);
-
-
-
-
   // ── Resize split screen ──────────────────────────────────────────────────
   const startResize = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -219,13 +311,49 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
   }, [isDragging]);
 
   // ── Fetch plan from backend (shared React Query cache) ──────────────────
-  const { data: trip, isPending: isPlanPending, isError: isPlanError } = usePlan(workspaceId);
-  const { data: ledger } = useLedger(workspaceId);
+  // Workspace data drives the refetch interval: if the workspace says a plan
+  // exists (status !== 'draft') but the plan query returned empty/errored,
+  // we poll every 4 s until data arrives — covers race conditions right after
+  // generation, and transient backend errors. Polling stops the moment we
+  // get a valid trip with cities.
   const { data: workspace } = useWorkspace(workspaceId);
+  const workspaceHasPlan = workspace && workspace.status !== 'draft';
+
+  const {
+    data: trip,
+    isPending: isPlanPending,
+    isError: isPlanError,
+    refetch: refetchPlan,
+  } = usePlan(workspaceId);
+  const { data: ledger } = useLedger(workspaceId);
   const savePlan = useSavePlan(workspaceId);
   const bookTrip = useBookTrip(workspaceId);
   // Warm rich place details for every identifiable block — hover is instant
   usePrefetchPlaceDetails(planData);
+
+  // Auto-poll every 4 s when the workspace has a plan but the data is absent.
+  // Stops as soon as planData is populated.
+  const autoPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    const tripIsEmpty = !trip || !trip.cities || trip.cities.length === 0;
+    if (workspaceHasPlan && !isPlanPending && (isPlanError || tripIsEmpty) && !planData) {
+      if (!autoPollRef.current) {
+        autoPollRef.current = setInterval(() => { refetchPlan(); }, 4000);
+      }
+    } else {
+      if (autoPollRef.current) {
+        clearInterval(autoPollRef.current);
+        autoPollRef.current = null;
+      }
+    }
+    return () => {
+      if (autoPollRef.current) {
+        clearInterval(autoPollRef.current);
+        autoPollRef.current = null;
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceHasPlan, isPlanPending, isPlanError, trip, planData]);
 
   useEffect(() => {
     if (!workspaceId) { setIsLoading(false); return; }
@@ -234,7 +362,7 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
     if (!isPlanError && trip && trip.cities && trip.cities.length > 0) {
       setPlanData(transformTripData(trip));
     } else {
-      // Expected when the plan is still in draft mode
+      // Expected when the plan is still in draft mode or data hasn't arrived yet
       setPlanData(null);
     }
     setIsLoading(false);
@@ -243,23 +371,11 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
   // ── Handlers ─────────────────────────────────────────────────────────────
 
   const handleExport = async () => {
-    if (!exportRef.current) return;
+    if (!planData) return;
     setIsExporting(true);
     try {
-      const originalHeight = exportRef.current.style.height;
-      exportRef.current.style.height = 'max-content';
-      exportRef.current.classList.add('is-exporting-pdf');
-
-      const canvas = await html2canvas(exportRef.current, {
-        scale: 2, useCORS: true, logging: false, backgroundColor: '#fbfaf7',
-      });
-
-      exportRef.current.classList.remove('is-exporting-pdf');
-      exportRef.current.style.height = originalHeight;
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF({ orientation: 'p', unit: 'px', format: [canvas.width, canvas.height] });
-      pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
-      pdf.save('neural_nomad_itinerary.pdf');
+      const { exportTripToPdf } = await import('./utils/exportPdf');
+      await exportTripToPdf(planData);
     } catch (error) {
       console.error('Failed to export PDF:', error);
     } finally {
@@ -281,8 +397,7 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
     }
   };
 
-  const handlePlanDataChange = async (newData: TripViewModel) => {
-    setPlanData(newData);
+  const persistPlan = async (newData: TripViewModel) => {
     if (!workspaceId) return;
     setIsSavingCloud(true);
     try {
@@ -293,12 +408,78 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
       // saved trip visibly falls back to Recent and the Save button re-arms.
       queryClient.invalidateQueries({ queryKey: plannerKeys.workspace(workspaceId) });
       queryClient.invalidateQueries({ queryKey: plannerKeys.workspaces });
+      // Insights/proposals were computed against the plan as it existed
+      // before this edit — a deleted or replaced block must not leave a
+      // warning about itself sitting on screen after the edit lands.
+      queryClient.invalidateQueries({ queryKey: plannerKeys.insights(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: plannerKeys.proposals(workspaceId) });
     } catch (err) {
       console.error('Failed to save updated plan to backend:', err);
     } finally {
       setTimeout(() => setIsSavingCloud(false), 800);
     }
   };
+
+  // Debounced network write — local state updates instantly (below) so undo
+  // stays snappy, but a burst of edits (drag, then a swap, then a time
+  // tweak) coalesces into one PATCH instead of one per keystroke/drop.
+  const patchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const schedulePersist = (data: TripViewModel) => {
+    if (patchTimerRef.current) clearTimeout(patchTimerRef.current);
+    patchTimerRef.current = setTimeout(() => persistPlan(data), 1200);
+  };
+
+  /**
+   * handlePlanDataChange — the single choke point every plan mutation flows
+   * through (drag, replace, delete, time edit...). Every call here records
+   * the PRE-change state on the undo stack, so Ctrl+Z always has something
+   * real to restore — see handleUndo/handleRedo below. Redefined fresh each
+   * render, so it always closes over the current planData/stacks — no stale
+   * closures despite not being memoized.
+   */
+  const handlePlanDataChange = (newData: TripViewModel) => {
+    if (planData) {
+      setUndoStack((stack) => [...stack.slice(-49), planData]);
+      setRedoStack([]);
+    }
+    setPlanData(newData);
+    schedulePersist(newData);
+  };
+
+  const handleUndo = () => {
+    if (undoStack.length === 0 || !planData) return;
+    const prev = undoStack[undoStack.length - 1]!;
+    setUndoStack((stack) => stack.slice(0, -1));
+    setRedoStack((stack) => [...stack, planData]);
+    setPlanData(prev);
+    schedulePersist(prev);
+  };
+
+  const handleRedo = () => {
+    if (redoStack.length === 0 || !planData) return;
+    const next = redoStack[redoStack.length - 1]!;
+    setRedoStack((stack) => stack.slice(0, -1));
+    setUndoStack((stack) => [...stack, planData]);
+    setPlanData(next);
+    schedulePersist(next);
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isEditable = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+      if (isEditable || !(e.ctrlKey || e.metaKey)) return;
+      if (e.key.toLowerCase() === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      } else if ((e.key.toLowerCase() === 'z' && e.shiftKey) || e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [undoStack, redoStack, planData]);
 
   /**
    * handleVerifyLivePrice — ask the backend to check a block's price against
@@ -369,55 +550,25 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
 
   /**
    * handleProposeRouteOptimization — the first proposal producer.
-   * Computes a shorter stop order per day; if any day improves, files a
-   * PlanProposal (never mutates the plan directly) for the user to decide.
+   * Computed server-side now (apps.planner.services.route_optimizer) instead
+   * of duplicating the haversine/permutation logic client-side — this was
+   * the exact inconsistency the audit flagged: a direct-apply button and a
+   * proposal-wrapped button both existed for the identical computation.
+   * There is now one computation, and it always produces a PlanProposal.
    */
   const handleProposeRouteOptimization = async () => {
     if (!planData || !workspaceId) return;
     setOptimizeNotice(null);
 
-    const optimized: TripViewModel = JSON.parse(JSON.stringify(planData));
-    let totalSavedKm = 0;
-    let totalSavedMins = 0;
-    const improvedDayNumbers: number[] = [];
-
-    optimized.cities.forEach((city) => {
-      city.days.forEach((day, di) => {
-        const result = optimizeDayRoute(day);
-        if (result.savedKm > 0.5) {
-          city.days[di] = result.day;
-          totalSavedKm += result.savedKm;
-          totalSavedMins += result.savedMins;
-          improvedDayNumbers.push(day.dayNumber);
-        }
-      });
-    });
-
-    if (improvedDayNumbers.length === 0) {
-      setOptimizeNotice('Your routes are already efficient — reordering would not save meaningful travel time.');
-      setTimeout(() => setOptimizeNotice(null), 6000);
-      return;
-    }
-
-    const before = serializePlanUpdate(planData);
-    const after = serializePlanUpdate(optimized);
-    const affected = new Set(improvedDayNumbers.map(String));
-    const dayList = improvedDayNumbers.join(', ');
-
     try {
-      await plannerService.createProposal(workspaceId, {
-        kind: 'route_optimization',
-        title: `Reorder day ${dayList} to cut travel time`,
-        rationale: `Reordering the stops on day ${dayList} shortens the route between them — same places, less time in transit.`,
-        diff: {
-          before: { days: before.days.filter((d: any) => affected.has(String(d.day_number))) },
-          after: { days: after.days.filter((d: any) => affected.has(String(d.day_number))) },
-          deltas: { saved_km: totalSavedKm, saved_mins: totalSavedMins },
-        },
-      });
-      queryClient.invalidateQueries({ queryKey: plannerKeys.proposals(workspaceId) });
+      const result = await optimizeRoute.mutateAsync();
+      if (!result.proposal) {
+        setOptimizeNoticeTone('success');
+        setOptimizeNotice(result.detail || 'Your routes are already efficient — reordering would not save meaningful travel time.');
+        setTimeout(() => setOptimizeNotice(null), 6000);
+      }
     } catch (err) {
-      console.error('Failed to create route optimization proposal:', err);
+      console.error('Failed to compute route optimization:', err);
     }
   };
 
@@ -427,6 +578,7 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
     if (!workspaceId) return;
     try {
       await plannerService.watchBlock(workspaceId, itemId);
+      setOptimizeNoticeTone('success');
       setOptimizeNotice("Watching this price — I'll re-check it daily and propose a change if it drops.");
       setTimeout(() => setOptimizeNotice(null), 6000);
     } catch (err) {
@@ -459,6 +611,14 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
     openPanelForType(payload.nodeType);
   };
 
+  /** Opens the mode-comparison canvas for an inter-city leg — the same node
+   *  context as handleNodeClick, but always the compare panel regardless of
+   *  the block's own type. */
+  const handleCompareClick = (payload: NodeClickPayload) => {
+    setActiveNodePayload(payload);
+    setActivePanel('compare');
+  };
+
   /**
    * handleAddToPlan — called by any Helper Canvas when user confirms a selection.
    * Finds the node that triggered the canvas (by activeNodePayload) and replaces it.
@@ -480,7 +640,7 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
     const newData: TripViewModel = JSON.parse(JSON.stringify(planData));
 
     // Fallback to hovered/default item context if swap clicked without opening helper canvas
-    const targetNodeId = activeNodePayload?.nodeId || hoveredItem?.id || defaultItem?.id;
+    const targetNodeId = activeNodePayload?.nodeId || usePlannerHoverStore.getState().hoveredItem?.id || defaultItem?.id;
     if (!targetNodeId) return;
 
     let targetDayId = activeNodePayload?.dayId;
@@ -516,6 +676,21 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
       if (replaced) break;
     }
 
+    // Inter-city transit (city.transitToNext) lives outside day.items, so the
+    // loop above never matches it — previously that meant a flight/train/bus
+    // swap silently fell through to the "append as a new day item" branch
+    // below instead of updating the transit segment, leaving a phantom
+    // duplicate item and the stale transit block untouched.
+    if (!replaced) {
+      for (const city of newData.cities) {
+        if (city.transitToNext?.id === targetNodeId) {
+          city.transitToNext = mergeReplacementItem(city.transitToNext, newItem);
+          replaced = true;
+          break;
+        }
+      }
+    }
+
     if (!replaced && targetDayId) {
       for (const city of newData.cities) {
         const day = city.days.find(d => d.id === targetDayId);
@@ -523,7 +698,16 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
           // A brand-new block needs a complete backend dict too, or the next
           // PATCH would persist only the handful of fields serialize touches.
           newItem._rawActivity = toRawActivity(newItem);
-          day.items.push(newItem);
+          // Insert-between: land right after the anchor item instead of
+          // always appending to the end of the day.
+          const anchorIdx = activeNodePayload?.insertAfterId
+            ? day.items.findIndex(i => i.id === activeNodePayload.insertAfterId)
+            : -1;
+          if (anchorIdx !== -1) {
+            day.items.splice(anchorIdx + 1, 0, newItem);
+          } else {
+            day.items.push(newItem);
+          }
           break;
         }
       }
@@ -541,40 +725,258 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
   // ── Render ───────────────────────────────────────────────────────────────
 
   if (isLoading) {
-    // Plain skeleton — reopening an existing trip is a fetch, not a generation
+    // Layout-true — reopening an existing trip is a fetch, not a generation,
+    // so this mirrors the real header/chip-row/timeline/map shape rather
+    // than a handful of generic pulsing blocks that give no sense of what's
+    // about to appear.
     return (
-      <div className="flex h-full w-full overflow-hidden bg-paper-0">
-        <div className="flex h-full w-[60%] flex-col gap-4 border-r border-line bg-paper-1 p-6">
-          <div className="h-24 w-full animate-pulse rounded-2xl bg-[#ece8dd]" />
-          <div className="h-8 w-2/3 animate-pulse rounded-xl bg-[#ece8dd]" />
-          <div className="flex-1 animate-pulse rounded-2xl bg-[#ece8dd]/60" />
+      <div role="status" aria-live="polite" aria-label="Loading trip" className="flex h-full w-full overflow-hidden bg-paper-0">
+        <div className="flex h-full w-[60%] flex-col border-r border-line bg-paper-1">
+          {/* Header: title bar + day-chip row, mirrors PlannerHeader */}
+          <div className="border-b border-line px-4 pt-4 pb-3 shrink-0">
+            <div className="h-5 w-1/2 motion-safe:animate-pulse rounded-md bg-line" />
+            <div className="mt-3 flex gap-2">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <div key={i} className="h-6 w-14 shrink-0 motion-safe:animate-pulse rounded-full bg-line" style={{ animationDelay: `${i * 80}ms` }} />
+              ))}
+            </div>
+          </div>
+          {/* Timeline: card-shaped rows, mirrors GenericNode/TransportNode */}
+          <div className="flex-1 overflow-hidden px-4 py-4 flex flex-col gap-3">
+            <div className="h-4 w-24 motion-safe:animate-pulse rounded bg-line" />
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="flex items-stretch gap-3 rounded-[16px] border border-line bg-paper-2 p-3 min-h-[92px] motion-safe:animate-pulse" style={{ animationDelay: `${i * 100}ms` }}>
+                <div className="w-1/4 shrink-0 rounded-xl bg-line" />
+                <div className="flex-1 flex flex-col justify-center gap-2">
+                  <div className="h-3.5 w-2/3 rounded bg-line" />
+                  <div className="h-2.5 w-1/3 rounded bg-line/70" />
+                  <div className="h-2.5 w-1/2 rounded bg-line/50" />
+                </div>
+                <div className="w-16 shrink-0 rounded bg-line/70" />
+              </div>
+            ))}
+          </div>
         </div>
         <div className="flex h-full flex-1 flex-col">
-          <div className="h-1/2 w-full animate-pulse bg-[#ece8dd]/50" />
-          <div className="h-1/2 w-full animate-pulse bg-[#ece8dd]/30" />
+          <div className="h-1/2 w-full motion-safe:animate-pulse bg-paper-2 border-b border-line" />
+          <div className="h-1/2 w-full flex flex-col items-center justify-center gap-3 bg-paper-1">
+            <div className="h-3 w-1/3 motion-safe:animate-pulse rounded bg-line" />
+            <div className="h-2.5 w-1/2 motion-safe:animate-pulse rounded bg-line/70" />
+          </div>
         </div>
       </div>
     );
   }
 
   if (!planData) {
+    const isRetrying = workspaceHasPlan && !isPlanPending;
     return (
-      <div className="flex h-full w-full items-center justify-center bg-slate-50 p-8">
+      <div className="flex h-full w-full items-center justify-center bg-paper-0 p-8">
         <div className="flex flex-col items-center max-w-md text-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50 text-3xl mb-4">
-            🌍
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50 mb-4">
+            {isRetrying ? (
+              <RefreshCw size={28} className="text-blue-500 animate-spin" />
+            ) : (
+              <Sparkles size={28} className="text-blue-500" />
+            )}
           </div>
-          <h2 className="text-xl font-black text-slate-900 mb-2">Awaiting Trip Details</h2>
-          <p className="text-sm font-medium text-slate-500 mb-6">
-            Your workspace is ready. Tell the AI what kind of trip you want to plan, and we&apos;ll generate the perfect itinerary for you here.
+          <h2 className="text-xl font-black text-ink-900 mb-2">
+            {isRetrying ? 'Loading Your Trip…' : 'Awaiting Trip Details'}
+          </h2>
+          <p className="text-sm font-medium text-ink-500 mb-6">
+            {isRetrying
+              ? 'Your itinerary is on its way. This usually takes just a moment.'
+              : 'Your workspace is ready. Tell the AI what kind of trip you want to plan, and we\u0027ll generate the perfect itinerary for you here.'}
           </p>
-          <div className="h-1 w-12 rounded-full bg-blue-200"></div>
+          {isRetrying ? (
+            <button
+              onClick={() => refetchPlan()}
+              className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100 transition-colors"
+            >
+              <RefreshCw size={14} />
+              Refresh now
+            </button>
+          ) : (
+            <div className="h-1 w-12 rounded-full bg-blue-200"></div>
+          )}
         </div>
       </div>
     );
   }
 
   const defaultItem = planData?.cities?.[0]?.days?.[0]?.items?.[0] || null;
+
+  // Shared between the desktop split-pane panel and the mobile full-screen
+  // canvas sheet — one switch, so the two surfaces can't drift apart.
+  const activePanelContent = (
+    <>
+      {/* Booking Canvases */}
+      {activePanel === 'flight' && (
+        <FlightCanvas tripContext={tripContext} onClose={() => setActivePanel('none')} onAddToPlan={handleAddToPlan} />
+      )}
+      {activePanel === 'hotel' && (
+        <HotelCanvas tripContext={tripContext} onClose={() => setActivePanel('none')} onAddToPlan={handleAddToPlan} />
+      )}
+      {activePanel === 'train' && (
+        <TrainCanvas tripContext={tripContext} onClose={() => setActivePanel('none')} onAddToPlan={handleAddToPlan} />
+      )}
+      {activePanel === 'bus' && (
+        <BusCanvas tripContext={tripContext} onClose={() => setActivePanel('none')} onAddToPlan={handleAddToPlan} />
+      )}
+      {activePanel === 'cab' && (
+        <CabCanvas tripContext={tripContext} onClose={() => setActivePanel('none')} onAddToPlan={handleAddToPlan} />
+      )}
+      {activePanel === 'compare' && (
+        <TransportCompareCanvas
+          tripContext={tripContext}
+          onClose={() => setActivePanel('none')}
+          onSelectMode={(mode) => setActivePanel(mode === 'cab' ? 'cab' : mode)}
+        />
+      )}
+
+      {activePanel === 'attractions' && (
+        <AttractionsCanvas tripContext={tripContext} onClose={() => setActivePanel('none')} onAddToPlan={handleAddToPlan} />
+      )}
+      {activePanel === 'restaurants' && (
+        <RestaurantsCanvas tripContext={tripContext} onClose={() => setActivePanel('none')} onAddToPlan={handleAddToPlan} />
+      )}
+      {activePanel === 'activities' && (
+        <AttractionsCanvas tripContext={tripContext} onClose={() => setActivePanel('none')} onAddToPlan={handleAddToPlan} />
+      )}
+
+      {/* Travel Prep Canvases */}
+      {activePanel === 'forex' && (
+        <ForexCanvas tripContext={tripContext} onClose={() => setActivePanel('none')} />
+      )}
+      {activePanel === 'visa' && (
+        <VisaCanvas tripContext={tripContext} onClose={() => setActivePanel('none')} />
+      )}
+      {activePanel === 'checkout' && planData && (
+        <CheckoutCanvas
+          planData={planData}
+          workspaceId={workspaceId}
+          onClose={() => setActivePanel('none')}
+          onVerifyLivePrice={handleVerifyLivePrice}
+          onConfirmBooking={async (checkedIds) => {
+            if (!workspaceId || !planData) throw new Error('No active trip to book.');
+            // Server-authoritative booking: the state machine creates
+            // commitment rows and stamps verified/booking provenance.
+            // Errors are re-thrown — the checkout UI only shows success
+            // once this has actually happened, never on a timer.
+            //
+            // The traveler's checkout selection is authoritative for
+            // WHICH items to book, but never trusted blindly — every
+            // id is re-validated against the current plan (bookable
+            // category, priced, not already booked) before it's sent.
+            // Attractions/meals aren't booked here (no ticketing flow
+            // exists yet), so the trip-level book/ call below is
+            // allowed to stay partial rather than pretending an
+            // itinerary with a priced attraction can ever fully book.
+            const BOOKABLE_TYPES = new Set(['flight', 'train', 'bus', 'cab', 'taxi', 'hotel']);
+            const checkedSet = new Set(checkedIds);
+            const isBookable = (item: ItineraryItem | undefined) =>
+              item && checkedSet.has(item.id) && !item.isInactive && item.blockStatus !== 'booked' &&
+              BOOKABLE_TYPES.has(item.type) && Boolean(item.price);
+            const blockIds: string[] = [];
+            planData.cities.forEach((city) => {
+              if (isBookable(city.transitToNext)) {
+                blockIds.push(city.transitToNext!.id);
+              }
+              city.days.forEach((day) =>
+                day.items.forEach((item) => {
+                  if (isBookable(item)) blockIds.push(item.id);
+                })
+              );
+            });
+            if (blockIds.length === 0) return;
+            setIsSavingCloud(true);
+            try {
+              const result = await plannerService.transitionBlocks(workspaceId, {
+                to: 'booked',
+                block_ids: blockIds,
+              });
+              setPlanData(transformTripData(result.trip));
+
+              const noticeLines: string[] = [];
+              const failedCount = Object.keys(result.errors || {}).length;
+              if (failedCount > 0) {
+                noticeLines.push(`${failedCount} item${failedCount === 1 ? '' : 's'} couldn't be confirmed and stayed as they were.`);
+              }
+
+              // allow_partial: the trip is only promoted to Booked
+              // once every costed block (incl. any priced attraction
+              // or meal) holds a booked commitment — otherwise it
+              // stays honestly in Recent instead of throwing away
+              // the transport/hotel booking that DID succeed.
+              try {
+                const bookResult = await bookTrip.mutateAsync({ allow_partial: true });
+                const blocking = bookResult?.blocking_blocks;
+                if (blocking?.length) {
+                  noticeLines.push(
+                    `Trip stays in Recent until ${blocking.length} more item${blocking.length === 1 ? '' : 's'} ` +
+                    `(${blocking.slice(0, 2).map(b => b.title).join(', ')}${blocking.length > 2 ? ', …' : ''}) ` +
+                    `${blocking.length === 1 ? 'is' : 'are'} booked too.`
+                  );
+                }
+              } catch (bookErr) {
+                console.warn('Trip-level booking not completed:', bookErr);
+                noticeLines.push("Couldn't update the trip's overall booking status — it stays in Recent for now.");
+              }
+
+              if (noticeLines.length > 0) {
+                setOptimizeNoticeTone('info');
+                setOptimizeNotice(noticeLines.join(' '));
+                setTimeout(() => setOptimizeNotice(null), 10000);
+              }
+
+              queryClient.invalidateQueries({ queryKey: plannerKeys.ledger(workspaceId) });
+              queryClient.invalidateQueries({ queryKey: plannerKeys.plan(workspaceId) });
+              queryClient.invalidateQueries({ queryKey: plannerKeys.workspaces });
+            } catch (err) {
+              console.error('Booking transition failed:', err);
+              throw err;
+            } finally {
+              setIsSavingCloud(false);
+            }
+          }}
+        />
+      )}
+      {activePanel === 'wallet' && planData && (
+        <WalletCanvas
+          planData={planData}
+          onClose={() => setActivePanel('none')}
+        />
+      )}
+    </>
+  );
+
+  if (isMobile) {
+    return (
+      <MobileWorkspace
+        planData={planData}
+        workspaceId={workspaceId}
+        activePanel={activePanel}
+        activePanelContent={activePanelContent}
+        onOpenPanel={(panel) => setActivePanel(panel as ContextPanelType)}
+        onOpenPanelForType={openPanelForType}
+        onDataChange={handlePlanDataChange}
+        onVerifyLivePrice={handleVerifyLivePrice}
+        onWatchPrice={handleWatchPrice}
+        onOptimizeRoutes={handleProposeRouteOptimization}
+        onCompareTransit={handleCompareClick}
+        onAddToPlan={handleAddToPlan}
+        onExport={handleExport}
+        isExporting={isExporting}
+        onSave={() => savePlan.mutate()}
+        isSaving={savePlan.isPending}
+        openProposals={openProposals}
+        onAcceptProposal={(id) => acceptProposal.mutateAsync(id)}
+        onRejectProposal={(id, reason) => rejectProposal.mutateAsync({ proposalId: id, reason })}
+        focusedDayId={focusedDayId}
+        onFocusDay={setFocusedDayId}
+      />
+    );
+  }
 
   return (
     <div ref={containerRef} className="relative flex h-full w-full overflow-hidden bg-paper-0">
@@ -592,10 +994,16 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
           {optimizeNotice && (
             <motion.div
               key="optimize-notice"
+              role="status"
+              aria-live="polite"
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
-              className="w-[340px] rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-[11px] font-semibold text-emerald-800 shadow-md"
+              className={`w-[340px] rounded-2xl border px-4 py-3 text-[11px] font-semibold shadow-md ${
+                optimizeNoticeTone === 'info'
+                  ? 'border-amber-200 bg-amber-50 text-amber-800'
+                  : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+              }`}
             >
               {optimizeNotice}
             </motion.div>
@@ -631,6 +1039,10 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
             isSaving={savePlan.isPending}
             isSaved={workspace?.bucket === 'saved'}
             onRenameTitle={handleRenameTitle}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
+            canUndo={undoStack.length > 0}
+            canRedo={redoStack.length > 0}
           />
           
           <div className="flex w-full items-center justify-between gap-2 mt-3 pt-3 border-t border-line/80">
@@ -651,7 +1063,7 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
                         : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-600'
                     }`}
                   >
-                    📍 {city.cityName}
+                    <MapPin size={11} className="shrink-0" /> {city.cityName}
                   </button>
                 );
               })}
@@ -681,7 +1093,11 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
 
             {/* Cloud Sync Status Indicator */}
             {isSavingCloud && (
-              <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200 shrink-0 animate-pulse">
+              <span
+                role="status"
+                aria-live="polite"
+                className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200 shrink-0 motion-safe:animate-pulse"
+              >
                 ⚡ Saving...
               </span>
             )}
@@ -690,15 +1106,16 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
 
         {/* Scrollable Timeline */}
         <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-4" ref={exportRef}>
+          <InsightStrip workspaceId={workspaceId ?? null} />
           <ItineraryTimeline
             data={planData}
-            onItemHover={(item) => { if (item) setHoveredItem(item); }}
-            onCityEnter={(cityId) => setActiveCityId(cityId)}
-            onDayEnter={(dayId) => setFocusedDayId(dayId)}
+            onItemHover={handleItemHover}
             onDataChange={handlePlanDataChange}
             onItemClick={handleNodeClick}
             onVerifyLivePrice={handleVerifyLivePrice}
             onWatchPrice={handleWatchPrice}
+            onOptimizeRoutes={handleProposeRouteOptimization}
+            onCompareTransit={handleCompareClick}
           />
         </div>
       </div>
@@ -739,16 +1156,19 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
               <div className="h-1/2 w-full overflow-hidden border-b border-line">
                 <PlannerMap
                   planData={planData}
-                  hoveredItem={hoveredItem}
+                  pinnedItem={pinnedItem}
                   focusedDayId={focusedDayId}
-                  onPinClick={(item) => setHoveredItem(item)}
+                  onPinClick={(item) => setPinnedItemId(item.id)}
                 />
               </div>
 
               {/* Bottom Half: AI Insights */}
               <div className="h-1/2 w-full overflow-hidden relative bg-paper-1">
                 <AIInsightsPanel
-                  item={hoveredItem || defaultItem}
+                  pinnedItem={pinnedItem}
+                  defaultItem={defaultItem}
+                  isPinned={Boolean(pinnedItem)}
+                  onTogglePin={() => setPinnedItemId(pinnedItem ? null : (usePlannerHoverStore.getState().hoveredItem || defaultItem)?.id ?? null)}
                   onSwapItem={handleAddToPlan}
                   onExplore={(item) => openPanelForType(item.type)}
                 />
@@ -763,99 +1183,7 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
               transition={{ type: 'spring', stiffness: 280, damping: 28 }}
               className="h-full w-full overflow-y-auto"
             >
-              {/* Booking Canvases */}
-              {activePanel === 'flight' && (
-                <FlightCanvas tripContext={tripContext} onClose={() => setActivePanel('none')} onAddToPlan={handleAddToPlan} />
-              )}
-              {activePanel === 'hotel' && (
-                <HotelCanvas tripContext={tripContext} onClose={() => setActivePanel('none')} onAddToPlan={handleAddToPlan} />
-              )}
-              {activePanel === 'train' && (
-                <TrainCanvas tripContext={tripContext} onClose={() => setActivePanel('none')} onAddToPlan={handleAddToPlan} />
-              )}
-              {activePanel === 'bus' && (
-                <BusCanvas tripContext={tripContext} onClose={() => setActivePanel('none')} onAddToPlan={handleAddToPlan} />
-              )}
-              {activePanel === 'cab' && (
-                <CabCanvas tripContext={tripContext} onClose={() => setActivePanel('none')} onAddToPlan={handleAddToPlan} />
-              )}
-
-              {activePanel === 'attractions' && (
-                <AttractionsCanvas tripContext={tripContext} onClose={() => setActivePanel('none')} onAddToPlan={handleAddToPlan} />
-              )}
-              {activePanel === 'restaurants' && (
-                <RestaurantsCanvas tripContext={tripContext} onClose={() => setActivePanel('none')} onAddToPlan={handleAddToPlan} />
-              )}
-              {activePanel === 'activities' && (
-                <AttractionsCanvas tripContext={tripContext} onClose={() => setActivePanel('none')} onAddToPlan={handleAddToPlan} />
-              )}
-
-              {/* Travel Prep Canvases */}
-              {activePanel === 'forex' && (
-                <ForexCanvas tripContext={tripContext} onClose={() => setActivePanel('none')} />
-              )}
-              {activePanel === 'visa' && (
-                <VisaCanvas tripContext={tripContext} onClose={() => setActivePanel('none')} />
-              )}
-              {activePanel === 'checkout' && (
-                <CheckoutCanvas
-                  planData={planData}
-                  workspaceId={workspaceId}
-                  onClose={() => setActivePanel('none')}
-                  onConfirmBooking={async () => {
-                    if (!workspaceId || !planData) throw new Error('No active trip to book.');
-                    // Server-authoritative booking: the state machine creates
-                    // commitment rows and stamps verified/booking provenance.
-                    // Errors are re-thrown — the checkout UI only shows success
-                    // once this has actually happened, never on a timer.
-                    const blockIds: string[] = [];
-                    const isBookable = (item: ItineraryItem | undefined) =>
-                      item && !item.isInactive && item.blockStatus !== 'booked';
-                    planData.cities.forEach((city) => {
-                      if (isBookable(city.transitToNext)) {
-                        blockIds.push(city.transitToNext!.id);
-                      }
-                      city.days.forEach((day) =>
-                        day.items.forEach((item) => {
-                          if (isBookable(item)) blockIds.push(item.id);
-                        })
-                      );
-                    });
-                    if (blockIds.length === 0) return;
-                    setIsSavingCloud(true);
-                    try {
-                      const result = await plannerService.transitionBlocks(workspaceId, {
-                        to: 'booked',
-                        block_ids: blockIds,
-                      });
-                      setPlanData(transformTripData(result.trip));
-                      // Every costed block is now committed — promote the whole
-                      // trip to Booked so it moves to the Booked sidebar bucket.
-                      try {
-                        await bookTrip.mutateAsync({});
-                      } catch (bookErr) {
-                        // 409 = some blocks still unbooked (e.g. transition
-                        // errors above); the trip stays in Recent — not fatal.
-                        console.warn('Trip-level booking not completed:', bookErr);
-                      }
-                      queryClient.invalidateQueries({ queryKey: plannerKeys.ledger(workspaceId) });
-                      queryClient.invalidateQueries({ queryKey: plannerKeys.plan(workspaceId) });
-                      queryClient.invalidateQueries({ queryKey: plannerKeys.workspaces });
-                    } catch (err) {
-                      console.error('Booking transition failed:', err);
-                      throw err;
-                    } finally {
-                      setIsSavingCloud(false);
-                    }
-                  }}
-                />
-              )}
-              {activePanel === 'wallet' && (
-                <WalletCanvas 
-                  planData={planData} 
-                  onClose={() => setActivePanel('none')} 
-                />
-              )}
+              {activePanelContent}
             </motion.div>
           )}
         </AnimatePresence>

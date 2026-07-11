@@ -1,15 +1,12 @@
-import { Attraction } from '@/services/attraction.service';
+import { Suggestion } from '@/features/planner/workspace/plan-canvas/types';
 import { X, Loader2 } from 'lucide-react';
-import { RestaurantPanel } from './restaurant-panel';
-import { SightPanel } from './sight-panel';
-import { ActivityPanel } from './activity-panel';
-import { DefaultPanel } from './default-panel';
+import { RichDetailPanel } from './rich-detail-panel';
 import { useEffect } from 'react';
 
 interface DetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  details: Attraction | null;
+  details: Suggestion | null;
   loading: boolean;
 }
 
@@ -53,10 +50,7 @@ export function DetailsModal({ isOpen, onClose, details, loading }: DetailsModal
           </div>
         ) : details ? (
           <div className="flex-1 overflow-hidden">
-            {details.category === 'restaurant' ? <RestaurantPanel place={details} /> :
-             ['tourist_attraction', 'museum', 'monument', 'temple'].includes(details.category) ? <SightPanel place={details} /> :
-             ['amusement_park', 'park', 'local_activities'].includes(details.category) ? <ActivityPanel place={details} /> :
-             <DefaultPanel place={details} />}
+            <RichDetailPanel place={details} />
           </div>
         ) : (
           <div className="flex-1 flex items-center justify-center text-slate-500">
@@ -67,3 +61,4 @@ export function DetailsModal({ isOpen, onClose, details, loading }: DetailsModal
     </div>
   );
 }
+

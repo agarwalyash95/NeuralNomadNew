@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { plannerService } from '@/services/planner.service';
-import type { PlannerWorkspace } from '@/services/planner.types';
+import { referenceService } from '@/services/reference.service';
+import type { PlannerWorkspace, TransportPreference } from '@/services/planner.types';
 
 export const plannerKeys = {
   all: ['planner'] as const,
@@ -10,7 +11,55 @@ export const plannerKeys = {
   plan: (id: string) => ['planner', 'plan', id] as const,
   proposals: (id: string) => ['planner', 'proposals', id] as const,
   ledger: (id: string) => ['planner', 'ledger', id] as const,
+  insights: (id: string) => ['planner', 'insights', id] as const,
+  transportPreference: ['planner', 'transport-preference'] as const,
+  cityBriefing: (cityName: string, month?: number) => ['reference', 'city-briefing', cityName, month ?? null] as const,
 };
+
+/**
+ * City Briefing — fetched only when the collapsed section under
+ * CityHeaderNode is actually expanded (`enabled`), since most sections
+ * never get opened. A 404 (city not on file) resolves to `null` rather
+ * than surfacing as a query error — "we don't have this city yet" is a
+ * normal, expected result here, not a failure.
+ */
+export function useCityBriefing(cityName: string, month?: number, enabled = true) {
+  return useQuery({
+    queryKey: plannerKeys.cityBriefing(cityName, month),
+    queryFn: async () => {
+      try {
+        return await referenceService.getCityBriefing(cityName, month);
+      } catch (err: any) {
+        if (err?.status === 404) return null;
+        throw err;
+      }
+    },
+    enabled: enabled && Boolean(cityName),
+    staleTime: 10 * 60_000,
+  });
+}
+
+export function useTransportPreference() {
+  return useQuery({
+    queryKey: plannerKeys.transportPreference,
+    queryFn: async () => {
+      const { facts } = await plannerService.getTravelerProfile();
+      const fact = facts.find((f) => f.key === 'transport_preference');
+      return (fact?.value as TransportPreference | undefined) ?? {};
+    },
+    staleTime: 60_000,
+  });
+}
+
+export function useSetTransportPreference() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (value: TransportPreference) => plannerService.setTransportPreference(value),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: plannerKeys.transportPreference });
+    },
+  });
+}
 
 export function useLedger(workspaceId: string | null) {
   return useQuery({
@@ -43,6 +92,9 @@ export function usePlan(workspaceId: string | null) {
     queryFn: () => plannerService.getPlan(workspaceId!),
     enabled: Boolean(workspaceId),
     retry: false, // draft workspaces legitimately 404 here
+    // Always re-fetch on mount so PlannerWorkspace never inherits a stale
+    // error cached from before the plan was generated (the 404 draft phase).
+    refetchOnMount: 'always',
   });
 }
 
@@ -64,6 +116,40 @@ export function useAcceptProposal(workspaceId: string | null) {
       if (workspaceId) {
         queryClient.invalidateQueries({ queryKey: plannerKeys.proposals(workspaceId) });
         queryClient.invalidateQueries({ queryKey: plannerKeys.plan(workspaceId) });
+        queryClient.invalidateQueries({ queryKey: plannerKeys.insights(workspaceId) });
+      }
+    },
+  });
+}
+
+export function useInsights(workspaceId: string | null) {
+  return useQuery({
+    queryKey: plannerKeys.insights(workspaceId ?? ''),
+    queryFn: () => plannerService.getInsights(workspaceId!),
+    enabled: Boolean(workspaceId),
+    retry: false,
+  });
+}
+
+export function useDismissInsight(workspaceId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (contextHash: string) => plannerService.dismissInsight(workspaceId!, contextHash),
+    onSettled: () => {
+      if (workspaceId) {
+        queryClient.invalidateQueries({ queryKey: plannerKeys.insights(workspaceId) });
+      }
+    },
+  });
+}
+
+export function useOptimizeRoute(workspaceId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => plannerService.optimizeRoute(workspaceId!),
+    onSuccess: () => {
+      if (workspaceId) {
+        queryClient.invalidateQueries({ queryKey: plannerKeys.proposals(workspaceId) });
       }
     },
   });
@@ -129,3 +215,24 @@ export function useDeleteWorkspace() {
     },
   });
 }
+
+// ─── Recommended Trips Hooks ────────────────────────────────
+
+export function useRecommendedTrips() {
+  return useQuery({
+    queryKey: ['recommended-trips'],
+    queryFn: plannerService.listRecommendedTrips,
+    staleTime: 300_000,
+  });
+}
+
+export function useCopyRecommendedTrip() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => plannerService.copyRecommendedTrip(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: plannerKeys.workspaces });
+    },
+  });
+}
+

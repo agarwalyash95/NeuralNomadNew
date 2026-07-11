@@ -73,7 +73,7 @@ export default function PlannerSidebar({ isOpen, onToggle }: PlannerSidebarProps
               <div className="mb-5 flex items-center justify-between">
                 <div className="flex flex-col">
                   <div className="mb-1 flex items-center gap-1.5">
-                    <Sparkles size={11} className="text-amber-500 fill-amber-500/10 animate-pulse" />
+                    <Sparkles size={11} className="text-amber-500 fill-amber-500/10 motion-safe:animate-pulse" />
                     <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-ink-400">
                       Neural Nomad
                     </p>

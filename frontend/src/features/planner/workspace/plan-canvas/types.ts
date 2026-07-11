@@ -39,6 +39,19 @@ export interface ItineraryItem {
   longitude?: number;
   /** Google Places id — identity link to reference data (rich hover, re-verify) */
   place_id?: string | null;
+  /** Real IATA/station code for the departure point — flight/train only. A
+   *  missing value means no real code is known; never fabricate one by
+   *  truncating a city name (that produced e.g. "MAN" for Manali, which is
+   *  actually Manchester's airport code). */
+  originCode?: string | null;
+  /** Real IATA/station code for the arrival point — flight/train only. */
+  destinationCode?: string | null;
+  /** Hotel stay-span — how many of the city segment's days (starting from
+   *  this block's own day) this booking covers. 1 or undefined means a
+   *  single-night/unspecified stay with no continuation ribbon needed. */
+  stayNights?: number;
+  checkIn?: string;
+  checkOut?: string;
   /** Reference master-table row this block was composed from */
   masterRef?: { table: string; id: number | string } | null;
   isInactive?: boolean;
@@ -129,6 +142,36 @@ export interface SuggestionDetails {
   difficulty_level?: string | null;
   star_rating?: number | null;
   price_range?: string | null;
+  // Knowledge Engine K1 additions — see docs/travel-intelligence-implementation-roadmap.md §3
+  reservation_policy?: 'walk_in' | 'recommended' | 'required' | null;
+  typical_lead_time_days?: number | null;
+  dietary_accommodations?: Record<'vegetarian' | 'vegan' | 'gluten_free' | 'halal' | 'kosher', string>;
+  accessibility_detail?: {
+    step_free?: boolean | null;
+    terrain?: string | null;
+    typical_walk_distance_m?: number | null;
+    difficulty_level?: string | null;
+  };
+  seasonal_amenities?: { amenity: string; active_months: number[] }[];
+  room_tiers?: { tier_name: string; price_premium_pct: number | null; feature_tags: string[] }[];
+  // Cached AI judgment synthesis (apps.knowledge.services.enrichment) — real
+  // for whatever's been enriched, absent for everything else (never faked).
+  insights?: Record<string, {
+    text?: string | null;
+    tags?: string[];
+    verdict?: string;
+    name?: string;
+    mention_count?: number;
+    minutes?: number;
+    provenance: { tier: string; basis?: string; source?: string };
+  }>;
+  // Approved local tips (apps.knowledge.LocalTip) — only tips that cleared
+  // the human-review gate reach the frontend; see suggestions.py::_local_tips.
+  local_tips?: {
+    category: 'scam_warning' | 'after_dark' | 'etiquette' | 'emergency_prep' | 'safety' | 'money' | 'transport' | 'food';
+    text: string;
+    confidence: 'verified' | 'estimated' | 'suggested';
+  }[];
   [key: string]: any;
 }
 

@@ -1,12 +1,14 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Star, MapPin, Phone, Map, Globe, Check, Clock, Users, Accessibility,
-  Dog, Coffee, Utensils, Compass, Zap, BedDouble, Ticket, Dumbbell,
+  Dog, Coffee, Utensils, Compass, Zap, BedDouble, Ticket, Dumbbell, Expand,
 } from 'lucide-react';
 import { Suggestion, SuggestionCategory } from '../../plan-canvas/types';
 import { ProvenanceBadge } from '@/features/planner/components/ProvenanceBadge';
+import MediaLightbox from '@/features/planner/components/MediaLightbox';
+import { clickableDivProps, FOCUS_RING_CLASS } from '@/lib/utils';
 
 /** Per-category visual identity — mirrors GenericNode's tint mapping so a
  *  suggestion card and its eventual Plan Canvas node feel like the same object. */
@@ -118,11 +120,18 @@ export default function SuggestionCard({
   const Icon = style.icon;
   const d = suggestion.details || {};
   const facts = buildFacts(suggestion);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const allPhotos = [suggestion.image_url, ...suggestion.secondary_images].filter(Boolean) as string[];
 
   return (
     <div className={`rounded-xl border bg-white transition-all overflow-hidden ${isExpanded ? style.ring : `border-slate-200 ${style.border} hover:shadow-sm`}`}>
       {/* Collapsed header — only what matters at a glance */}
-      <div className="flex items-stretch gap-3 p-3 cursor-pointer" onClick={onToggleExpand}>
+      <div
+        className={`flex items-stretch gap-3 p-3 cursor-pointer ${FOCUS_RING_CLASS}`}
+        onClick={onToggleExpand}
+        aria-expanded={isExpanded}
+        {...clickableDivProps(onToggleExpand)}
+      >
         <div className="w-1/4 shrink-0 relative bg-slate-100 rounded-lg overflow-hidden min-h-[90px]">
           {suggestion.image_url ? (
             <img src={suggestion.image_url} alt={suggestion.name} className="absolute inset-0 w-full h-full object-cover" />
@@ -195,7 +204,17 @@ export default function SuggestionCard({
               {suggestion.secondary_images.length > 0 && (
                 <div className="flex gap-2 overflow-x-auto pb-2 snap-x custom-scrollbar">
                   {suggestion.secondary_images.map((img, i) => (
-                    <img key={i} src={img} alt="" className="h-24 w-32 shrink-0 object-cover rounded-lg snap-start border border-slate-200" />
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setLightboxIndex(allPhotos.indexOf(img)); }}
+                      className="group relative h-24 w-32 shrink-0 snap-start overflow-hidden rounded-lg border border-slate-200 cursor-pointer"
+                    >
+                      <img src={img} alt="" className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+                      <span className="absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition-all group-hover:bg-black/20 group-hover:opacity-100">
+                        <Expand size={14} className="text-white drop-shadow" />
+                      </span>
+                    </button>
                   ))}
                 </div>
               )}
@@ -273,6 +292,16 @@ export default function SuggestionCard({
             </div>
           )}
         </div>
+      )}
+
+      {lightboxIndex !== null && (
+        <MediaLightbox
+          images={allPhotos}
+          index={lightboxIndex}
+          onIndexChange={setLightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+          title={suggestion.name}
+        />
       )}
     </div>
   );

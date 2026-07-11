@@ -8,8 +8,6 @@ export const referenceKeys = {
   countriesList: () => [...referenceKeys.all, 'countries', 'list'] as const,
   countriesSearch: (query: string) => [...referenceKeys.all, 'countries', 'search', query] as const,
   trainStations: (query: string) => [...referenceKeys.all, 'trainStations', query] as const,
-  currenciesList: () => [...referenceKeys.all, 'currencies', 'list'] as const,
-  currenciesSearch: (query: string) => [...referenceKeys.all, 'currencies', 'search', query] as const,
 };
 
 export function useAirports(query: string) {
@@ -56,19 +54,3 @@ export function useTrainStations(query: string) {
   });
 }
 
-export function useCurrencies() {
-  return useQuery({
-    queryKey: referenceKeys.currenciesList(),
-    queryFn: () => referenceService.getCurrencies(),
-    staleTime: 1000 * 60 * 60,
-  });
-}
-
-export function useCurrencySearch(query: string) {
-  return useQuery({
-    queryKey: referenceKeys.currenciesSearch(query),
-    queryFn: () => referenceService.searchCurrencies(query),
-    enabled: query.length > 0,
-    staleTime: 1000 * 60 * 60,
-  });
-}

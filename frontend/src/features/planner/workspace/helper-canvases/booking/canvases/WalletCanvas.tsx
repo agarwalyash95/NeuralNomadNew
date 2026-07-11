@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, Plane, Building, QrCode } from 'lucide-react';
+import { X, Plane, Building, QrCode, Ticket } from 'lucide-react';
 import { MockTripData } from '../../../plan-canvas/types';
+import { clickableDivProps, FOCUS_RING_CLASS } from '@/lib/utils';
 
 interface WalletCanvasProps {
   planData: MockTripData;
@@ -79,7 +80,7 @@ export default function WalletCanvas({ planData, onClose }: WalletCanvasProps) {
       {/* Header */}
       <div className="flex items-center justify-between border-b border-line pb-3 mb-4">
         <div className="flex items-center gap-2">
-          <span className="text-lg">🎟️</span>
+          <Ticket size={18} className="text-slate-700" />
           <h3 className="text-lg font-black uppercase tracking-wider text-slate-900">Travel Wallet</h3>
         </div>
         <button
@@ -93,7 +94,7 @@ export default function WalletCanvas({ planData, onClose }: WalletCanvasProps) {
       <div className="flex-1 flex flex-col gap-4">
         {passes.length === 0 ? (
           <div className="flex flex-col items-center justify-center text-center py-12 px-4 bg-white rounded-2xl border border-slate-200">
-            <span className="text-3xl mb-3">🎫</span>
+            <Ticket size={28} className="mb-3 text-slate-300" />
             <h4 className="text-sm font-bold text-slate-800 uppercase tracking-widest">No Active Passes</h4>
             <p className="mt-1 max-w-xs text-xs text-slate-400">
               Confirm your bookings via checkout first! Booked flights, hotel reservations, and cab tickets will display here as active passes.
@@ -113,9 +114,11 @@ export default function WalletCanvas({ planData, onClose }: WalletCanvasProps) {
                 <div
                   key={pass.id}
                   onClick={() => setActivePassId(isExpanded ? null : pass.id)}
-                  className={`relative rounded-2xl border overflow-hidden cursor-pointer shadow-xs transition-all duration-300 ${
-                    isExpanded 
-                      ? 'border-indigo-400 bg-white ring-2 ring-indigo-500/10' 
+                  {...clickableDivProps(() => setActivePassId(isExpanded ? null : pass.id))}
+                  aria-expanded={isExpanded}
+                  className={`relative rounded-2xl border overflow-hidden cursor-pointer shadow-xs transition-all duration-300 ${FOCUS_RING_CLASS} ${
+                    isExpanded
+                      ? 'border-indigo-400 bg-white ring-2 ring-indigo-500/10'
                       : 'border-slate-200 bg-white hover:border-slate-300'
                   }`}
                 >

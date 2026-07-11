@@ -290,11 +290,15 @@ export function useConversation({ workspaceId }: UseConversationProps) {
   const handleLoadingComplete = () => {
     stopPolling();
     if (workspace) {
-      // Status changed server-side (draft → planned) — refresh what we hold
+      // Plan just generated server-side — wipe the plan cache entry entirely
+      // (not just invalidate) so PlannerWorkspace gets a clean fetch instead
+      // of being served a stale error-state response. router.refresh() forces
+      // Next.js to re-render the current route segment, which remounts
+      // PlannerWorkspace and triggers a fresh usePlan() call.
+      queryClient.removeQueries({ queryKey: plannerKeys.plan(workspace.id) });
       queryClient.invalidateQueries({ queryKey: plannerKeys.workspace(workspace.id) });
-      queryClient.invalidateQueries({ queryKey: plannerKeys.plan(workspace.id) });
       queryClient.invalidateQueries({ queryKey: plannerKeys.workspaces });
-      router.push(`/planner/${workspace.id}`);
+      router.refresh();
     }
     setIsCreatingPlan(false);
     setGenerationJob(null);
