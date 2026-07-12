@@ -9,10 +9,7 @@ export interface AddTypeMenuProps {
   className?: string;
 }
 
-// Every option maps 1:1 to an existing Helper Canvas (openPanelForType in
-// PlannerWorkspace.tsx) — no "Transport" catch-all, since flight/train/bus/cab
-// are four different canvases today and a generic option would have to guess
-// which one to open.
+// Every option maps 1:1 to an existing Helper Canvas
 const ADD_TYPES: { value: string; label: string }[] = [
   { value: 'attraction', label: '🏛️ Attraction' },
   { value: 'food', label: '🍽️ Restaurant' },
@@ -23,23 +20,19 @@ const ADD_TYPES: { value: string; label: string }[] = [
   { value: 'cab', label: '🚕 Cab' },
 ];
 
-/**
- * AddTypeMenu — replaces the old hardcoded-to-'activity' add buttons. A
- * native <select> as the trigger: free keyboard nav and a touch-friendly
- * picker, no custom popover/outside-click code to get wrong.
- */
 export default function AddTypeMenu({ onSelect, label, variant = 'pill', className }: AddTypeMenuProps) {
+  // Premium travel system variables
   const base =
     variant === 'block'
-      ? 'flex w-full items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-slate-200/80 bg-white/40 p-4 text-xs font-bold text-slate-500 hover:bg-slate-55 hover:border-slate-300 hover:text-slate-700 shadow-2xs'
+      ? 'flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-line-strong bg-paper-0/60 p-4 text-[12px] font-semibold text-ink-700 hover:bg-white hover:border-[rgb(var(--color-journey)/0.6)] hover:text-ink-900 shadow-surface transition-all cursor-pointer'
       : variant === 'icon'
-        ? 'flex h-6 w-6 items-center justify-center rounded-full border border-dashed border-slate-300 bg-white/70 text-slate-400 opacity-50 hover:opacity-100 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600 shadow-2xs'
-        : 'flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-500 shadow-sm hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700';
+        ? 'flex h-7 w-7 items-center justify-center rounded-full border border-line-strong bg-white text-ink-500 hover:border-[rgb(var(--color-journey)/0.5)] hover:bg-paper-0 hover:text-ink-900 shadow-surface transition-all cursor-pointer'
+        : 'flex items-center gap-1.5 rounded-full border border-line-strong bg-white px-4 py-2 text-[11px] font-semibold text-ink-700 shadow-surface hover:border-[rgb(var(--color-journey)/0.5)] hover:bg-paper-0 hover:text-ink-900 transition-all cursor-pointer';
 
   return (
     <div className={`relative inline-flex ${variant === 'block' ? 'w-full' : ''} ${className ?? ''}`}>
       <div className={`pointer-events-none flex items-center justify-center gap-1.5 transition-all ${base} w-full`}>
-        <Plus size={variant === 'icon' ? 12 : 14} />
+        <Plus size={variant === 'icon' ? 12 : 13} className="text-[rgb(var(--color-journey))]" strokeWidth={2.5} />
         {variant !== 'icon' && label}
       </div>
       <select

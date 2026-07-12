@@ -57,6 +57,20 @@ export interface TripContext {
   activeNodeLongitude?: number;
   /** Titles already planned for the day in play — lets Helper Canvases skip suggesting duplicates */
   activeDayItemTitles?: string[];
+  /** Geo-tagged items across every day of the active city segment (not just
+   *  the active day) — a hotel booking spans the whole stay, so itinerary-
+   *  impact math needs the full segment, not one day. Real coordinates only;
+   *  items without lat/lng are omitted rather than estimated. */
+  activeCityItems?: {
+    id: string;
+    title: string;
+    type: string;
+    latitude: number;
+    longitude: number;
+    dayLabel: string;
+    dayNumber: number;
+    startTime?: string;
+  }[];
 }
 
 /** Emitted by ItineraryTimeline when any item is clicked */

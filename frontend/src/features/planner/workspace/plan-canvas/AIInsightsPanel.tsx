@@ -7,7 +7,6 @@ import {
   MapPin,
   Star,
   Sparkles,
-  Clock,
   Plane,
   Train,
   Bus,
@@ -77,9 +76,13 @@ export default function AIInsightsPanel({ pinnedItem, defaultItem, onSwapItem, o
   if (!item) {
     return (
       <div className="flex h-full w-full flex-col items-center justify-center p-6 text-center bg-paper-1">
-        <Compass size={40} className="text-slate-300 motion-safe:animate-pulse mb-3" />
-        <h4 className="text-sm font-bold text-slate-800 uppercase tracking-widest">No Item Selected</h4>
-        <p className="mt-1 max-w-xs text-xs text-slate-400">Hover over any itinerary item on the left to instantly reveal smart AI insights and coordinates details.</p>
+        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-paper-0 shadow-surface">
+          <Compass size={22} className="text-ink-400" />
+        </div>
+        <p className="text-[13px] font-semibold text-ink-700">Explore your itinerary</p>
+        <p className="mt-1.5 max-w-[200px] text-[11px] text-ink-400 leading-relaxed">
+          Hover any destination on the left to reveal insights and smart alternatives.
+        </p>
       </div>
     );
   }
@@ -203,12 +206,13 @@ export default function AIInsightsPanel({ pinnedItem, defaultItem, onSwapItem, o
                     type="button"
                     onClick={onTogglePin}
                     aria-pressed={isPinned}
-                    title={isPinned ? 'Unpin — panel will follow hover again' : 'Pin — keep showing this item while you look elsewhere'}
-                    className={`ml-auto flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider transition-colors cursor-pointer ${
+                    title={isPinned ? 'Unpin — panel follows hover' : 'Pin — keep showing while you browse'}
+                    className={`ml-auto flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider cursor-pointer ${
                       isPinned
-                        ? 'border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100'
-                        : 'border-slate-200 bg-white text-slate-400 hover:border-slate-300 hover:text-slate-600'
+                        ? 'border-[rgb(var(--color-journey)/0.5)] bg-[rgb(var(--color-journey)/0.12)] text-ink-700'
+                        : 'border-line bg-white text-ink-400 hover:text-ink-700 hover:bg-paper-0'
                     }`}
+                    style={{ transition: `all var(--motion-hover) var(--ease-out)` }}
                   >
                     {isPinned ? <PinOff size={11} /> : <Pin size={11} />}
                     {isPinned ? 'Pinned' : 'Pin'}
@@ -238,15 +242,22 @@ export default function AIInsightsPanel({ pinnedItem, defaultItem, onSwapItem, o
             )}
           </div>
 
-          {/* B. Large Image or Aesthetic Cover Card */}
+          {/* B. Image hero — photography hierarchy: 32% height with gradient overlay */}
           {item.image ? (
-            <div className="relative h-36 w-full overflow-hidden rounded-[20px] border border-white/60 shadow-sm shrink-0">
-              <img 
-                src={item.image} 
-                alt={item.title} 
-                className="h-full w-full object-cover transition-transform duration-500 hover:scale-105" 
+            <div className="relative h-36 w-full overflow-hidden rounded-2xl shrink-0 shadow-surface">
+              <img
+                src={item.image}
+                alt={item.title}
+                className="h-full w-full object-cover"
+                style={{ transition: `transform var(--motion-bar) var(--ease-out)` }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1.03)'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/40 via-transparent to-transparent" />
+              {/* Destination atmosphere gradient overlay */}
+              <div
+                className="absolute inset-0"
+                style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.05) 60%, transparent 100%)' }}
+              />
             </div>
           ) : (
             <div className={`relative h-24 w-full overflow-hidden rounded-[20px] border ${theme.cardBorder} bg-gradient-to-br ${theme.gradient} flex items-center justify-center p-4 shrink-0`}>
@@ -257,91 +268,92 @@ export default function AIInsightsPanel({ pinnedItem, defaultItem, onSwapItem, o
           {/* B2. Rich place facts — photos/hours/phone/website from reference data */}
           <RichHoverCard item={item} />
 
-          {/* C. AI Insights Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {/* 1. Main AI Recommendation/Tip — only rendered when a real tip exists */}
-            {item.aiTip && (
-              <div className={`col-span-1 md:col-span-2 rounded-[18px] border p-3.5 bg-white/70 shadow-2xs backdrop-blur-xs ${theme.cardBorder}`}>
-                <div className="flex items-center gap-2 text-indigo-700">
-                  <Sparkles size={15} className="text-indigo-500 fill-indigo-200" />
-                  <h4 className="text-[11px] font-extrabold uppercase tracking-widest text-indigo-950">AI Smart Recommendation</h4>
-                </div>
-                <p className="mt-1.5 text-xs font-semibold leading-relaxed text-slate-800 italic">
-                  &quot;{item.aiTip}&quot;
-                </p>
+          {/* C. AI Insights — only the tip, if it exists. Logistics data removed (H1: duplicates what's already on the card) */}
+          {item.aiTip && (
+            <div
+              className="rounded-2xl border p-3.5 bg-white shadow-surface"
+              style={{
+                borderColor: 'rgb(var(--color-ai) / 0.18)',
+                background: 'rgb(var(--color-ai) / 0.04)',
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <Sparkles
+                  size={13}
+                  className="shrink-0"
+                  style={{ color: 'rgb(var(--color-ai))' }}
+                />
+                {/* H3: Violet, not blue */}
+                <h4 className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'rgb(var(--color-ai))' }}>AI Insight</h4>
               </div>
-            )}
-
-            {/* 2. Details & Logistics — real local tips now come from
-                RichHoverCard's reviewed local_tips pipeline above, not an
-                invented per-category note (a Himalaya-specific "cab union"
-                tip used to render on every trip regardless of destination). */}
-            <div className="col-span-1 md:col-span-2 rounded-[18px] border border-slate-200/80 p-3 bg-white/60 shadow-2xs flex flex-col justify-between">
-              <div>
-                <div className="flex items-center gap-1.5 text-slate-800">
-                  <Clock size={15} className="text-slate-500" />
-                  <h4 className="text-[11px] font-extrabold uppercase tracking-widest text-slate-800">Logistics</h4>
-                </div>
-                
-                <div className="mt-1.5 flex flex-col gap-1 text-[11px] font-semibold text-slate-600">
-                  {item.startTime && (
-                    <p className="flex justify-between">
-                      <span className="text-slate-400">Timings:</span> 
-                      <span className="text-slate-800">{item.startTime} {item.endTime ? `to ${item.endTime}` : ''}</span>
-                    </p>
-                  )}
-                  {item.details && (
-                    <p className="mt-1 border-t border-slate-100 pt-1 leading-normal text-slate-500 font-medium">
-                      {item.details}
-                    </p>
-                  )}
-                </div>
-              </div>
+              <p className="mt-1.5 text-[11px] font-medium leading-relaxed text-ink-700">
+                {item.aiTip}
+              </p>
             </div>
-          </div>
+          )}
 
           {/* D. Alternatives — real cached candidates, or an honest path to search */}
-          <div className="mt-1 flex flex-col gap-2 border-t border-slate-200/80 pt-3">
+          <div className="mt-1 flex flex-col gap-2 border-t border-line/60 pt-3">
             <div className="flex items-center justify-between">
-              <span className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-slate-800">
-                <Sparkles size={13} className="text-blue-600" />
+              <span className="flex items-center gap-1.5 text-[11px] font-semibold text-ink-700">
+                {/* H3: Violet (AI intelligence) not blue */}
+                <Sparkles size={12} style={{ color: 'rgb(var(--color-ai))' }} />
                 Alternatives
               </span>
               {candidates.length > 0 && (
-                <span className="text-[10px] font-semibold text-slate-400">1-Click Swap</span>
+                <span className="text-[10px] font-semibold text-ink-400">1-click swap</span>
               )}
             </div>
 
             {candidates.length > 0 ? (
-              <div className="grid grid-cols-1 gap-2">
+              <div className="flex flex-col gap-2">
                 {candidates.map((cand) => (
                   <div
                     key={cand.id}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-2.5 shadow-2xs transition-all hover:border-blue-300 hover:shadow-xs"
+                    className="flex items-center justify-between gap-3 rounded-xl border border-line bg-white p-2.5 shadow-surface transition-all"
+                    style={{
+                      // H7: Violet hover border, not blue
+                      transition: `all var(--motion-card) var(--ease-out)`,
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLElement).style.borderColor = 'rgb(var(--color-ai) / 0.4)';
+                      (e.currentTarget as HTMLElement).style.boxShadow = 'var(--shadow-hover)';
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLElement).style.borderColor = '';
+                      (e.currentTarget as HTMLElement).style.boxShadow = 'var(--shadow-surface)';
+                    }}
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <h5 className="text-xs font-bold text-slate-900 truncate">{cand.title}</h5>
+                        <h5 className="text-[12px] font-semibold text-ink-900 truncate">{cand.title}</h5>
                         {cand.rating && (
-                          <span className="flex items-center gap-0.5 rounded-full bg-amber-50 px-1.5 py-0.2 text-[9px] font-bold text-amber-700">
-                            <Star size={10} className="fill-amber-400 text-amber-400" /> {cand.rating}
+                          <span className="flex items-center gap-0.5 rounded-full bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-700 shrink-0">
+                            <Star size={9} className="fill-amber-400 text-amber-400" /> {cand.rating}
                           </span>
                         )}
                       </div>
                       {cand.comparativeReason && (
-                        <p className="flex items-center gap-1 text-[10px] font-semibold text-blue-600 truncate">
+                        <p className="flex items-center gap-1 text-[10px] font-semibold truncate mt-0.5" style={{ color: 'rgb(var(--color-ai))' }}>
                           <Sparkles size={9} className="shrink-0" />
                           {cand.comparativeReason}
                         </p>
                       )}
-                      {cand.aiTip && <p className="text-[10px] text-slate-500 truncate">{cand.aiTip}</p>}
+                      {cand.aiTip && <p className="text-[10px] text-ink-400 truncate mt-0.5">{cand.aiTip}</p>}
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
-                      {cand.price && <span className="text-xs font-black text-slate-800">{cand.price}</span>}
+                      {cand.price && <span className="text-[12px] font-semibold tabular-nums text-ink-900">{cand.price}</span>}
+                      {/* C4: Violet (AI discovery), not blue (booking) */}
                       <button
                         onClick={() => onSwapItem?.(cand)}
-                        className="rounded-lg bg-blue-600 px-2.5 py-1 text-[10px] font-bold text-white shadow-2xs hover:bg-blue-700 transition-colors cursor-pointer"
+                        className="rounded-xl px-2.5 py-1 text-[10px] font-semibold text-white shadow-surface cursor-pointer active:scale-95"
+                        style={{
+                          background: 'rgb(var(--color-ai))',
+                          transition: `all var(--motion-hover) var(--ease-out)`,
+                        }}
+                        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '0.85'; }}
+                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
                       >
                         Swap
                       </button>
@@ -350,16 +362,22 @@ export default function AIInsightsPanel({ pinnedItem, defaultItem, onSwapItem, o
                 ))}
               </div>
             ) : (
-              <div className="flex flex-col items-start gap-2 rounded-xl border border-dashed border-slate-300 bg-white/50 p-3">
-                <p className="text-[11px] font-medium leading-relaxed text-slate-500">
-                  I don&apos;t have verified alternatives for this yet. Want me to search
-                  real options nearby?
+              <div className="flex flex-col items-start gap-2.5 rounded-xl border border-dashed border-line bg-paper-0 p-3">
+                <p className="text-[11px] font-medium leading-relaxed text-ink-500">
+                  No verified alternatives yet. Want me to find real options nearby?
                 </p>
+                {/* C4: Violet (AI discovery), not blue (booking) */}
                 <button
                   onClick={() => onExplore?.(item)}
-                  className="rounded-lg bg-blue-600 px-3 py-1.5 text-[11px] font-bold text-white shadow-2xs transition-colors hover:bg-blue-700 cursor-pointer"
+                  className="rounded-xl px-3 py-1.5 text-[11px] font-semibold text-white shadow-surface cursor-pointer active:scale-95"
+                  style={{
+                    background: 'rgb(var(--color-ai))',
+                    transition: `all var(--motion-hover) var(--ease-out)`,
+                  }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '0.85'; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
                 >
-                  Search real alternatives
+                  Search alternatives
                 </button>
               </div>
             )}

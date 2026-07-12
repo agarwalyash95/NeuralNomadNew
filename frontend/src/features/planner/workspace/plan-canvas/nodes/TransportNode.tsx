@@ -17,7 +17,6 @@ interface TransportNodeProps {
   onRemove?: () => void;
   onHover?: (isHovered: boolean) => void;
   onVerifyLivePrice?: (itemId: string) => void;
-  /** Starts a standing price watch — findings arrive later as proposals */
   onWatchPrice?: (itemId: string) => void;
   onTimeChange?: (field: 'start' | 'end', value: string) => void;
   moveDayOptions?: DayOption[];
@@ -26,13 +25,14 @@ interface TransportNodeProps {
 }
 
 /**
- * TransportNode — specialized node for in-day transport items.
- * Handles: flight | train | bus | cab
- * Renders a departure/arrival pill layout with an icon that switches by type.
- *
- * (Previously FlightNode — merged so all transit types share one premium layout)
+ * TransportNode — boarding-pass layout for flight | train | bus | cab.
+ * Visual hierarchy: departure city → mode icon → destination city.
+ * No photography — pure premium iconography only.
  */
-function TransportNode({ item, isLast, onClick, onRemove, onHover, onVerifyLivePrice, onWatchPrice, onTimeChange, moveDayOptions, currentDayId, onMoveToDay }: TransportNodeProps) {
+function TransportNode({
+  item, isLast, onClick, onRemove, onHover, onVerifyLivePrice,
+  onWatchPrice, onTimeChange, moveDayOptions, currentDayId, onMoveToDay
+}: TransportNodeProps) {
   const {
     attributes,
     listeners,
@@ -50,61 +50,55 @@ function TransportNode({ item, isLast, onClick, onRemove, onHover, onVerifyLiveP
 
   if (isDragging) {
     return (
-      <div 
-        ref={setNodeRef} 
-        style={{ ...style, opacity: 0.3 }} 
-        className="relative rounded-[20px] border-2 border-dashed border-slate-300 bg-slate-100/30 min-h-[141px] w-full mb-3"
+      <div
+        ref={setNodeRef}
+        style={{ ...style, opacity: 0.3 }}
+        className="relative rounded-2xl border-2 border-dashed border-line bg-paper-0 min-h-[120px] w-full mb-3"
       />
     );
   }
 
-  // ── Icon + Color scheme by type ────────────────────────────
+  // Mode-specific styles — No photography: iconography only
   const typeConfig = {
     flight: {
-      icon: <Plane size={16} fill="currentColor" />,
-      gradient: 'from-violet-50/80 to-violet-100/40 border-violet-200',
-      iconBg: 'bg-violet-100 text-violet-600',
-      lineColor: 'border-violet-200',
-      iconOverlay: <Plane size={14} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-violet-400" />,
+      icon: <Plane size={18} className="text-violet-600" />,
       label: 'Flight',
-      accentText: 'text-violet-600',
+      accentBg: 'rgb(139 92 246 / 0.06)',
+      accentBorder: 'rgb(139 92 246 / 0.15)',
+      accentText: 'rgb(109 40 217)',
+      connectorColor: 'rgb(139 92 246 / 0.3)',
     },
     train: {
-      icon: <Train size={16} fill="currentColor" />,
-      gradient: 'from-blue-50/80 to-blue-100/40 border-blue-200',
-      iconBg: 'bg-blue-100 text-blue-600',
-      lineColor: 'border-blue-200',
-      iconOverlay: <Train size={14} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-blue-400" />,
+      icon: <Train size={18} className="text-blue-600" />,
       label: 'Train',
-      accentText: 'text-blue-600',
+      accentBg: 'rgb(37 99 235 / 0.05)',
+      accentBorder: 'rgb(37 99 235 / 0.12)',
+      accentText: 'rgb(29 78 216)',
+      connectorColor: 'rgb(37 99 235 / 0.25)',
     },
     bus: {
-      icon: <Bus size={16} fill="currentColor" />,
-      gradient: 'from-sky-50/80 to-sky-100/40 border-sky-200',
-      iconBg: 'bg-sky-100 text-sky-600',
-      lineColor: 'border-sky-200',
-      iconOverlay: <Bus size={14} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-sky-400" />,
+      icon: <Bus size={18} className="text-sky-600" />,
       label: 'Bus',
-      accentText: 'text-sky-600',
+      accentBg: 'rgb(2 132 199 / 0.05)',
+      accentBorder: 'rgb(2 132 199 / 0.12)',
+      accentText: 'rgb(3 105 161)',
+      connectorColor: 'rgb(2 132 199 / 0.25)',
     },
     cab: {
-      icon: <Car size={16} fill="currentColor" />,
-      gradient: 'from-amber-50/80 to-amber-100/40 border-amber-200',
-      iconBg: 'bg-amber-100 text-amber-600',
-      lineColor: 'border-amber-200',
-      iconOverlay: <Car size={14} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-amber-400" />,
+      icon: <Car size={18} className="text-amber-600" />,
       label: 'Cab',
-      accentText: 'text-amber-600',
+      accentBg: 'rgb(217 119 6 / 0.05)',
+      accentBorder: 'rgb(217 119 6 / 0.12)',
+      accentText: 'rgb(180 83 9)',
+      connectorColor: 'rgb(217 119 6 / 0.3)',
     },
   };
 
   const config = typeConfig[item.type as keyof typeof typeConfig] ?? typeConfig.flight;
 
-  // Real codes only for flight/train, and only when the block actually
-  // carries them — a truncated city name is not an airport/station code
-  // (this used to render "Manali" as "MAN", Manchester's IATA code).
-  // Bus/cab never had codes to begin with; always shown as city names.
-  const hasRealCodes = (item.type === 'flight' || item.type === 'train') && Boolean(item.originCode && item.destinationCode);
+  const hasRealCodes =
+    (item.type === 'flight' || item.type === 'train') &&
+    Boolean(item.originCode && item.destinationCode);
   const titleParts = (item.subtitle || item.title || '').split(' to ');
   const originCity = titleParts[0]?.trim() || 'Origin';
   const destCity = titleParts[1]?.trim() || 'Destination';
@@ -113,120 +107,193 @@ function TransportNode({ item, isLast, onClick, onRemove, onHover, onVerifyLiveP
 
   return (
     <div ref={setNodeRef} style={style} className="relative">
-      <NodeWrapper type={item.type as any} time={item.startTime} endTime={item.endTime} isLast={isLast} onTimeChange={onTimeChange}>
-        <div 
+      <NodeWrapper
+        type={item.type as any}
+        time={item.startTime}
+        endTime={item.endTime}
+        isLast={isLast}
+        onTimeChange={onTimeChange}
+      >
+        <div
           className="relative group"
           onMouseEnter={() => onHover?.(true)}
           onMouseLeave={() => onHover?.(false)}
         >
+          {/* ── Boarding-pass card ────────────────────────────────────────── */}
           <div
-            className={`group flex flex-col rounded-[20px] border bg-gradient-to-br ${config.gradient} ${bookedAccentClass(item.blockStatus)} shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md overflow-hidden`}
+            className={`flex items-stretch rounded-2xl overflow-hidden ${bookedAccentClass(item.blockStatus)}`}
+            style={{
+              background: config.accentBg,
+              border: `1px solid ${config.accentBorder}`,
+              boxShadow: 'var(--shadow-surface)',
+              transition: `box-shadow var(--motion-card) var(--ease-out), transform var(--motion-card) var(--ease-out)`,
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLElement).style.boxShadow = 'var(--shadow-hover)';
+              (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)';
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.boxShadow = 'var(--shadow-surface)';
+              (e.currentTarget as HTMLElement).style.transform = 'translateY(0)';
+            }}
           >
-            {/* Dedicated drag handle strip — see GenericNode for why this
-                moved off the whole-card listeners. */}
+            {/* M8: Drag handle — left side, 44px min touch target (unified layout with GenericNode) */}
             <div
               {...attributes}
               {...listeners}
-              className="flex h-4 w-full shrink-0 cursor-grab touch-none items-center justify-center text-slate-400/60 opacity-60 transition-opacity hover:bg-black/5 hover:opacity-100 active:cursor-grabbing export-hidden"
+              className="flex w-7 shrink-0 cursor-grab touch-none items-center justify-center text-ink-400/30 transition-opacity hover:bg-black/5 hover:text-ink-500 hover:opacity-100 active:cursor-grabbing export-hidden"
+              style={{ transition: `all var(--motion-hover) var(--ease-out)`, minHeight: 44 }}
               title="Drag to reorder"
             >
-              <GripVertical size={12} className="rotate-90" />
+              <GripVertical size={13} />
             </div>
 
-            <div onClick={onClick} {...clickableDivProps(onClick)} className={`flex cursor-pointer flex-col gap-4 rounded-b-[16px] p-4 px-5 pt-1 ${FOCUS_RING_CLASS}`}>
-            {/* Header */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className={`flex h-8 w-8 items-center justify-center rounded-[10px] ${config.iconBg}`}>
-                  {config.icon}
+            {/* Clickable content */}
+            <div
+              onClick={onClick}
+              {...clickableDivProps(onClick)}
+              className={`flex flex-1 cursor-pointer flex-col gap-3 p-3.5 pl-1 ${FOCUS_RING_CLASS}`}
+            >
+              {/* Header row: label + transport type + actions */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  {/* Mode icon — no background, pure icon for clean boarding-pass feel */}
+                  <div
+                    className="flex h-8 w-8 items-center justify-center rounded-xl"
+                    style={{ background: config.accentBorder }}
+                  >
+                    {config.icon}
+                  </div>
+                  <div>
+                    <p
+                      className="text-[9px] font-bold uppercase tracking-[0.2em]"
+                      style={{ color: config.accentText }}
+                    >
+                      {config.label}
+                    </p>
+                    <h4 className="text-[13px] font-semibold text-ink-900 tracking-tight leading-snug mt-0.5">
+                      {item.title}
+                    </h4>
+                  </div>
                 </div>
-                <div>
-                  <p className={`text-[11px] font-extrabold uppercase tracking-[0.25em] ${config.accentText}`}>
-                    {item.subtitle || config.label}
+
+                <div className="flex shrink-0 items-center gap-1.5 export-hidden">
+                  {moveDayOptions && currentDayId && onMoveToDay && (
+                    <MoveToDaySelect options={moveDayOptions} currentDayId={currentDayId} onMove={onMoveToDay} />
+                  )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onRemove?.(); }}
+                    className="rounded-xl p-2 text-ink-400 hover:bg-red-50 hover:text-red-500 active:scale-95 cursor-pointer"
+                    style={{ transition: `all var(--motion-hover) var(--ease-out)`, minWidth: 32, minHeight: 32 }}
+                    title={`Delete ${config.label}`}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              </div>
+
+              {/* ── Boarding pass departure → arrival ──────────────────── */}
+              {/* H8: Solid white card with light semantic border for high contrast and luxury finish */}
+              <div className="flex items-center justify-between rounded-xl bg-white px-4 py-3 border border-line/60">
+
+                {/* Origin */}
+                <div className="text-center min-w-[70px]">
+                  <p
+                    className={`font-bold text-ink-900 ${hasRealCodes ? 'text-[20px] tabular-nums tracking-tight' : 'text-[11px] leading-tight'}`}
+                    title={origin}
+                  >
+                    {origin}
                   </p>
-                  <h4 className="mt-0.5 text-lg font-bold text-slate-900 tracking-tight">{item.title}</h4>
+                  <p className="text-[10px] font-semibold tabular-nums text-ink-500 mt-0.5">
+                    {item.startTime || 'TBD'}
+                  </p>
+                </div>
+
+                {/* Animated route connector — the visual journey */}
+                <div className="flex flex-1 flex-col items-center px-3 gap-1">
+                  <p className="text-[9px] font-semibold uppercase tracking-wider text-ink-400">Direct</p>
+                  <div
+                    className="relative w-full flex items-center justify-center"
+                    style={{ height: 24 }}
+                  >
+                    {/* Dashed connector line */}
+                    <div
+                      className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-px"
+                      style={{
+                        backgroundImage: `repeating-linear-gradient(90deg, ${config.connectorColor} 0, ${config.connectorColor} 6px, transparent 6px, transparent 12px)`,
+                      }}
+                    />
+                    {/* Mode icon centered on connector */}
+                    <div
+                      className="relative z-10 flex h-6 w-6 items-center justify-center rounded-full bg-white shadow-surface"
+                      style={{ border: `1px solid ${config.accentBorder}` }}
+                    >
+                      <div style={{ transform: 'scale(0.7)', color: config.accentText }}>
+                        {config.icon}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Price on connector */}
+                  <p className="text-[10px] font-semibold tabular-nums text-ink-500">
+                    {item.status === 'Confirmed'
+                      ? (item.price || 'Price confirmed')
+                      : (item.price ? `~${item.price}` : 'Check price')}
+                    {(() => {
+                      const conv = formatConvertedPrice(item.price);
+                      return conv ? ` (${conv})` : '';
+                    })()}
+                  </p>
+                </div>
+
+                {/* Destination */}
+                <div className="text-center min-w-[70px]">
+                  <p
+                    className={`font-bold text-ink-900 ${hasRealCodes ? 'text-[20px] tabular-nums tracking-tight' : 'text-[11px] leading-tight'}`}
+                    title={dest}
+                  >
+                    {dest}
+                  </p>
+                  <p className="text-[10px] font-semibold tabular-nums text-ink-500 mt-0.5">
+                    {item.endTime || 'TBD'}
+                  </p>
                 </div>
               </div>
-              <div className="flex shrink-0 items-center gap-1.5 export-hidden">
-                {moveDayOptions && currentDayId && onMoveToDay && (
-                  <MoveToDaySelect options={moveDayOptions} currentDayId={currentDayId} onMove={onMoveToDay} />
-                )}
-                <button
-                  onClick={(e) => { e.stopPropagation(); onRemove?.(); }}
-                  className="rounded-xl bg-rose-50 p-2 text-rose-500 border border-rose-100/80 shadow-xs hover:bg-rose-100 hover:text-rose-600 active:scale-95 transition-all cursor-pointer"
-                  title={`Delete ${config.label}`}
-                >
-                  <Trash2 size={15} />
-                </button>
-              </div>
-            </div>
 
-            {/* Departure → Arrival pill */}
-            <div className="flex items-center justify-between rounded-xl bg-white/60 p-3 px-4 shadow-sm backdrop-blur-sm border border-white">
-              <div className="text-center max-w-[90px]">
-                <p className={hasRealCodes ? 'text-lg font-bold text-slate-900' : 'text-xs font-bold text-slate-900 truncate'} title={origin}>{origin}</p>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{item.startTime || 'TBD'}</p>
-              </div>
+              {/* Footer: details + status */}
+              <div className="flex items-center justify-between gap-4">
+                {item.details ? (
+                  <p className="text-[11px] font-medium text-ink-500 truncate flex-1 leading-relaxed">
+                    {item.details}
+                  </p>
+                ) : <div className="flex-1" />}
 
-              <div className="flex flex-1 flex-col items-center px-4">
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Direct</p>
-                <div className={`relative my-1.5 w-full border-t-[1.5px] border-dashed ${config.lineColor}`}>
-                  {config.iconOverlay}
+                <div className="shrink-0 export-hidden flex items-center gap-1.5">
+                  <BookingStateChip status={item.blockStatus} />
+                  <ProvenanceBadge provenance={item.cost?.provenance} />
+                  {item.cost?.provenance?.tier !== 'verified' && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); onVerifyLivePrice?.(item.id); }}
+                      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-semibold text-ink-600 border border-line bg-white hover:bg-paper-0 active:scale-95 cursor-pointer"
+                      style={{ transition: `all var(--motion-hover) var(--ease-out)`, minHeight: 28 }}
+                    >
+                      Verify Price
+                    </button>
+                  )}
+                  {onWatchPrice && item.blockStatus !== 'booked' && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); onWatchPrice(item.id); }}
+                      title="Watch this price — I'll alert you if it drops"
+                      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-semibold text-violet-700 border border-violet-100 bg-violet-50 hover:bg-violet-100 active:scale-95 cursor-pointer"
+                      style={{ transition: `all var(--motion-hover) var(--ease-out)`, minHeight: 28 }}
+                    >
+                      <Eye size={9} /> Watch
+                    </button>
+                  )}
                 </div>
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                  {item.status === 'Confirmed' ? (item.price || 'Check Price') : (item.price ? `approx. ${item.price}` : 'Check Price')}
-                  {(() => {
-                    const conv = formatConvertedPrice(item.price);
-                    return conv ? (item.status === 'Confirmed' ? ` (${conv})` : ` approx. (${conv})`) : '';
-                  })()}
-                </p>
               </div>
-
-              <div className="text-center max-w-[90px]">
-                <p className={hasRealCodes ? 'text-lg font-bold text-slate-900' : 'text-xs font-bold text-slate-900 truncate'} title={dest}>{dest}</p>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{item.endTime || 'TBD'}</p>
-              </div>
-            </div>
-
-            {/* Details footer & Live Price Verification */}
-            <div className="flex items-center justify-between gap-4 mt-1">
-              {item.details ? (
-                <p className="text-[11px] font-medium text-slate-600 truncate flex-1">{item.details}</p>
-              ) : <div className="flex-1" />}
-              
-              <div className="shrink-0 export-hidden flex items-center gap-1.5">
-                <BookingStateChip status={item.blockStatus} />
-                <ProvenanceBadge provenance={item.cost?.provenance} />
-                {item.cost?.provenance?.tier !== 'verified' && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (onVerifyLivePrice) {
-                        onVerifyLivePrice(item.id);
-                      }
-                    }}
-                    className="inline-flex items-center gap-1 rounded-full bg-blue-50 hover:bg-blue-100 active:scale-95 transition-all px-2.5 py-0.5 text-[10px] font-bold text-blue-700 border border-blue-100 shadow-xs cursor-pointer"
-                  >
-                    Verify Live Price
-                  </button>
-                )}
-                {onWatchPrice && item.blockStatus !== 'booked' && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onWatchPrice(item.id);
-                    }}
-                    title="I'll re-check this price daily and tell you if it drops"
-                    className="inline-flex items-center gap-1 rounded-full bg-violet-50 hover:bg-violet-100 active:scale-95 transition-all px-2.5 py-0.5 text-[10px] font-bold text-violet-700 border border-violet-100 shadow-xs cursor-pointer"
-                  >
-                    <Eye size={10} />
-                    Watch
-                  </button>
-                )}
-              </div>
-            </div>
             </div>
           </div>
         </div>
@@ -235,8 +302,6 @@ function TransportNode({ item, isLast, onClick, onRemove, onHover, onVerifyLiveP
   );
 }
 
-// See GenericNode.tsx for why this ignores callback-prop identity: the
-// parent recreates every closure each render, so a plain memo never bails.
 function areEqual(prev: TransportNodeProps, next: TransportNodeProps): boolean {
   return (
     prev.item === next.item &&

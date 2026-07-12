@@ -359,7 +359,7 @@ export default function ItineraryTimeline({
               }
               setCollapsedDays(next);
             }}
-            className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-[10px] font-extrabold text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700 transition-all cursor-pointer shadow-3xs export-hidden"
+          className="flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1 text-[10px] font-semibold text-ink-500 hover:border-[rgb(var(--color-journey)/0.5)] hover:bg-paper-0 hover:text-ink-700 transition-all cursor-pointer shadow-surface export-hidden"
           >
             {localData.cities.flatMap(c => c.days).some(d => collapsedDays[d.id])
               ? <><FolderOpen size={12} /> Expand All Days</>
@@ -443,8 +443,9 @@ export default function ItineraryTimeline({
                 })()}
 
                 {!isDayCollapsed && hotelCoverage[dayIndex] && (
-                  <div className="relative py-1.5 pl-[70px] pr-4">
-                    <div className="absolute bottom-0 left-[38px] top-0 w-1 bg-slate-800" />
+                  <div className="relative py-1.5 pl-[54px] pr-4">
+                    {/* spine */}
+                    <div className="absolute bottom-0 left-[20px] top-0 w-px bg-line/60" />
                     <div className="flex items-center gap-1.5 rounded-full border border-indigo-100 bg-indigo-50/60 px-3 py-1.5 text-[10px] font-semibold text-indigo-700 w-fit">
                       <span>🏨</span>
                       <span>Staying at {hotelCoverage[dayIndex]!.title}</span>
@@ -468,8 +469,9 @@ export default function ItineraryTimeline({
                   const transit = getTransit(lastPrev, firstCurr);
                   if (transit.distanceKm <= 2) return null;
                   return (
-                    <div className="relative py-2 pl-[70px] pr-4">
-                      <div className="absolute bottom-0 left-[38px] top-0 w-1 bg-slate-800" />
+                    <div className="relative py-2 pl-[54px] pr-4">
+                      {/* spine */}
+                      <div className="absolute bottom-0 left-[20px] top-0 w-px bg-line/60" />
                       <button
                         type="button"
                         onClick={() => onItemClick?.({
@@ -514,9 +516,14 @@ export default function ItineraryTimeline({
                         const isDetour = dist > detourThresholdKm;
                         const showDistance = dist > 0.3;
                         distPill = (
-                          <div key={`dist-${item.id}-${nextItem.id}`} className="relative flex items-center gap-1.5 py-2 pl-[144px]">
-                            <div className="absolute bottom-0 left-[38px] top-0 w-1 bg-slate-800" />
-                            <div className="absolute bottom-1/2 left-[120px] top-0 w-[1.5px] bg-slate-200" />
+                          <div key={`dist-${item.id}-${nextItem.id}`} className="relative flex items-center gap-1.5 py-2 pl-[104px]">
+                            {/* main spine */}
+                            <div className="absolute bottom-0 left-[20px] top-0 w-px bg-line/60" />
+                            {/* sub-spine — dashed, softer */}
+                            <div
+                              className="absolute bottom-1/2 left-[91px] top-0 w-px"
+                              style={{ borderLeft: '1px dashed rgb(var(--line) / 0.35)' }}
+                            />
                             {showDistance && (
                               <button
                                 type="button"
@@ -536,10 +543,11 @@ export default function ItineraryTimeline({
                                   });
                                 }}
                                 className={cn(
-                                  "ml-[-0.75rem] flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-extrabold transition-all cursor-pointer backdrop-blur-xs shadow-2xs",
+                                  "flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-semibold transition-all cursor-pointer shadow-surface",
                                   isDetour
-                                    ? "bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100 hover:border-amber-450"
-                                    : "bg-white border-slate-200 text-slate-600 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600"
+                                    ? "bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100 hover:border-amber-400"
+                                    // C3: neutral hover — NOT blue. Info pill hover = amber (caution), not booking
+                                    : "bg-white border-line text-ink-600 hover:bg-amber-50/60 hover:border-amber-200/80 hover:text-amber-700"
                                 )}
                                 title={isDetour ? "Noticeably farther than this day's other legs. Click to book transport." : "Click to book a taxi/cab for this transit"}
                               >
@@ -552,7 +560,7 @@ export default function ItineraryTimeline({
                             <AddTypeMenu
                               variant="icon"
                               label="Insert stop"
-                              className={cn('export-hidden', showDistance ? '' : 'ml-[-0.75rem]')}
+                              className={cn('export-hidden', showDistance ? '' : 'ml-[-0.25rem]')}
                               onSelect={(nodeType) => onItemClick?.({
                                 nodeId: `insert-${item.id}-${nextItem.id}`,
                                 nodeType,
@@ -648,34 +656,45 @@ export default function ItineraryTimeline({
                     })}
 
                     {day.items.filter(item => !item.isInactive).length === 0 && (
-                      <div className="relative py-4 pl-[70px] pr-4">
-                        <div className="absolute bottom-0 left-[38px] top-0 w-1 bg-slate-800" />
-                        <AddTypeMenu
-                          variant="block"
-                          label={`Add to Day ${day.dayNumber}`}
-                          className="export-hidden"
-                          onSelect={(nodeType) => onItemClick?.({
-                            nodeId: `add-activity-${day.id}`,
-                            nodeType,
-                            nodeTitle: `Add to Day ${day.dayNumber}`,
-                            dayId: day.id,
-                            dayNumber: day.dayNumber,
-                            dayLabel: `Day ${day.dayNumber}`,
-                            cityId: city.id,
-                            cityName: city.cityName,
-                            dateStr: day.dateStr,
-                            subtitle: `Exploring ${city.cityName}`,
-                            startTime: '09:00',
-                          })}
-                        />
+                      <div className="relative py-4 pl-[54px] pr-4">
+                        {/* spine */}
+                        <div className="absolute bottom-0 left-[20px] top-0 w-px bg-line/60" />
+                        {/* horizontal connector line connecting spine to the empty menu */}
+                        <div className="absolute left-[20px] top-1/2 -translate-y-1/2 w-[34px] h-px bg-line/60" />
+                        <div className="flex flex-col items-start gap-1.5 ml-2.5">
+                          <p className="text-[11px] font-medium text-ink-400 italic">No activities planned</p>
+                          <AddTypeMenu
+                            variant="block"
+                            label="Add stop"
+                            className="export-hidden"
+                            onSelect={(nodeType) => onItemClick?.({
+                              nodeId: `add-activity-${day.id}`,
+                              nodeType,
+                              nodeTitle: `Add to Day ${day.dayNumber}`,
+                              dayId: day.id,
+                              dayNumber: day.dayNumber,
+                              dayLabel: `Day ${day.dayNumber}`,
+                              cityId: city.id,
+                              cityName: city.cityName,
+                              dateStr: day.dateStr,
+                              subtitle: `Exploring ${city.cityName}`,
+                              startTime: '09:00',
+                            })}
+                          />
+                        </div>
                       </div>
                     )}
 
                     {day.items.filter(item => !item.isInactive).length > 0 && (
-                      <div className="relative py-4 pl-[144px]">
-                        <div className="absolute bottom-0 left-[38px] top-0 w-1 bg-slate-800" />
-                        <div className="absolute bottom-1/2 left-[120px] top-0 w-[1.5px] bg-slate-200" />
-                        <div className="ml-[-1rem] flex justify-start">
+                      <div className="relative py-4 pl-[104px]">
+                        {/* spine */}
+                        <div className="absolute bottom-0 left-[20px] top-0 w-px bg-line/60" />
+                        {/* sub-spine */}
+                        <div
+                          className="absolute bottom-1/2 left-[91px] top-0 w-px"
+                          style={{ borderLeft: '1px dashed rgb(var(--line) / 0.35)' }}
+                        />
+                        <div className="ml-[-0.25rem] flex justify-start">
                           <AddTypeMenu
                             variant="pill"
                             label="Add"

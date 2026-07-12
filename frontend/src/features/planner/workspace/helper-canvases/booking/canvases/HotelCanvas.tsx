@@ -2,16 +2,20 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { BedDouble, Calendar, Users, Info } from 'lucide-react';
+import { BedDouble, Calendar, Users, Info, SlidersHorizontal } from 'lucide-react';
 import { referenceService } from '@/services/reference.service';
 import { TripContext } from '../../../types';
 import CanvasHeader from '../../shared/CanvasHeader';
 import SearchSummaryBar from '../../shared/SearchSummaryBar';
 import QuickFilterBar from '../../shared/QuickFilterBar';
-import ReplaceConfirmBar from '../../shared/ReplaceConfirmBar';
-import SuggestionCard from '../../shared/SuggestionCard';
-import CurrentlyBookedCard from '../../shared/CurrentlyBookedCard';
 import { ItineraryItem, Suggestion } from '../../../plan-canvas/types';
+import HotelCard from './hotel/HotelCard';
+import HotelCardSkeleton from './hotel/HotelCardSkeleton';
+import HotelCompareTray from './hotel/HotelCompareTray';
+import HotelConfirmBar from './hotel/HotelConfirmBar';
+import HotelFilterSheet, { DEFAULT_HOTEL_FILTERS, isFiltersDefault, type HotelFilters } from './hotel/HotelFilterSheet';
+import { computeItineraryImpact, minutesSavedVsCurrent, type ItineraryImpact } from './hotel/itineraryImpact';
+import { computeTripFit } from './hotel/tripFit';
 
 interface HotelCanvasProps {
   onClose?: () => void;
@@ -20,14 +24,18 @@ interface HotelCanvasProps {
 }
 
 const QUICK_FILTER_TAGS = ['All', '4+ Stars', 'Budget', 'Premium'];
+const PRICE_TIER_RANK: Record<string, number> = { $: 1, $$: 2, $$$: 3, $$$$: 4 };
 
 export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: HotelCanvasProps) {
-  const defaultLocation = tripContext.activeNodeCityName || tripContext.destination || 'Manali';
-  const [searchQuery, setSearchQuery] = useState(`${defaultLocation}, India`);
+  const defaultLocation = tripContext.activeNodeCityName || tripContext.destination;
+  const [searchQuery, setSearchQuery] = useState(defaultLocation ? `${defaultLocation}, India` : '');
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const [filters, setFilters] = useState<HotelFilters>(DEFAULT_HOTEL_FILTERS);
   const [loading, setLoading] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>(['All']);
   const [pendingItem, setPendingItem] = useState<Suggestion | null>(null);
+  const [pinnedIds, setPinnedIds] = useState<number[]>([]);
 
   // Accordion state
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -40,7 +48,7 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
 
   useEffect(() => {
     const loc = tripContext.activeNodeCityName || tripContext.destination;
-    setSearchQuery(loc ? `${loc}, India` : 'Manali, India');
+    setSearchQuery(loc ? `${loc}, India` : '');
   }, [tripContext.tripId, tripContext.activeNodeCityName, tripContext.destination]);
 
   const fetchHotels = async (query: string) => {
@@ -89,6 +97,33 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
     () => new Set((tripContext.activeDayItemTitles || []).map(t => t.trim().toLowerCase())),
     [tripContext.activeDayItemTitles]
   );
+
+  const hasItineraryData = (tripContext.activeCityItems?.length ?? 0) > 0;
+
+  // Real coordinates only — the currently-booked hotel's impact, used both
+  // for the comparison anchor and every card's "saves N min vs. current".
+  const currentHotelImpact: ItineraryImpact | null = useMemo(() => {
+    if (tripContext.activeNodeType !== 'hotel') return null;
+    return computeItineraryImpact(tripContext.activeNodeLatitude, tripContext.activeNodeLongitude, tripContext.activeCityItems);
+  }, [tripContext.activeNodeType, tripContext.activeNodeLatitude, tripContext.activeNodeLongitude, tripContext.activeCityItems]);
+
+  // Per-hotel itinerary impact, computed once against the full raw result
+  // set so Trip Fit percentiles stay stable regardless of active filters.
+  const impactsById = useMemo(() => {
+    const map = new Map<number, ItineraryImpact | null>();
+    results.forEach((h) => map.set(h.id, computeItineraryImpact(h.latitude, h.longitude, tripContext.activeCityItems)));
+    return map;
+  }, [results, tripContext.activeCityItems]);
+
+  const fitsById = useMemo(() => {
+    const allImpacts = results.map((h) => impactsById.get(h.id) ?? null);
+    const map = new Map<number, ReturnType<typeof computeTripFit>>();
+    results.forEach((h) => {
+      map.set(h.id, computeTripFit(h, impactsById.get(h.id) ?? null, currentHotelImpact, allImpacts, results));
+    });
+    return map;
+  }, [results, impactsById, currentHotelImpact]);
+
   const tagFiltered = useMemo(() => {
     if (selectedTags.length === 0 || selectedTags.includes('All')) return results;
     return results.filter(h => selectedTags.every(tag => {
@@ -98,9 +133,28 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
       return true;
     }));
   }, [results, selectedTags]);
+
+  const sheetFiltered = useMemo(() => {
+    if (isFiltersDefault(filters)) return tagFiltered;
+    return tagFiltered.filter((h) => {
+      const tier = h.details?.price_range ? PRICE_TIER_RANK[h.details.price_range] : undefined;
+      if (tier != null && tier > filters.maxPriceTier) return false;
+      if (filters.minRating > 0 && (h.rating ?? 0) < filters.minRating) return false;
+      if (filters.minTripFit > 0 && (fitsById.get(h.id)?.score ?? 0) < filters.minTripFit) return false;
+      if (filters.familyFriendly && !h.details?.good_for_children) return false;
+      if (filters.propertyTypes.length > 0 && !filters.propertyTypes.includes(h.subtitle)) return false;
+      return true;
+    });
+  }, [tagFiltered, filters, fitsById]);
+
+  // Best-for-your-trip is the default sort — Trip Fit leads, not rating or price.
   const visibleResults = useMemo(
-    () => tagFiltered.filter(h => !plannedTitles.has(h.name.trim().toLowerCase())),
-    [tagFiltered, plannedTitles]
+    () =>
+      sheetFiltered
+        .filter(h => !plannedTitles.has(h.name.trim().toLowerCase()))
+        .slice()
+        .sort((a, b) => (fitsById.get(b.id)?.score ?? 0) - (fitsById.get(a.id)?.score ?? 0)),
+    [sheetFiltered, plannedTitles, fitsById]
   );
 
   const toggleExpand = async (suggestion: Suggestion) => {
@@ -124,6 +178,12 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
       setDetailsLoading(false);
     }
   };
+
+  const togglePin = (id: number) => {
+    setPinnedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : prev.length < 3 ? [...prev, id] : prev));
+  };
+
+  const isReplacing = tripContext.activeNodeType === 'hotel' && !!tripContext.activeNodeTitle;
 
   const handleConfirmReplace = () => {
     if (!pendingItem || !onAddToPlan) return;
@@ -157,35 +217,39 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
     setExpandedId(null);
   };
 
-  const searchSummary = `Hotels in ${tripContext.destination || 'Manali'}`;
+  const searchSummary = tripContext.destination ? `Hotels in ${tripContext.destination}` : 'Hotels';
+  const activeFilterCount = (filters.propertyTypes.length > 0 ? 1 : 0) + [filters.maxPriceTier < 4, filters.minRating > 0, filters.minTripFit > 0, filters.familyFriendly].filter(Boolean).length;
+
+  const pinnedHotels = pinnedIds
+    .map((id) => results.find((h) => h.id === id))
+    .filter((h): h is Suggestion => !!h)
+    .map((hotel) => ({ hotel, impact: impactsById.get(hotel.id) ?? null, fit: fitsById.get(hotel.id)! }));
 
   return (
-    <div className="flex h-full flex-col bg-white">
+    <div className="flex h-full flex-col bg-paper-0">
       <CanvasHeader
         icon={<BedDouble size={18} />}
-        iconColor="bg-indigo-600"
+        iconColor="bg-cat-stay"
         label="Hotels"
         title={searchSummary}
         tripContext={tripContext}
         onClose={onClose}
       />
-      <CurrentlyBookedCard tripContext={tripContext} nodeType="hotel" />
-
       {/* Stay-context bar — real dates/nights/guests from the trip itself,
           so a hotel card doesn't have to guess what it's being booked for. */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-slate-100 bg-indigo-50/40 px-4 py-2.5 text-[11px] font-semibold text-slate-700">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-line bg-cat-stay/5 px-4 py-2.5 text-caption font-semibold">
         {stayContext.checkIn && (
-          <span className="flex items-center gap-1.5">
-            <Calendar size={12} className="text-indigo-500" />
+          <span className="flex items-center gap-1.5 text-ink-700">
+            <Calendar size={12} className="text-cat-stay" />
             {stayContext.checkIn}{stayContext.checkOut && stayContext.checkOut !== stayContext.checkIn ? ` → ${stayContext.checkOut}` : ''}
             {stayContext.nights ? ` · ${stayContext.nights} night${stayContext.nights === 1 ? '' : 's'}` : ''}
           </span>
         )}
-        <span className="flex items-center gap-1.5">
-          <Users size={12} className="text-indigo-500" />
+        <span className="flex items-center gap-1.5 text-ink-700">
+          <Users size={12} className="text-cat-stay" />
           {stayContext.guests} guest{stayContext.guests === 1 ? '' : 's'}
         </span>
-        <span className="ml-auto flex items-center gap-1 text-slate-400" title="HotelMaster listings don't carry a live nightly rate yet — prices need checking with the property directly.">
+        <span className="ml-auto flex items-center gap-1 text-ink-400" title="HotelMaster listings don't carry a live nightly rate yet — prices need checking with the property directly.">
           <Info size={11} />
           No live rate yet
         </span>
@@ -193,70 +257,102 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
 
       <div className="custom-scrollbar flex-1 overflow-y-auto">
         {!isSearchExpanded && (
-          <SearchSummaryBar primary={searchSummary} secondary="Stays near your itinerary" accentColor="group-hover:text-indigo-600" onClick={() => setIsSearchExpanded(true)}>
-            <QuickFilterBar
-              tags={QUICK_FILTER_TAGS}
-              selected={selectedTags}
-              activeColor="border-indigo-600 bg-indigo-600 text-white shadow-sm"
-              hoverColor="border-slate-200 bg-white text-slate-600 hover:border-indigo-300 hover:bg-indigo-50"
-              onToggle={tag => setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}
-            />
+          <SearchSummaryBar primary={searchSummary} secondary="Stays near your itinerary" accentColor="group-hover:text-cat-stay" onClick={() => setIsSearchExpanded(true)}>
+            <div className="flex items-center justify-between gap-2">
+              <QuickFilterBar
+                tags={QUICK_FILTER_TAGS}
+                selected={selectedTags}
+                activeColor="border-cat-stay bg-cat-stay text-white shadow-sm"
+                hoverColor="border-line bg-paper-2 text-ink-600 hover:border-cat-stay/40 hover:bg-cat-stay/5"
+                onToggle={tag => setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}
+              />
+              <button
+                type="button"
+                onClick={() => setFilterSheetOpen((o) => !o)}
+                className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  filterSheetOpen || activeFilterCount > 0 ? 'border-cat-stay bg-cat-stay text-white' : 'border-line bg-paper-2 text-ink-600 hover:border-cat-stay/40'
+                }`}
+              >
+                <SlidersHorizontal size={12} /> Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+              </button>
+            </div>
           </SearchSummaryBar>
         )}
 
         {isSearchExpanded && (
-          <div className="border-b border-slate-200 bg-white p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-slate-800">Search Hotels</h3>
-              <button onClick={() => setIsSearchExpanded(false)} className="text-xs font-semibold text-slate-500">Cancel</button>
+          <div className="border-b border-line bg-paper-2 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-ink-900">Search Hotels</h3>
+              <button onClick={() => setIsSearchExpanded(false)} className="text-xs font-semibold text-ink-500">Cancel</button>
             </div>
             <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
               placeholder="e.g. Manali, India"
-              className="w-full rounded-xl border border-slate-200 p-3 text-sm text-slate-900 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
+              className="w-full rounded-xl border border-line p-3 text-sm text-ink-900 outline-none focus:border-cat-stay focus:ring-2 focus:ring-cat-stay/15" />
           </div>
         )}
 
-        <div className="p-4">
+        {filterSheetOpen && (
+          <HotelFilterSheet results={results} filters={filters} onChange={setFilters} onClose={() => setFilterSheetOpen(false)} />
+        )}
+
+        <div className="space-y-3 p-4">
           {loading ? (
-            <div className="flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-8">
-              <div className="mb-3 h-10 w-10 animate-spin rounded-full border-3 border-slate-200 border-t-indigo-600" />
-              <p className="text-sm font-semibold text-slate-600">Finding hotels...</p>
-            </div>
+            <>
+              <HotelCardSkeleton />
+              <HotelCardSkeleton />
+              <HotelCardSkeleton />
+            </>
           ) : visibleResults.length > 0 ? (
-            <div className="space-y-3">
-              <p className="text-xs font-semibold text-slate-500">{visibleResults.length} hotels found</p>
-              {visibleResults.map((hotel) => (
-                <SuggestionCard
-                  key={hotel.id}
-                  suggestion={hotel}
-                  isExpanded={expandedId === hotel.id}
-                  isPending={pendingItem?.id === hotel.id}
-                  detailsLoading={detailsLoading && expandedId === hotel.id && !expandedData}
-                  onToggleExpand={() => toggleExpand(hotel)}
-                  onSelect={() => setPendingItem(expandedId === hotel.id ? (expandedData || hotel) : hotel)}
-                  selectLabel="Select Hotel"
-                />
-              ))}
-            </div>
+            <>
+              <p className="text-xs font-semibold text-ink-500">{visibleResults.length} hotel{visibleResults.length === 1 ? '' : 's'} · best fit for your trip first</p>
+              <div role="list" aria-label="Hotel results" className="space-y-3">
+                {visibleResults.map((hotel, i) => (
+                  <div key={hotel.id} role="listitem" aria-setsize={visibleResults.length} aria-posinset={i + 1}>
+                    <HotelCard
+                      hotel={hotel}
+                      fit={fitsById.get(hotel.id)!}
+                      impact={impactsById.get(hotel.id) ?? null}
+                      hasItineraryData={hasItineraryData}
+                      minutesSaved={minutesSavedVsCurrent(impactsById.get(hotel.id) ?? null, currentHotelImpact)}
+                      isExpanded={expandedId === hotel.id}
+                      isPending={pendingItem?.id === hotel.id}
+                      isPinned={pinnedIds.includes(hotel.id)}
+                      canPin={pinnedIds.length < 3}
+                      detailsLoading={detailsLoading && expandedId === hotel.id && !expandedData}
+                      expandedDetails={expandedId === hotel.id ? expandedData : null}
+                      onToggleExpand={() => toggleExpand(hotel)}
+                      onSelect={() => setPendingItem(expandedId === hotel.id ? (expandedData || hotel) : hotel)}
+                      onTogglePin={() => togglePin(hotel.id)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </>
           ) : (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-8 text-center">
-              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-200"><BedDouble size={24} className="text-slate-400" /></div>
-              <p className="text-sm font-semibold text-slate-600">No hotels found near {tripContext.destination || 'this trip'}</p>
+            <div className="rounded-xl border border-line bg-paper-1 p-8 text-center">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-cat-stay/10"><BedDouble size={24} className="text-cat-stay" /></div>
+              <p className="text-sm font-semibold text-ink-700">No hotels found{tripContext.destination ? ` near ${tripContext.destination}` : ''}</p>
+              {!isFiltersDefault(filters) && (
+                <button type="button" onClick={() => setFilters(DEFAULT_HOTEL_FILTERS)} className="mt-2 text-xs font-semibold text-cat-stay hover:underline">
+                  Clear filters
+                </button>
+              )}
             </div>
           )}
         </div>
       </div>
 
-      {pendingItem && onAddToPlan && (
-        <ReplaceConfirmBar
+      {pendingItem && onAddToPlan ? (
+        <HotelConfirmBar
           newItemTitle={pendingItem.name}
           newItemPrice={pendingItem.price_label || undefined}
           tripContext={tripContext}
-          confirmColor="bg-indigo-600 hover:bg-indigo-700"
-          confirmLabel="Add to trip"
+          isReplacing={isReplacing}
           onCancel={() => setPendingItem(null)}
           onConfirm={handleConfirmReplace}
         />
+      ) : (
+        <HotelCompareTray pinned={pinnedHotels} onUnpin={togglePin} onSelect={setPendingItem} />
       )}
     </div>
   );

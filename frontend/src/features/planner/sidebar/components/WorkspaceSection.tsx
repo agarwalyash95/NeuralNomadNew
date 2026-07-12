@@ -26,29 +26,37 @@ export function WorkspaceSection({
   if (workspaces.length === 0 && !emptyMessage) return null;
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between px-2 mb-1.5">
-        <h3 className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#968f83]">
+    <div className="pt-4 first:pt-0">
+      {/* Ultra-subtle section label — whitespace over borders */}
+      <div className="flex items-center gap-2 px-2 mb-2">
+        <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-ink-400">
           {title}
-        </h3>
+        </span>
         {workspaces.length > 0 && (
-          <span className="text-[9px] font-bold bg-[#e8e3d5]/60 text-[#7c756a] px-2 py-0.5 rounded-full scale-90">
+          <span className="text-[9px] font-semibold text-ink-400/60 tabular-nums">
             {workspaces.length}
           </span>
         )}
       </div>
 
-      <div className="max-h-[220px] overflow-y-auto custom-scrollbar pr-0.5 space-y-1.5">
+      <div className="space-y-0.5">
         {workspaces.length > 0 ? (
           workspaces.map((workspace) => {
             const hasPlan = hasGeneratedPlan(workspace);
             const dateStr = workspace.last_activity_at
-              ? new Date(workspace.last_activity_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+              ? new Date(workspace.last_activity_at).toLocaleDateString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                })
               : '';
             return (
               <SidebarItem
                 key={workspace.id}
-                icon={hasPlan ? <Map size={14} strokeWidth={1.8} /> : <MessageSquare size={14} strokeWidth={1.8} />}
+                icon={
+                  hasPlan
+                    ? <Map size={13} strokeWidth={1.7} />
+                    : <MessageSquare size={13} strokeWidth={1.7} />
+                }
                 label={workspace.title}
                 dateStr={dateStr}
                 status={workspace.status}
@@ -62,7 +70,9 @@ export function WorkspaceSection({
             );
           })
         ) : (
-          <p className="px-2 py-2 text-xs text-[#968f83]/80 italic font-medium">{emptyMessage}</p>
+          <p className="px-2 py-1.5 text-[11px] text-ink-400 italic">
+            {emptyMessage}
+          </p>
         )}
       </div>
     </div>

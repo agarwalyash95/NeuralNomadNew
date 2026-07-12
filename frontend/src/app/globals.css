@@ -1,12 +1,19 @@
 /**
- * Global styles
+ * Global styles — NeuralNomad Premium Travel Design System
+ *
+ * North Star: Every visual decision should evoke anticipation, exploration,
+ * movement, and calm. Calmer, easier to scan, more emotionally connected
+ * to the journey always wins over visually impressive.
  */
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Variables */
+/* ── Google Fonts — Inter ─────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* ── Variables ────────────────────────────────────────────────────────────── */
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -39,63 +46,139 @@
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
 
-    /* ── Planner design tokens (warm-paper system) ──
-       RGB triplets so Tailwind alpha modifiers (bg-paper-1/95) keep working. */
-    --paper-0: 246 244 239;   /* page shell      #f6f4ef */
-    --paper-1: 251 250 247;   /* panels          #fbfaf7 */
-    --paper-2: 255 255 255;   /* cards           #ffffff */
-    --line: 226 221 210;      /* hairline        #e2ddd2 */
-    --line-strong: 221 215 202; /* borders       #ddd7ca */
-    --ink-900: 30 30 26;      /* headings        #1e1e1a */
-    --ink-700: 68 64 58;      /* body            #44403a */
-    --ink-500: 122 116 107;   /* muted           #7a746b — darkened from #8c857b, which was 3.6:1 on white (AX1: fails AA's 4.5:1 for the 10-11.5px text this token is used at) */
-    --ink-400: 156 149 123;   /* faint labels    #9c957b */
+    /* ── Warm paper surface system ────────────────────────────────────────── */
+    --paper-0: 246 244 239;    /* page shell      #f6f4ef */
+    --paper-1: 251 250 247;    /* panels          #fbfaf7 */
+    --paper-2: 255 255 255;    /* cards           #ffffff */
+    --line: 226 221 210;       /* hairline        #e2ddd2 */
+    --line-strong: 221 215 202; /* borders        #ddd7ca */
+    --ink-900: 30 30 26;       /* headings        #1e1e1a */
+    --ink-700: 68 64 58;       /* body            #44403a */
+    --ink-500: 122 116 107;    /* muted           #7a746b */
+    --ink-400: 156 149 123;    /* faint labels    #9c957b */
 
-    /* Trust grammar — every price wears one of these */
-    --trust-verified: 5 150 105;    /* emerald-600 */
-    --trust-estimated: 217 119 6;   /* amber-600   */
-    --trust-suggested: 124 58 237;  /* violet-600  */
+    /* ── Semantic color system (Color Psychology) ─────────────────────────
+       Blue    = Booking & navigation ONLY
+       Violet  = AI intelligence ONLY
+       Amber   = Caution / suggestions
+       Green   = Confirmed / success
+       Red     = Problems / errors
+       Sand    = Journey progress / selected state
+       Slate   = Supporting information
+    ─────────────────────────────────────────────────────────────────────── */
+    --color-booking:   37 99 235;    /* blue-600   — booking, nav, links */
+    --color-ai:        124 58 237;   /* violet-600 — AI, smart features */
+    --color-caution:   217 119 6;    /* amber-600  — suggestions, warnings */
+    --color-confirmed: 5 150 105;    /* emerald-600 — booked, verified */
+    --color-error:     220 38 38;    /* red-600    — problems, delete */
+    --color-journey:   200 184 154;  /* sand       — selected, active state */
+    --color-support:   100 116 139;  /* slate-500  — metadata, captions */
+
+    /* Trust grammar */
+    --trust-verified:  5 150 105;
+    --trust-estimated: 217 119 6;
+    --trust-suggested: 124 58 237;
 
     /* Block category accents */
-    --cat-transport: 2 132 199;   /* sky-600    */
-    --cat-stay: 79 70 229;        /* indigo-600 */
-    --cat-food: 234 88 12;        /* orange-600 */
-    --cat-activity: 5 150 105;    /* emerald-600 */
-    --cat-attraction: 124 58 237; /* violet-600 */
+    --cat-transport: 2 132 199;
+    --cat-stay:      79 70 229;
+    --cat-food:      234 88 12;
+    --cat-activity:  5 150 105;
+    --cat-attraction: 124 58 237;
+
+    /* ── Shadow system — soft daylight, three levels only ─────────────────
+       Surface: resting cards — barely visible
+       Hover:   lifted card — physical feel
+       Modal:   panels, dropdowns, floating controls
+    ─────────────────────────────────────────────────────────────────────── */
+    --shadow-surface: 0 1px 3px rgba(0,0,0,0.04), 0 1px 8px rgba(0,0,0,0.04);
+    --shadow-hover:   0 4px 16px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.05);
+    --shadow-modal:   0 20px 60px rgba(0,0,0,0.12), 0 8px 24px rgba(0,0,0,0.08);
+
+    /* ── Destination atmosphere — semantic tokens only ────────────────────
+       Set data-dest-type="mountain|beach|city|snow|desert" on workspace root.
+       CSS maps the type to these tokens. Never hardcode hex per destination.
+    ─────────────────────────────────────────────────────────────────────── */
+    --dest-accent:    200 184 154;   /* default: sand */
+    --dest-bg:        246 244 239;   /* default: warm paper */
+    --dest-card-tint: 255 255 255;   /* default: white */
+
+    /* Per-type mappings (overridden by [data-dest-type] selectors below) */
+    --dest-mountain-accent: 74 222 128;   /* cool green */
+    --dest-mountain-bg:     240 247 240;
+    --dest-beach-accent:    34 211 238;   /* warm aqua */
+    --dest-beach-bg:        255 248 240;
+    --dest-city-accent:     148 163 184;  /* neutral slate */
+    --dest-city-bg:         248 250 252;
+    --dest-snow-accent:     186 230 253;  /* cool blue-white */
+    --dest-snow-bg:         240 244 250;
+    --dest-desert-accent:   212 169 106;  /* warm ochre */
+    --dest-desert-bg:       255 251 245;
+
+    /* ── Motion timing ────────────────────────────────────────────────────
+       Nothing faster than 120ms.
+       Hover: 120ms | Cards: 180ms | Panels: 280ms | Pages: 320ms | Bars: 600ms
+    ─────────────────────────────────────────────────────────────────────── */
+    --motion-hover:  120ms;
+    --motion-card:   180ms;
+    --motion-panel:  280ms;
+    --motion-page:   320ms;
+    --motion-bar:    600ms;
+    --ease-ios:      cubic-bezier(0.25, 0.1, 0.25, 1);
+    --ease-out:      cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* ── Destination atmosphere overrides ──────────────────────────────────── */
+  [data-dest-type="mountain"] {
+    --dest-accent:    var(--dest-mountain-accent);
+    --dest-bg:        var(--dest-mountain-bg);
+    --dest-card-tint: 247 252 247;
+  }
+  [data-dest-type="beach"] {
+    --dest-accent:    var(--dest-beach-accent);
+    --dest-bg:        var(--dest-beach-bg);
+    --dest-card-tint: 255 252 248;
+  }
+  [data-dest-type="city"] {
+    --dest-accent:    var(--dest-city-accent);
+    --dest-bg:        var(--dest-city-bg);
+    --dest-card-tint: 250 252 254;
+  }
+  [data-dest-type="snow"] {
+    --dest-accent:    var(--dest-snow-accent);
+    --dest-bg:        var(--dest-snow-bg);
+    --dest-card-tint: 245 249 255;
+  }
+  [data-dest-type="desert"] {
+    --dest-accent:    var(--dest-desert-accent);
+    --dest-bg:        var(--dest-desert-bg);
+    --dest-card-tint: 255 252 245;
   }
 
   .dark {
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
-
     --card: 222.2 84% 4.9%;
     --card-foreground: 210 40% 98%;
-
     --popover: 222.2 84% 4.9%;
     --popover-foreground: 210 40% 98%;
-
     --muted: 217.2 32.6% 17.5%;
     --muted-foreground: 215 20.3% 65.1%;
-
     --accent: 217.2 91.2% 59.8%;
     --accent-foreground: 222.2 47.6% 11.2%;
-
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
-
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 212.7 26.8% 83.9%;
-
     --primary: 217.2 91.2% 59.8%;
     --primary-foreground: 222.2 47.6% 11.2%;
-
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
   }
 }
 
-/* Base styles */
+/* ── Base styles ──────────────────────────────────────────────────────────── */
 @layer base {
   * {
     @apply border-border;
@@ -103,38 +186,153 @@
 
   body {
     @apply bg-background text-foreground;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }
 
-/* Planner type scale — one ramp for the whole feature */
+/* ── Type scale — travel hierarchy ───────────────────────────────────────── */
 @layer utilities {
+  /* Hero: trip titles, city chapter headings */
+  .text-hero    { @apply text-[28px] leading-8 font-bold tracking-tight text-ink-900; }
+  /* Display: section titles */
   .text-display { @apply text-[22px] leading-7 font-semibold tracking-tight text-ink-900; }
+  /* Title: card titles, day titles */
   .text-title   { @apply text-[15px] leading-[22px] font-semibold text-ink-900; }
+  /* Body: readable content */
   .text-body    { @apply text-[13px] leading-5 text-ink-700; }
+  /* Caption: metadata, supporting info */
   .text-caption { @apply text-[11.5px] leading-4 text-ink-500; }
+  /* Micro: labels, badges, eyebrow text */
   .text-micro   { @apply text-[10px] leading-[14px] font-bold uppercase tracking-wider text-ink-500; }
+  /* Tabular: prices, times, distances */
+  .text-tabular { @apply tabular-nums font-semibold; }
 }
 
-/* Animations */
+/* ── Travel design system utilities ──────────────────────────────────────── */
 @layer utilities {
-  .animate-in {
-    animation: fadeIn 0.3s ease-in;
+  /* The one canonical card style — white surface, surface shadow, rounded */
+  .travel-card {
+    @apply bg-white rounded-2xl;
+    box-shadow: var(--shadow-surface);
   }
 
-  .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-  .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 3px; }
+  /* Shadow tokens */
+  .shadow-surface { box-shadow: var(--shadow-surface); }
+  .shadow-hover   { box-shadow: var(--shadow-hover); }
+  .shadow-modal   { box-shadow: var(--shadow-modal); }
 
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
+  /* Frosted glass — small controls only (map controls, dropdowns) */
+  .glass-panel {
+    background: rgba(255, 255, 255, 0.82);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+  }
+
+  /* Destination atmosphere tint */
+  .destination-tint {
+    background-color: rgb(var(--dest-bg));
+  }
+  .destination-card-tint {
+    background-color: rgb(var(--dest-card-tint));
+  }
+
+  /* Journey accent — sand-based active/selected state */
+  .journey-active {
+    background-color: rgb(var(--color-journey) / 0.18);
+    color: rgb(var(--ink-900));
+    border-color: rgb(var(--color-journey) / 0.6);
+  }
+
+  /* AI semantic — violet */
+  .ai-surface {
+    background-color: rgb(139 92 246 / 0.06);
+    border-color: rgb(139 92 246 / 0.15);
+    color: rgb(109 40 217);
   }
 }
 
-/* PDF Export Printing helper to hide UI control buttons during snapshots */
+/* ── Keyframe animations ──────────────────────────────────────────────────── */
+@layer utilities {
+  /* Skeleton loading shimmer */
+  @keyframes shimmer {
+    0%   { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+
+  /* Entry animation — cards rising gently into view */
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Progress bar fill */
+  @keyframes progress-fill {
+    from { width: 0%; }
+    to   { width: var(--progress-width, 100%); }
+  }
+
+  /* Route connector draw — transport node animated line */
+  @keyframes route-draw {
+    from { stroke-dashoffset: 100; }
+    to   { stroke-dashoffset: 0; }
+  }
+
+  /* Soft pulse for loading states */
+  @keyframes pulse-soft {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.5; }
+  }
+
+  /* Existing */
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  .animate-in      { animation: fadeIn 0.3s ease-in; }
+  .animate-fade-up { animation: fade-up var(--motion-panel) var(--ease-ios) both; }
+
+  .animate-shimmer {
+    background: linear-gradient(
+      90deg,
+      rgb(var(--paper-0)) 0%,
+      rgb(var(--paper-1)) 50%,
+      rgb(var(--paper-0)) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.6s ease-in-out infinite;
+  }
+
+  /* Reduced-motion: replace all decorative animations with instant states */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-shimmer,
+    .animate-fade-up,
+    .motion-safe\:animate-pulse {
+      animation: none !important;
+    }
+    * {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+    }
+  }
+
+  /* Scrollbar */
+  .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(0,0,0,0.1);
+    border-radius: 4px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+
+  /* Hide scrollbar but keep scroll */
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+}
+
+/* ── PDF Export ───────────────────────────────────────────────────────────── */
 .is-exporting-pdf .export-hidden {
   display: none !important;
 }

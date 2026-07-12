@@ -1,0 +1,181 @@
+import type { AttractionRecommendation, TimingSlot, WeatherSuitability } from './sightRecommendationEngine';
+import type { ActivityRecommendation } from './activityRecommendationEngine';
+
+// ── Attraction AI Quick Actions ──────────────────────────────────────────
+export type AIAttractionActionId = 'quieter' | 'scenic' | 'free_entry' | 'shorter_walk' | 'indoor';
+
+export const AI_ATTRACTION_QUICK_ACTIONS: { id: AIAttractionActionId; label: string; emoji: string }[] = [
+  { id: 'quieter', label: 'Find quieter', emoji: '🤫' },
+  { id: 'scenic', label: 'More scenic', emoji: '🏔️' },
+  { id: 'free_entry', label: 'Free to enter', emoji: '🎫' },
+  { id: 'shorter_walk', label: 'Shorter walk', emoji: '🚶' },
+  { id: 'indoor', label: 'Under a roof', emoji: '🏛️' },
+];
+
+export function applyAttractionQuickFilter(
+  recommendations: AttractionRecommendation[],
+  action: AIAttractionActionId,
+): AttractionRecommendation[] {
+  switch (action) {
+    case 'quieter': {
+      const quiet = recommendations.filter(
+        (r) => r.crowdLevel === 'Low' || r.crowdLevel === 'Moderate',
+      );
+      return (quiet.length > 0 ? quiet : recommendations).sort(
+        (a, b) =>
+          ['Low', 'Moderate', 'Busy', 'Peak'].indexOf(a.crowdLevel) -
+          ['Low', 'Moderate', 'Busy', 'Peak'].indexOf(b.crowdLevel),
+      );
+    }
+    case 'scenic':
+      return [...recommendations].sort(
+        (a, b) =>
+          b.experienceQualities.scenic +
+          b.experienceQualities.photography -
+          (a.experienceQualities.scenic + a.experienceQualities.photography),
+      );
+    case 'free_entry': {
+      const free = recommendations.filter((r) => r.entryFee.toLowerCase().includes('free'));
+      return free.length > 0 ? free : recommendations;
+    }
+    case 'shorter_walk':
+      return [...recommendations].sort((a, b) => a.walkTimeMins - b.walkTimeMins);
+    case 'indoor': {
+      const indoor = recommendations.filter(
+        (r) =>
+          r.weatherSuitability === 'indoor_only' ||
+          r.experienceQualities.accessibility >= 4,
+      );
+      return indoor.length > 0 ? indoor : recommendations;
+    }
+    default:
+      return recommendations;
+  }
+}
+
+// ── Activity AI Quick Actions ─────────────────────────────────────────────
+export type AIActivityActionId = 'beginner' | 'short' | 'budget' | 'indoor' | 'walkin';
+
+export const AI_ACTIVITY_QUICK_ACTIONS: { id: AIActivityActionId; label: string; emoji: string }[] = [
+  { id: 'beginner', label: 'Beginner friendly', emoji: '🌱' },
+  { id: 'short', label: 'Under 2 hours', emoji: '⏱️' },
+  { id: 'budget', label: 'Under ₹500', emoji: '💸' },
+  { id: 'indoor', label: 'Indoor', emoji: '🏠' },
+  { id: 'walkin', label: 'No booking', emoji: '🚶' },
+];
+
+export function applyActivityQuickFilter(
+  recommendations: ActivityRecommendation[],
+  action: AIActivityActionId,
+): ActivityRecommendation[] {
+  switch (action) {
+    case 'beginner':
+      return [...recommendations]
+        .filter((r) => r.difficultyScore <= 2)
+        .sort((a, b) => a.difficultyScore - b.difficultyScore);
+    case 'short':
+      return [...recommendations]
+        .sort((a, b) => a.durationMins - b.durationMins)
+        .filter((r) => r.durationMins <= 120);
+    case 'budget': {
+      const cheap = recommendations.filter((r) => r.pricePerPerson < 500);
+      return cheap.length > 0
+        ? cheap.sort((a, b) => a.pricePerPerson - b.pricePerPerson)
+        : recommendations.sort((a, b) => a.pricePerPerson - b.pricePerPerson);
+    }
+    case 'indoor': {
+      const indoor = recommendations.filter(
+        (r) =>
+          r.suggestion.name.toLowerCase().includes('museum') ||
+          r.suggestion.name.toLowerCase().includes('gallery') ||
+          r.suggestion.name.toLowerCase().includes('workshop') ||
+          r.suggestion.name.toLowerCase().includes('cooking') ||
+          r.suggestion.name.toLowerCase().includes('yoga') ||
+          r.suggestion.name.toLowerCase().includes('spa'),
+      );
+      return indoor.length > 0 ? indoor : recommendations;
+    }
+    case 'walkin': {
+      const walkIn = recommendations.filter((r) => !r.bookingRequired);
+      return walkIn.length > 0 ? walkIn : recommendations;
+    }
+    default:
+      return recommendations;
+  }
+}
+
+// ── Timing badge helpers ───────────────────────────────────────────────────
+export function getTimingBadge(slot: TimingSlot): { emoji: string; label: string; color: string } {
+  switch (slot) {
+    case 'sunrise':
+      return { emoji: '🌅', label: 'Best at Sunrise', color: 'text-amber-700 bg-amber-50 border-amber-200' };
+    case 'morning':
+      return { emoji: '☀️', label: 'Best Before Noon', color: 'text-sky-700 bg-sky-50 border-sky-200' };
+    case 'golden_hour':
+      return { emoji: '🌇', label: 'Golden Hour Pick', color: 'text-orange-700 bg-orange-50 border-orange-200' };
+    case 'evening':
+      return { emoji: '🌙', label: 'Evening Only', color: 'text-indigo-700 bg-indigo-50 border-indigo-200' };
+    case 'anytime':
+    default:
+      return { emoji: '🕐', label: 'Any Time', color: 'text-slate-600 bg-slate-50 border-slate-200' };
+  }
+}
+
+export function getWeatherBadge(weather: WeatherSuitability): { emoji: string; label: string; color: string } | null {
+  switch (weather) {
+    case 'outdoor_sunny':
+      return { emoji: '☀️', label: 'Clear day preferred', color: 'text-amber-700 bg-amber-50 border-amber-200' };
+    case 'outdoor_cloudy':
+      return { emoji: '🌤️', label: 'Good in any weather', color: 'text-slate-600 bg-slate-50 border-slate-200' };
+    case 'indoor_only':
+      return { emoji: '🏛️', label: 'Perfect rain escape', color: 'text-blue-700 bg-blue-50 border-blue-200' };
+    case 'any':
+    default:
+      return null;
+  }
+}
+
+// ── Shared open-now helper ─────────────────────────────────────────────────
+export type OpenStatus = 'open' | 'closed' | 'unknown';
+
+export function isOpenNow(openingHours?: string[] | null, now: Date = new Date()): OpenStatus {
+  if (!openingHours || openingHours.length === 0) return 'unknown';
+  const index = (now.getDay() + 6) % 7;
+  const line = openingHours[index];
+  if (!line) return 'unknown';
+  const rest = line.replace(/^[A-Za-z]+:\s*/, '').trim();
+  if (/closed/i.test(rest)) return 'closed';
+  if (/open 24 hours/i.test(rest)) return 'open';
+  const ranges = rest.split(',').map((r) => r.trim());
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  for (const range of ranges) {
+    const parts = range.split(/–|-/).map((p) => p.trim());
+    if (parts.length !== 2) continue;
+    const start = parseClockTime(parts[0] ?? '');
+    const end = parseClockTime(parts[1] ?? '');
+    if (start == null || end == null) continue;
+    if (end < start) {
+      if (nowMinutes >= start || nowMinutes < end) return 'open';
+    } else if (nowMinutes >= start && nowMinutes < end) {
+      return 'open';
+    }
+  }
+  return 'closed';
+}
+
+function parseClockTime(text: string): number | null {
+  const match = /^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i.exec(text.trim());
+  if (!match) return null;
+  let hours = parseInt(match[1] ?? '0', 10);
+  const minutes = parseInt(match[2] ?? '0', 10);
+  const meridiem = match[3]?.toUpperCase();
+  if (meridiem === 'PM' && hours !== 12) hours += 12;
+  if (meridiem === 'AM' && hours === 12) hours = 0;
+  return hours * 60 + minutes;
+}
+
+export function getOpenStatusLabel(openingHours?: string[] | null): string {
+  const status = isOpenNow(openingHours);
+  if (status === 'unknown') return '';
+  return status === 'open' ? 'Open now' : 'Closed';
+}

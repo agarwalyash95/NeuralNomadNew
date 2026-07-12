@@ -2,11 +2,10 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
-  Compass, 
   Loader2,
   Map as MapIcon,
-  Globe
 } from 'lucide-react';
+
 import { MockTripData, ItineraryItem } from './types';
 import { CATEGORY_STYLE } from './utils/categoryStyle';
 import { usePlannerHoverStore } from '@/store/planner-hover.store';
@@ -385,9 +384,9 @@ export default function PlannerMap({ planData, pinnedItem, focusedDayId, onPinCl
       const polyline = new win.google.maps.Polyline({
         path: pathCoordinates,
         geodesic: true,
-        strokeColor: '#2563eb',
+        strokeColor: 'rgb(200 184 154)',
         strokeOpacity: 0.8,
-        strokeWeight: 4,
+        strokeWeight: 3,
       });
       polyline.setMap(mapInstanceRef.current);
       polylineRef.current = polyline;
@@ -441,21 +440,21 @@ export default function PlannerMap({ planData, pinnedItem, focusedDayId, onPinCl
   }, [hoveredItem, isLoaded, pins, clickedPin]);
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-slate-900">
+    <div className="relative h-full w-full overflow-hidden rounded-none bg-paper-0">
       {!isLoaded && (
-        <div className="flex h-full w-full flex-col items-center justify-center bg-slate-900 text-white">
+        <div className="flex h-full w-full flex-col items-center justify-center bg-paper-0">
           {GOOGLE_MAPS_API_KEY ? (
             <>
-              <Loader2 className="mb-3 h-8 w-8 animate-spin text-blue-500" />
-              <p className="text-xs font-medium text-slate-400">Loading Google Maps...</p>
+              <Loader2 className="mb-3 h-7 w-7 animate-spin text-ink-400" />
+              <p className="text-[11px] font-medium text-ink-500">Loading map…</p>
             </>
           ) : (
             <div className="max-w-xs px-6 text-center">
-              <MapIcon className="mx-auto mb-3 h-8 w-8 text-slate-500" />
-              <p className="text-xs font-bold text-slate-300">Map key not configured</p>
-              <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
-                Set <code className="rounded bg-slate-800 px-1 py-0.5 text-[10px] text-slate-300">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</code> in{' '}
-                <code className="rounded bg-slate-800 px-1 py-0.5 text-[10px] text-slate-300">frontend/.env.local</code> and restart the dev server.
+              <MapIcon className="mx-auto mb-3 h-8 w-8 text-ink-400/50" />
+              <p className="text-[12px] font-semibold text-ink-700">Map key not configured</p>
+              <p className="mt-1.5 text-[11px] leading-relaxed text-ink-500">
+                Set <code className="rounded-lg bg-paper-1 border border-line px-1.5 py-0.5 text-[10px] text-ink-700">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</code> in{' '}
+                <code className="rounded-lg bg-paper-1 border border-line px-1.5 py-0.5 text-[10px] text-ink-700">frontend/.env.local</code> and restart the dev server.
               </p>
             </div>
           )}
@@ -465,45 +464,44 @@ export default function PlannerMap({ planData, pinnedItem, focusedDayId, onPinCl
       {/* Google Map Container */}
       <div ref={containerRef} className="h-full w-full" />
 
-      {/* Top Floating Control Bar */}
-      <div className="absolute left-4 top-4 z-10 flex items-center gap-2 rounded-xl border border-white/20 bg-slate-900/80 p-1.5 backdrop-blur-md">
-        <button
-          onClick={() => setMapTheme('roadmap')}
-          className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all ${
-            mapTheme === 'roadmap' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white'
-          }`}
-        >
-          <MapIcon size={13} /> Map
-        </button>
-        <button
-          onClick={() => setMapTheme('satellite')}
-          className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all ${
-            mapTheme === 'satellite' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white'
-          }`}
-        >
-          <Globe size={13} /> Satellite
-        </button>
-        <button
-          onClick={() => setMapTheme('hybrid')}
-          className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all ${
-            mapTheme === 'hybrid' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white'
-          }`}
-        >
-          <Compass size={13} /> Hybrid
-        </button>
+      {/* Frosted glass floating controls — small element only (performance: no full-panel blur) */}
+      <div
+        className="absolute left-3 top-3 z-10 flex items-center gap-1 rounded-full p-1 shadow-modal"
+        style={{
+          background: 'rgba(255,255,255,0.85)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          border: '1px solid rgba(255,255,255,0.6)',
+        }}
+      >
+        {(['roadmap', 'satellite', 'hybrid'] as const).map((theme) => (
+          <button
+            key={theme}
+            onClick={() => setMapTheme(theme)}
+            className={`rounded-full px-2.5 py-1 text-[10px] font-semibold capitalize transition-all cursor-pointer ${
+              mapTheme === theme
+                ? 'bg-[rgb(var(--color-journey)/0.25)] text-ink-900 border border-[rgb(var(--color-journey)/0.5)]'
+                : 'text-ink-500 hover:text-ink-900'
+            }`}
+            style={{ transition: `all var(--motion-hover) var(--ease-out)` }}
+          >
+            {theme === 'roadmap' ? 'Map' : theme === 'satellite' ? 'Satellite' : 'Hybrid'}
+          </button>
+        ))}
 
-        <div className="h-4 w-[1px] bg-white/20 mx-1" />
+        <div className="h-3 w-px bg-line mx-0.5" />
 
         <button
           onClick={() => setIsRouteView(!isRouteView)}
-          className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-extrabold transition-all border ${
-            isRouteView 
-              ? 'bg-indigo-600 border-indigo-700 text-white shadow-xs' 
-              : 'border-transparent text-slate-300 hover:text-white'
+          className={`rounded-full px-2.5 py-1 text-[10px] font-semibold transition-all cursor-pointer ${
+            isRouteView
+              ? 'bg-[rgb(var(--color-journey)/0.25)] text-ink-900 border border-[rgb(var(--color-journey)/0.5)]'
+              : 'text-ink-500 hover:text-ink-900'
           }`}
-          title={isRouteView ? "Click to focus map on the active day's timeline items" : "Click to display all pins and routes across the entire trip"}
+          style={{ transition: `all var(--motion-hover) var(--ease-out)` }}
+          title={isRouteView ? "Focus on today's stops" : 'Show entire trip route'}
         >
-          🌍 {isRouteView ? 'Entire Trip' : 'Focused Day'}
+          {isRouteView ? 'Full Trip' : 'Today'}
         </button>
       </div>
     </div>

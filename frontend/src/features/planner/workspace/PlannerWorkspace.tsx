@@ -124,7 +124,31 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
 
   // Resizable split-screen state
   const [leftWidth, setLeftWidth] = useState(60);
+  // A separate split ratio for Map view, so resizing one view never moves
+  // the other — the map defaults to ~42% of the width (within the
+  // requested 40–50% range).
+  const [mapLeftWidth, setMapLeftWidth] = useState(58);
   const [isDragging, setIsDragging] = useState(false);
+
+  // ── Canvas view switcher (Details / Map) ────────────────────────────────
+  // Instant, client-only toggle — no data reload, no effect on any other
+  // planner state (focused day, pinned item, undo stack all live untouched
+  // above). Persisted per-trip so reopening a workspace remembers the last
+  // view chosen for it.
+  const [viewMode, setViewMode] = useState<'details' | 'map'>('details');
+  useEffect(() => {
+    if (!workspaceId) { setViewMode('details'); return; }
+    try {
+      const stored = localStorage.getItem(`planner-view-mode:${workspaceId}`);
+      setViewMode(stored === 'map' ? 'map' : 'details');
+    } catch {
+      setViewMode('details');
+    }
+  }, [workspaceId]);
+  useEffect(() => {
+    if (!workspaceId) return;
+    try { localStorage.setItem(`planner-view-mode:${workspaceId}`, viewMode); } catch { /* best-effort */ }
+  }, [viewMode, workspaceId]);
 
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -200,6 +224,25 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
       ? planData.cities.find(c => c.cityName.toLowerCase() === activeCityName.toLowerCase())
       : undefined;
 
+    // Every geo-tagged item across the active city's full stay — a hotel
+    // covers the whole segment, not just the day that was clicked, so
+    // itinerary-impact math (Hotel Canvas) needs the full set of real
+    // coordinates, not an estimate.
+    const activeCityItems = activeCitySegment?.days.flatMap(day =>
+      day.items
+        .filter(i => !i.isInactive && i.type !== 'hotel' && i.latitude != null && i.longitude != null)
+        .map(i => ({
+          id: i.id,
+          title: i.title,
+          type: i.type,
+          latitude: i.latitude as number,
+          longitude: i.longitude as number,
+          dayLabel: `Day ${day.dayNumber}`,
+          dayNumber: day.dayNumber,
+          startTime: i.startTime,
+        }))
+    );
+
     return {
       tripId: workspaceId,
       destination: firstCity?.cityName ?? '',
@@ -229,6 +272,7 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
       activeNodePrice: activeNodePayload?.price,
       activeNodeCost: activeNodePayload?.cost,
       activeDayItemTitles,
+      activeCityItems,
     };
   }, [planData, workspaceId, activeNodePayload, focusedDayContext, activeDayItemTitles]);
 
@@ -295,11 +339,12 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
 
   useEffect(() => {
     if (!isDragging) return;
+    const setActiveWidth = viewMode === 'map' ? setMapLeftWidth : setLeftWidth;
     const handleMouseMove = (e: MouseEvent) => {
       if (!containerRef.current) return;
       const containerRect = containerRef.current.getBoundingClientRect();
       const newWidth = ((e.clientX - containerRect.left) / containerRect.width) * 100;
-      if (newWidth >= 30 && newWidth <= 70) setLeftWidth(newWidth);
+      if (newWidth >= 30 && newWidth <= 70) setActiveWidth(newWidth);
     };
     const handleMouseUp = () => setIsDragging(false);
     window.addEventListener('mousemove', handleMouseMove);
@@ -308,7 +353,7 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging]);
+  }, [isDragging, viewMode]);
 
   // ── Fetch plan from backend (shared React Query cache) ──────────────────
   // Workspace data drives the refetch interval: if the workspace says a plan
@@ -979,7 +1024,7 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
   }
 
   return (
-    <div ref={containerRef} className="relative flex h-full w-full overflow-hidden bg-paper-0">
+    <div ref={containerRef} className="relative flex h-full w-full flex-col overflow-hidden bg-paper-0">
       {workspaceId && (
         <DockedChat
           workspaceId={workspaceId}
@@ -1019,34 +1064,46 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
         </AnimatePresence>
       </div>
 
-      {/* Left Panel: Sticky Top Nav + Workspace AI Bar + Timeline */}
-      <div
-        className="relative h-full border-r border-line bg-paper-1 flex flex-col overflow-hidden"
-        style={{ width: `${leftWidth}%` }}
-      >
-        {/* Fixed Header & Navigation Container */}
-        <div className="border-b border-line bg-paper-1 shadow-xs px-4 pt-4 pb-2 shrink-0">
-          <PlannerHeader
-            data={planData}
-            ledger={ledger ?? null}
-            onExport={handleExport}
-            isExporting={isExporting}
-            isSavingCloud={isSavingCloud}
-            onBook={() => setActivePanel('checkout')}
-            onViewPasses={() => setActivePanel('wallet')}
-            onOptimizeRoutes={handleProposeRouteOptimization}
-            onSave={() => savePlan.mutate()}
-            isSaving={savePlan.isPending}
-            isSaved={workspace?.bucket === 'saved'}
-            onRenameTitle={handleRenameTitle}
-            onUndo={handleUndo}
-            onRedo={handleRedo}
-            canUndo={undoStack.length > 0}
-            canRedo={redoStack.length > 0}
-          />
-          
-          <div className="flex w-full items-center justify-between gap-2 mt-3 pt-3 border-t border-line/80">
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
+      {/* Full-width Header: title/actions row + view switcher only — kept
+          short so both the timeline and map panels start higher up. The
+          city/day nav lives with the timeline below, since it only ever
+          drives that column's scroll position. */}
+      <div className="border-b border-line/40 bg-paper-1 px-6 pt-5 pb-3 shrink-0">
+        <PlannerHeader
+          data={planData}
+          ledger={ledger ?? null}
+          onExport={handleExport}
+          isExporting={isExporting}
+          isSavingCloud={isSavingCloud}
+          onBook={() => setActivePanel('checkout')}
+          onViewPasses={() => setActivePanel('wallet')}
+          onOptimizeRoutes={handleProposeRouteOptimization}
+          onSave={() => savePlan.mutate()}
+          isSaving={savePlan.isPending}
+          isSaved={workspace?.bucket === 'saved'}
+          onRenameTitle={handleRenameTitle}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
+          canUndo={undoStack.length > 0}
+          canRedo={redoStack.length > 0}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+        />
+      </div>
+
+      {/* Content row: resizable Timeline / Map split, filling remaining height */}
+      <div className="relative flex flex-1 overflow-hidden">
+        {/* Left Panel: city/day nav + Timeline — the nav stays in sync with
+            this column since it only scrolls the timeline, not the map. */}
+        <div
+          className="relative h-full border-r border-line/40 bg-paper-1 flex flex-col overflow-hidden"
+          style={{
+            width: `${viewMode === 'map' ? mapLeftWidth : leftWidth}%`,
+            transition: isDragging ? undefined : `width 250ms var(--ease-out)`,
+          }}
+        >
+          <div className="flex w-full items-center justify-between gap-2 border-b border-line/40 bg-paper-1 px-6 py-3 shrink-0">
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
               {planData.cities.map((city) => {
                 const citySlug = city.cityName.replace(/\s+/g, '-').toLowerCase();
                 return (
@@ -1057,19 +1114,21 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
                       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
                       setActiveCityId(city.id);
                     }}
-                    className={`flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-extrabold shadow-xs border transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                    className={`flex items-center gap-1 rounded-full px-3 py-1 text-[10px] font-semibold border transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                       activeCityId === city.id
-                        ? 'bg-blue-600 border-blue-700 text-white'
-                        : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-600'
+                        // Sand — journey/selected semantic color, NOT blue
+                        ? 'bg-[rgb(var(--color-journey)/0.18)] border-[rgb(var(--color-journey)/0.5)] text-ink-900'
+                        : 'border-line bg-white text-ink-500 hover:border-[rgb(var(--color-journey)/0.4)] hover:text-ink-900'
                     }`}
+                    style={{ transition: `all var(--motion-hover) var(--ease-out)` }}
                   >
-                    <MapPin size={11} className="shrink-0" /> {city.cityName}
+                    <MapPin size={9} className="shrink-0" /> {city.cityName}
                   </button>
                 );
               })}
 
               {planData.cities.length > 0 && (
-                <div className="h-4 w-[1.5px] bg-slate-300/80 shrink-0 mx-1" />
+                <div className="h-3 w-px bg-line/60 shrink-0 mx-1" />
               )}
 
               {planData.cities.flatMap(c => c.days).map((day) => (
@@ -1080,13 +1139,15 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
                     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
                     setFocusedDayId(day.id);
                   }}
-                  className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold shadow-xs border transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                  className={`rounded-full px-2.5 py-1 text-[10px] font-semibold border transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                     focusedDayId === day.id
-                      ? 'bg-blue-600 border-blue-700 text-white font-extrabold'
-                      : 'bg-white border-slate-200 text-slate-600 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600'
+                      // Sand — journey/selected semantic, NOT blue
+                      ? 'bg-[rgb(var(--color-journey)/0.18)] border-[rgb(var(--color-journey)/0.5)] text-ink-900'
+                      : 'border-line bg-white text-ink-500 hover:border-[rgb(var(--color-journey)/0.4)] hover:text-ink-900'
                   }`}
+                  style={{ transition: `all var(--motion-hover) var(--ease-out)` }}
                 >
-                  Day {day.dayNumber}
+                  D{day.dayNumber}
                 </button>
               ))}
             </div>
@@ -1096,74 +1157,87 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
               <span
                 role="status"
                 aria-live="polite"
-                className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200 shrink-0 motion-safe:animate-pulse"
+                className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-semibold text-emerald-700 border border-emerald-200 shrink-0 motion-safe:animate-pulse"
               >
-                ⚡ Saving...
+                Saving…
               </span>
             )}
           </div>
+
+          {/* Scrollable Timeline — generous breathing room */}
+          <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-6" ref={exportRef}>
+            <InsightStrip workspaceId={workspaceId ?? null} />
+            <ItineraryTimeline
+              data={planData}
+              onItemHover={handleItemHover}
+              onDataChange={handlePlanDataChange}
+              onItemClick={handleNodeClick}
+              onVerifyLivePrice={handleVerifyLivePrice}
+              onWatchPrice={handleWatchPrice}
+              onOptimizeRoutes={handleProposeRouteOptimization}
+              onCompareTransit={handleCompareClick}
+            />
+          </div>
         </div>
 
-        {/* Scrollable Timeline */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-4" ref={exportRef}>
-          <InsightStrip workspaceId={workspaceId ?? null} />
-          <ItineraryTimeline
-            data={planData}
-            onItemHover={handleItemHover}
-            onDataChange={handlePlanDataChange}
-            onItemClick={handleNodeClick}
-            onVerifyLivePrice={handleVerifyLivePrice}
-            onWatchPrice={handleWatchPrice}
-            onOptimizeRoutes={handleProposeRouteOptimization}
-            onCompareTransit={handleCompareClick}
-          />
+        {/* Resizable Split-Screen Handle Bar — ghost style, barely visible */}
+        <div
+          onMouseDown={startResize}
+          className={`relative flex h-full w-[4px] cursor-col-resize items-center justify-center bg-line/30 hover:bg-[rgb(var(--color-journey)/0.3)] transition-colors select-none z-40 ${
+            isDragging ? 'bg-[rgb(var(--color-journey)/0.4)]' : ''
+          }`}
+          style={{ transition: `background var(--motion-hover) var(--ease-out)` }}
+        >
+          <div className="flex flex-col gap-1">
+            <span className="h-0.5 w-0.5 rounded-full bg-ink-400/40" />
+            <span className="h-0.5 w-0.5 rounded-full bg-ink-400/40" />
+            <span className="h-0.5 w-0.5 rounded-full bg-ink-400/40" />
+          </div>
         </div>
-      </div>
 
-      {/* Resizable Split-Screen Handle Bar */}
-      <div
-        onMouseDown={startResize}
-        className={`relative flex h-full w-[6px] cursor-col-resize items-center justify-center border-l border-r border-line bg-paper-1 hover:bg-slate-200 transition-colors select-none z-40 ${
-          isDragging ? 'bg-slate-300 border-slate-400' : ''
-        }`}
-      >
-        <div className="flex flex-col gap-1">
-          <span className="h-1 w-0.5 rounded-full bg-slate-400" />
-          <span className="h-1 w-0.5 rounded-full bg-slate-400" />
-          <span className="h-1 w-0.5 rounded-full bg-slate-400" />
-        </div>
-      </div>
-
-      {/* Right Panel: Helper Canvas / Default Map + AI Insights */}
-      <div
-        className="relative h-full flex flex-col overflow-hidden bg-paper-1"
-        style={{ width: `${100 - leftWidth}%` }}
-      >
-        {isDragging && (
-          <div className="absolute inset-0 z-50 cursor-col-resize bg-transparent" />
-        )}
-        <AnimatePresence mode="wait">
-          {activePanel === 'none' ? (
-            <motion.div
-              key="map-insights-split"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.15 }}
-              className="h-full w-full flex flex-col overflow-hidden"
-            >
-              {/* Top Half: Map for geo-context */}
-              <div className="h-1/2 w-full overflow-hidden border-b border-line">
+        {/* Right Panel: Helper Canvas, else AI Insights (Details view) or the
+            interactive Map (Map view) — only Map View ever shows a map. */}
+        <div
+          className="relative h-full flex flex-col overflow-hidden bg-paper-1"
+          style={{
+            width: `${100 - (viewMode === 'map' ? mapLeftWidth : leftWidth)}%`,
+            transition: isDragging ? undefined : `width 250ms var(--ease-out)`,
+          }}
+        >
+          {isDragging && (
+            <div className="absolute inset-0 z-50 cursor-col-resize bg-transparent" />
+          )}
+          <AnimatePresence mode="wait">
+            {activePanel === 'none' && viewMode === 'map' ? (
+              // Map View: the right column is a dedicated, larger interactive
+              // map — no insights half, so the map gets the full 40–50% column.
+              <motion.div
+                key="map-only"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="h-full w-full overflow-hidden"
+              >
                 <PlannerMap
                   planData={planData}
                   pinnedItem={pinnedItem}
                   focusedDayId={focusedDayId}
                   onPinClick={(item) => setPinnedItemId(item.id)}
                 />
-              </div>
-
-              {/* Bottom Half: AI Insights */}
-              <div className="h-1/2 w-full overflow-hidden relative bg-paper-1">
+              </motion.div>
+            ) : activePanel === 'none' ? (
+              // Details View: AI Insights only — no map. The map is reserved
+              // for Map View so switching views is the one thing that changes
+              // whether a map is on screen at all.
+              <motion.div
+                key="insights-only"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="h-full w-full overflow-hidden relative bg-paper-1"
+              >
                 <AIInsightsPanel
                   pinnedItem={pinnedItem}
                   defaultItem={defaultItem}
@@ -1172,21 +1246,21 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
                   onSwapItem={handleAddToPlan}
                   onExplore={(item) => openPanelForType(item.type)}
                 />
-              </div>
-            </motion.div>
-          ) : (
-            <motion.div
-              key={`helper-${activePanel}`}
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ type: 'spring', stiffness: 280, damping: 28 }}
-              className="h-full w-full overflow-y-auto"
-            >
-              {activePanelContent}
-            </motion.div>
-          )}
-        </AnimatePresence>
+              </motion.div>
+            ) : (
+              <motion.div
+                key={`helper-${activePanel}`}
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                transition={{ type: 'spring', stiffness: 280, damping: 28 }}
+                className="h-full w-full overflow-y-auto"
+              >
+                {activePanelContent}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
     </div>
   );

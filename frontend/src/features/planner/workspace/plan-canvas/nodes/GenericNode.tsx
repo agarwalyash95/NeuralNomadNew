@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Star, MapPin, Trash2, Camera, GripVertical } from 'lucide-react';
+import { Star, MapPin, Trash2, GripVertical } from 'lucide-react';
 import { ItineraryItem } from '../types';
 import { getCategoryStyle } from '../utils/categoryStyle';
 import NodeWrapper from './NodeWrapper';
@@ -20,41 +20,25 @@ interface GenericNodeProps {
   onHover?: (isHovered: boolean) => void;
   onVerifyLivePrice?: (itemId: string) => void;
   onTimeChange?: (field: 'start' | 'end', value: string) => void;
-  /** Cross-city/cross-day relocation — the accessible path drag-drop doesn't cover */
   moveDayOptions?: DayOption[];
   currentDayId?: string;
   onMoveToDay?: (dayId: string) => void;
 }
 
+/** Category image sizes — photography hierarchy:
+ *  Hotels/attractions: 28% (hero)
+ *  Food: 22% (thumbnail)
+ *  Others: no image panel override
+ */
+function getImagePanelWidth(type: string): string {
+  if (type === 'hotel' || type === 'attraction') return 'w-[28%]';
+  if (type === 'food') return 'w-[22%]';
+  return 'w-1/4';
+}
+
 function GenericNode({ item, isLast, onClick, onRemove, onHover, onVerifyLivePrice, onTimeChange, moveDayOptions, currentDayId, onMoveToDay }: GenericNodeProps) {
   const [isHovered, setIsHovered] = useState(false);
-
-  // Derive gradient based on item type
-  let gradientClass = 'bg-gradient-to-br from-slate-50 to-slate-100/50 border-slate-200';
-  let iconTint = 'text-slate-400';
-  
-  switch(item.type) {
-    case 'hotel':
-      gradientClass = isHovered ? 'bg-gradient-to-br from-indigo-50/80 to-indigo-100/60 border-indigo-200' : 'bg-gradient-to-br from-indigo-50/40 to-indigo-50/80 border-indigo-100';
-      iconTint = 'text-indigo-400';
-      break;
-    case 'activity':
-      gradientClass = isHovered ? 'bg-gradient-to-br from-rose-50/80 to-rose-100/60 border-rose-200' : 'bg-gradient-to-br from-rose-50/40 to-rose-50/80 border-rose-100';
-      iconTint = 'text-rose-400';
-      break;
-    case 'attraction':
-      gradientClass = isHovered ? 'bg-gradient-to-br from-emerald-50/80 to-emerald-100/60 border-emerald-200' : 'bg-gradient-to-br from-emerald-50/40 to-emerald-50/80 border-emerald-100';
-      iconTint = 'text-emerald-500';
-      break;
-    case 'food':
-      gradientClass = isHovered ? 'bg-gradient-to-br from-orange-50/80 to-orange-100/60 border-orange-200' : 'bg-gradient-to-br from-orange-50/40 to-orange-50/80 border-orange-100';
-      iconTint = 'text-orange-400';
-      break;
-    case 'taxi':
-      gradientClass = isHovered ? 'bg-gradient-to-br from-amber-50/80 to-amber-100/60 border-amber-200' : 'bg-gradient-to-br from-amber-50/40 to-amber-50/80 border-amber-100';
-      iconTint = 'text-amber-400';
-      break;
-  }
+  const imgWidth = getImagePanelWidth(item.type);
 
   const {
     attributes,
@@ -73,10 +57,10 @@ function GenericNode({ item, isLast, onClick, onRemove, onHover, onVerifyLivePri
 
   if (isDragging) {
     return (
-      <div 
-        ref={setNodeRef} 
-        style={{ ...style, opacity: 0.3 }} 
-        className="relative rounded-[16px] border-2 border-dashed border-slate-300 bg-slate-100/30 min-h-[109px] w-full mb-3"
+      <div
+        ref={setNodeRef}
+        style={{ ...style, opacity: 0.3 }}
+        className="relative rounded-2xl border-2 border-dashed border-line bg-paper-0 min-h-[100px] w-full mb-3"
       />
     );
   }
@@ -84,7 +68,7 @@ function GenericNode({ item, isLast, onClick, onRemove, onHover, onVerifyLivePri
   return (
     <div ref={setNodeRef} style={style} className="relative">
       <NodeWrapper type={item.type} time={item.startTime} endTime={item.endTime} isLast={isLast} onTimeChange={onTimeChange}>
-        <div 
+        <div
           className="relative group"
           onMouseEnter={() => {
             setIsHovered(true);
@@ -95,170 +79,220 @@ function GenericNode({ item, isLast, onClick, onRemove, onHover, onVerifyLivePri
             onHover?.(false);
           }}
         >
+          {/* ── Travel card — one canonical style ───────────────────── */}
           <div
-            className={`flex items-stretch rounded-[16px] border ${gradientClass} ${bookedAccentClass(item.blockStatus)} shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md overflow-hidden`}
+            className={`flex items-stretch rounded-2xl bg-white overflow-hidden ${bookedAccentClass(item.blockStatus)}`}
+            style={{
+              boxShadow: isHovered ? 'var(--shadow-hover)' : 'var(--shadow-surface)',
+              transform: isHovered ? 'translateY(-2px)' : 'translateY(0)',
+              transition: `box-shadow var(--motion-card) var(--ease-out), transform var(--motion-card) var(--ease-out)`,
+            }}
           >
-            {/* Dedicated drag handle — the whole card used to carry dnd-kit's
-                listeners, which fought with text selection and made every
-                click a potential-drag. Now only this strip does. */}
+            {/* Drag handle — 44px min touch target */}
             <div
               {...attributes}
               {...listeners}
-              className="flex w-6 shrink-0 cursor-grab touch-none items-center justify-center text-slate-300 opacity-60 transition-opacity hover:bg-black/5 hover:text-slate-500 hover:opacity-100 active:cursor-grabbing export-hidden"
+              className="flex w-7 shrink-0 cursor-grab touch-none items-center justify-center text-ink-400/40 transition-opacity hover:bg-paper-0 hover:text-ink-500 hover:opacity-100 active:cursor-grabbing export-hidden"
+              style={{ transition: `all var(--motion-hover) var(--ease-out)`, minHeight: 44 }}
               title="Drag to reorder"
             >
-              <GripVertical size={14} />
+              <GripVertical size={13} />
             </div>
 
+            {/* ── Clickable content ─────────────────────────────────── */}
             <div
               onClick={onClick}
               {...clickableDivProps(onClick)}
-              className={`flex flex-1 min-w-0 cursor-pointer items-stretch justify-between gap-3 rounded-r-[16px] p-3 pl-1 ${FOCUS_RING_CLASS}`}
+              className={`flex flex-1 min-w-0 cursor-pointer items-stretch justify-between gap-3 p-3 pl-1 ${FOCUS_RING_CLASS}`}
             >
-            <div className="flex flex-1 min-w-0 gap-3 items-stretch">
-              {/* 25% Hero Image panel on side */}
-              <div className="w-1/4 shrink-0 relative bg-slate-100/80 rounded-xl overflow-hidden min-h-[85px] border border-white/60 shadow-xs">
-                {item.image ? (
-                  <Image src={item.image} alt={item.title} fill className="object-cover" />
-                ) : (
-                  <div className="flex items-center justify-center h-full w-full bg-slate-50 text-slate-400">
-                    {(() => {
-                      const style = getCategoryStyle(item.type);
-                      const CategoryIcon = style.icon;
-                      return item.type in { hotel: 1, food: 1, activity: 1, attraction: 1, taxi: 1, cab: 1 }
-                        ? <CategoryIcon size={22} className={style.text} />
-                        : <Camera size={22} />;
-                    })()}
+              <div className="flex flex-1 min-w-0 gap-3 items-stretch">
+
+                {/* ── Hero image — photography hierarchy ─────────── */}
+                {Boolean(item.image || ['hotel', 'attraction', 'food'].includes(item.type)) && (
+                  <div
+                    className={`${imgWidth} shrink-0 relative overflow-hidden rounded-xl min-h-[88px]`}
+                    style={{ background: 'rgb(var(--paper-0))' }}
+                  >
+                    {item.image ? (
+                      <>
+                        <Image
+                          src={item.image}
+                          alt={item.title}
+                          fill
+                          className="object-cover"
+                          sizes="(max-width: 768px) 25vw, 15vw"
+                        />
+                        {/* Atmosphere gradient overlay — subtle destination tint */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent" />
+                      </>
+                    ) : (
+                      /* Atmospheric fallback — category gradient, not generic grey */
+                      <div
+                        className="flex items-center justify-center h-full w-full"
+                        style={{
+                          background: `linear-gradient(135deg, rgb(var(--dest-accent) / 0.08) 0%, rgb(var(--dest-accent) / 0.04) 100%)`,
+                        }}
+                      >
+                        {(() => {
+                          const style = getCategoryStyle(item.type);
+                          const CategoryIcon = style.icon;
+                          return <CategoryIcon size={24} className={`${style.text} opacity-50`} />;
+                        })()}
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
 
-              {/* Info - Right side */}
-              <div className="flex-1 min-w-0 py-0.5 flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-base font-bold text-slate-900 tracking-tight truncate">{item.title}</h4>
-                    {item.rating ? (
-                      <div className="flex items-center text-amber-400 shrink-0">
-                        <Star size={11} fill="currentColor" />
-                        <span className="text-[11px] font-semibold text-slate-700 ml-0.5">{item.rating}</span>
-                      </div>
-                    ) : null}
-                  </div>
-                  
-                  <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-600 font-medium">
-                    {item.geoTag ? (
-                      <span className="flex items-center gap-1 truncate"><MapPin size={11} className={iconTint} /> {item.geoTag}</span>
-                    ) : null}
-                    {item.geoTag && item.subtitle && <span className="text-slate-300">•</span>}
-                    {item.subtitle && <span className="truncate">{item.subtitle}</span>}
-                  </div>
-                  
-                  {item.details ? <p className="mt-1.5 text-xs text-slate-500 line-clamp-2">{item.details}</p> : null}
-                  {item.aiTip && (
-                    <div className="mt-2 flex items-start gap-1.5 rounded-xl bg-blue-50/50 p-2 border border-blue-100/50 text-[11px] text-blue-800 font-medium">
-                      <span className="shrink-0 text-xs mt-0.5">💡</span>
-                      <p className="leading-normal">{item.aiTip}</p>
+                {/* ── Info — right side ─────────────────────────── */}
+                <div className="flex-1 min-w-0 py-0.5 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-[14px] font-semibold text-ink-900 tracking-tight truncate leading-snug">
+                        {item.title}
+                      </h4>
+                      {item.rating ? (
+                        <div className="flex items-center shrink-0 gap-0.5">
+                          <Star size={10} className="text-amber-400" fill="currentColor" />
+                          <span className="text-[10px] font-semibold text-ink-600 tabular-nums">
+                            {item.rating}
+                          </span>
+                        </div>
+                      ) : null}
                     </div>
-                  )}
+
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-500 font-medium">
+                      {item.geoTag && (
+                        <span className="flex items-center gap-1 truncate">
+                          <MapPin size={10} className="text-ink-400/70 shrink-0" />
+                          {item.geoTag}
+                        </span>
+                      )}
+                      {item.geoTag && item.subtitle && (
+                        <span className="text-line-strong">·</span>
+                      )}
+                      {item.subtitle && (
+                        <span className="truncate text-ink-400">{item.subtitle}</span>
+                      )}
+                    </div>
+
+                    {item.details ? (
+                      <p className="mt-1.5 text-[11px] text-ink-500 line-clamp-2 leading-relaxed">
+                        {item.details}
+                      </p>
+                    ) : null}
+
+                    {/* AI Tip — violet semantic, not blue */}
+                    {item.aiTip && (
+                      <div
+                        className="mt-2 flex items-start gap-1.5 rounded-xl p-2 text-[10px] font-medium leading-relaxed border"
+                        style={{
+                          background: 'rgb(139 92 246 / 0.05)',
+                          borderColor: 'rgb(139 92 246 / 0.15)',
+                          color: 'rgb(109 40 217)',
+                        }}
+                      >
+                        <span className="shrink-0 mt-0.5">✦</span>
+                        <p>{item.aiTip}</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="flex flex-col items-end justify-between shrink-0 pl-1">
-              {item.price ? (
-                <div className="text-right">
-                  <p className="text-sm font-bold text-slate-950">
-                    {item.status === 'Confirmed' ? item.price : `approx. ${item.price}`}
-                  </p>
-                  {(() => {
-                    const conv = formatConvertedPrice(item.price);
-                    return conv ? (
-                      <p className="text-[10px] font-bold text-slate-400 mt-0.5">
-                        {item.status === 'Confirmed' ? `(${conv})` : `approx. (${conv})`}
-                      </p>
-                    ) : null;
-                  })()}
-                  
-                  {/* Booking state + provenance: is this booked, and where did the price come from */}
-                  <div className="mt-2 export-hidden flex flex-col items-end gap-1">
-                    <BookingStateChip status={item.blockStatus} />
-                    <ProvenanceBadge provenance={item.cost?.provenance} />
-                    {['hotel', 'flight', 'train', 'bus', 'taxi'].includes(item.type) &&
-                      item.cost?.provenance?.tier !== 'verified' && (
+              {/* ── Price + actions — right side ─────────────────────── */}
+              <div className="flex flex-col items-end justify-between shrink-0 pl-1 min-w-[60px]">
+                {item.price ? (
+                  <div className="text-right">
+                    <p className="text-[13px] font-semibold tabular-nums text-ink-900">
+                      {item.status === 'Confirmed' ? item.price : `~${item.price}`}
+                    </p>
+                    {(() => {
+                      const conv = formatConvertedPrice(item.price);
+                      return conv ? (
+                        <p className="text-[10px] font-medium tabular-nums text-ink-400 mt-0.5">
+                          {item.status === 'Confirmed' ? `(${conv})` : `~(${conv})`}
+                        </p>
+                      ) : null;
+                    })()}
+
+                    {(() => {
+                      const showChip = item.blockStatus && ['priced', 'booked'].includes(item.blockStatus);
+                      const showProvenance = item.cost?.provenance?.tier;
+                      const showVerify = ['hotel', 'flight', 'train', 'bus', 'taxi'].includes(item.type) &&
+                        item.cost?.provenance?.tier !== 'verified';
+                      
+                      if (!showChip && !showProvenance && !showVerify) return null;
+                      return (
+                        <div className="mt-2 export-hidden flex flex-col items-end gap-1">
+                          <BookingStateChip status={item.blockStatus} />
+                          <ProvenanceBadge provenance={item.cost?.provenance} />
+                          {showVerify && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onVerifyLivePrice?.(item.id);
+                              }}
+                              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-semibold text-ink-600 border border-line bg-paper-1 hover:bg-paper-0 hover:text-ink-900 active:scale-95 cursor-pointer"
+                              style={{ transition: `all var(--motion-hover) var(--ease-out)`, minHeight: 28 }}
+                            >
+                              Verify Price
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+                    {(item.type === 'attraction' || item.type === 'activity') && (
+                      <div className="mt-1.5 export-hidden">
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (onVerifyLivePrice) {
-                              onVerifyLivePrice(item.id);
-                            }
+                            onClick?.();
                           }}
-                          className="inline-flex items-center gap-1 rounded-full bg-blue-50 hover:bg-blue-100 active:scale-95 transition-all px-2 py-0.5 text-[9px] font-bold text-blue-700 border border-blue-100 shadow-xs cursor-pointer"
+                          className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[9px] font-semibold border border-line bg-paper-1 text-ink-600 hover:bg-paper-0 hover:text-ink-900 active:scale-95 cursor-pointer"
+                          style={{ transition: `all var(--motion-hover) var(--ease-out)` }}
                         >
-                          Verify Price
+                          Change
                         </button>
-                      )}
+                      </div>
+                    )}
                   </div>
+                ) : <div />}
 
-                  {(item.type === 'attraction' || item.type === 'activity') && (
-                    <div className="mt-2 export-hidden">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (onClick) {
-                            onClick();
-                          }
-                        }}
-                        className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[9px] font-bold active:scale-95 transition-all border shadow-xs cursor-pointer ${
-                          item.type === 'attraction'
-                            ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-250'
-                            : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-250'
-                        }`}
-                      >
-                        {item.type === 'attraction' ? '🔄 Change Attraction' : '🔄 Change Activity'}
-                      </button>
-                    </div>
+                {/* Bottom actions — ghost pill style */}
+                <div className="mt-auto flex items-center gap-1.5 export-hidden">
+                  {moveDayOptions && currentDayId && onMoveToDay && (
+                    <MoveToDaySelect options={moveDayOptions} currentDayId={currentDayId} onMove={onMoveToDay} />
                   )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onRemove?.(); }}
+                    className="rounded-xl p-2 text-ink-400 hover:bg-red-50 hover:text-red-500 active:scale-95 cursor-pointer"
+                    style={{ transition: `all var(--motion-hover) var(--ease-out)`, minWidth: 32, minHeight: 32 }}
+                    title="Delete"
+                  >
+                    <Trash2 size={13} />
+                  </button>
                 </div>
-              ) : <div />}
-
-              <div className="mt-auto flex items-center gap-1.5 export-hidden">
-                {moveDayOptions && currentDayId && onMoveToDay && (
-                  <MoveToDaySelect options={moveDayOptions} currentDayId={currentDayId} onMove={onMoveToDay} />
-                )}
-                <button
-                  onClick={(e) => { e.stopPropagation(); onRemove?.(); }}
-                  className="rounded-xl bg-rose-50 p-2 text-rose-500 border border-rose-100/80 shadow-xs hover:bg-rose-100 hover:text-rose-600 active:scale-95 transition-all cursor-pointer"
-                  title="Delete Item"
-                >
-                <Trash2 size={15} />
-                </button>
               </div>
             </div>
-            </div>
           </div>
-        </div>
 
-        {item.distanceToNext && (
-          <div className="absolute -bottom-5 left-[71px] md:left-[79px] z-10 flex -translate-x-1/2 -translate-y-1/2 items-center bg-paper-1 py-1 px-1">
-            <div className="rounded-full border border-line-strong bg-white px-2 py-0.5 text-[9px] font-semibold text-slate-500 shadow-sm">
-              {item.distanceToNext}
+          {/* Distance badge between nodes */}
+          {item.distanceToNext && (
+            <div className="absolute -bottom-4 left-[71px] z-10 flex -translate-x-1/2 -translate-y-1/2 items-center bg-paper-1 py-0.5 px-1">
+              <div className="rounded-full border border-line bg-white px-2 py-0.5 text-[9px] font-medium text-ink-500 shadow-surface">
+                {item.distanceToNext}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </NodeWrapper>
     </div>
   );
 }
 
-// The parent (ItineraryTimeline) recreates every callback prop as a fresh
-// inline closure on each of its own renders — a plain React.memo would never
-// bail out. This card only needs to redraw when its own data actually
-// changed, so we compare the data-bearing props and ignore callback
-// identity: a freshly-created `onClick` etc. is behaviorally identical to
-// the last one as long as `item` (and the other props below) are unchanged.
 function areEqual(prev: GenericNodeProps, next: GenericNodeProps): boolean {
   return (
     prev.item === next.item &&
