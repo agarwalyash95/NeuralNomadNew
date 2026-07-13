@@ -322,7 +322,7 @@ def explore_places(model, location, lat_val, lng_val, google_query, included_typ
     except Exception as e:
         if cached_places:
             return 'cache', cached_places, None
-        return 'error', str(e), None
+        return 'error', None, str(e)
 
     for p in places_json:
         place_id = p.get('id')

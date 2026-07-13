@@ -36,10 +36,10 @@ function TransitNode({ item, onClick, onHover, onRemove, onVerifyLivePrice, onCo
 
   return (
     <div className="relative mb-2 mt-2 py-4 pl-[70px] pr-4">
-      <div className="absolute left-[38px] top-0 h-1/2 w-1 bg-slate-800" />
-      <div className="absolute bottom-0 left-[38px] h-1/2 w-1 bg-slate-800" />
+      <div className="absolute left-[38px] top-0 h-1/2 w-1 bg-ink-900" />
+      <div className="absolute bottom-0 left-[38px] h-1/2 w-1 bg-ink-900" />
 
-      <div className="absolute left-[24px] top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-slate-800 text-white shadow-md">
+      <div className="absolute left-[24px] top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-ink-900 text-white shadow-md">
         {getIcon()}
       </div>
 
@@ -48,7 +48,7 @@ function TransitNode({ item, onClick, onHover, onRemove, onVerifyLivePrice, onCo
         {...clickableDivProps(onClick)}
         onMouseEnter={() => onHover?.(true)}
         onMouseLeave={() => onHover?.(false)}
-        className={`flex cursor-pointer items-center justify-between gap-3 rounded-[16px] border border-sky-200 bg-gradient-to-br from-sky-50/80 to-sky-100/40 ${bookedAccentClass(item.blockStatus)} p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md ${FOCUS_RING_CLASS}`}
+        className={`flex group cursor-pointer items-center justify-between gap-3 rounded-[16px] border border-sky-200 bg-gradient-to-br from-sky-50/80 to-sky-100/40 ${bookedAccentClass(item.blockStatus)} p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md ${FOCUS_RING_CLASS}`}
       >
         <div className="flex min-w-0 items-center gap-3">
           {item.image ? (
@@ -58,8 +58,8 @@ function TransitNode({ item, onClick, onHover, onRemove, onVerifyLivePrice, onCo
           ) : null}
           <div className="min-w-0">
             <p className="text-[11px] font-extrabold uppercase tracking-[0.25em] text-sky-600">Transit</p>
-            <h4 className="mt-1 text-lg font-bold text-slate-900 tracking-tight">{item.title}</h4>
-            <p className="mt-0.5 text-xs font-medium text-slate-600">{item.subtitle}</p>
+            <h4 className="mt-1 text-lg font-bold text-ink-900 tracking-tight">{item.title}</h4>
+            <p className="mt-0.5 text-xs font-medium text-ink-600">{item.subtitle}</p>
             {item.details ? <p className="mt-1.5 text-xs font-semibold text-sky-700">{item.details}</p> : null}
           </div>
         </div>
@@ -68,13 +68,13 @@ function TransitNode({ item, onClick, onHover, onRemove, onVerifyLivePrice, onCo
           <div className="text-right">
             {item.price && (
               <>
-                <p className="text-sm font-bold text-slate-950">
+                <p className="text-sm font-bold text-ink-900">
                   {item.status === 'Confirmed' ? item.price : `approx. ${item.price}`}
                 </p>
                 {(() => {
                   const conv = formatConvertedPrice(item.price);
                   return conv ? (
-                    <p className="text-[10px] font-bold text-slate-400 mt-0.5">
+                    <p className="text-[10px] font-bold text-ink-400 mt-0.5">
                       {item.status === 'Confirmed' ? `(${conv})` : `approx. (${conv})`}
                     </p>
                   ) : null;
@@ -101,7 +101,7 @@ function TransitNode({ item, onClick, onHover, onRemove, onVerifyLivePrice, onCo
                   type="button"
                   onClick={(e) => { e.stopPropagation(); onCompare(); }}
                   title="Compare flight/train/bus/cab for this leg"
-                  className="inline-flex items-center gap-1 rounded-full bg-slate-100 hover:bg-slate-200 active:scale-95 transition-all px-2 py-0.5 text-[9px] font-bold text-slate-700 border border-slate-200 shadow-xs cursor-pointer"
+                  className="inline-flex items-center gap-1 rounded-full bg-paper-0 hover:bg-paper-1 active:scale-95 transition-all px-2 py-0.5 text-[9px] font-bold text-ink-700 border border-line shadow-xs cursor-pointer"
                 >
                   <ArrowLeftRight size={9} />
                   Compare
@@ -111,7 +111,7 @@ function TransitNode({ item, onClick, onHover, onRemove, onVerifyLivePrice, onCo
           </div>
           <button
             onClick={(e) => { e.stopPropagation(); onRemove?.(); }}
-            className="rounded-xl bg-rose-50 p-2 text-rose-500 border border-rose-100/80 shadow-xs hover:bg-rose-100 hover:text-rose-600 active:scale-95 transition-all cursor-pointer export-hidden"
+            className="rounded-xl bg-rose-50 p-2 text-rose-500 border border-rose-100/80 shadow-xs hover:bg-rose-100 hover:text-rose-600 active:scale-95 transition-all cursor-pointer export-hidden opacity-0 group-hover:opacity-100 focus:opacity-100 focus-within:opacity-100 duration-200"
             title="Delete Transit"
           >
             <Trash2 size={15} />

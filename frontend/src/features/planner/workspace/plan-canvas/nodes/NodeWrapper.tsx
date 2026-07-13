@@ -9,11 +9,16 @@ interface NodeWrapperProps {
   iconBgColor?: string;
   isLast?: boolean;
   onTimeChange?: (field: 'start' | 'end', value: string) => void;
+  /** Stamped as `id="node-<itemId>"` so the Trip Status Spine's rollups and
+   *  the Day Brief panel can scroll straight to this exact card. */
+  itemId?: string;
 }
 
 const HHMM = /^\d{2}:\d{2}$/;
 
-function formatDuration(start?: string, end?: string): string | null {
+/** Exported so TransportNode can show the same computed duration inline on
+ *  its boarding-pass connector instead of recomputing it separately. */
+export function formatDuration(start?: string, end?: string): string | null {
   if (!start || !end || !HHMM.test(start) || !HHMM.test(end)) return null;
   const [sh, sm] = start.split(':').map(Number);
   const [eh, em] = end.split(':').map(Number);
@@ -25,8 +30,10 @@ function formatDuration(start?: string, end?: string): string | null {
   return h > 0 ? `${h}h${m > 0 ? ` ${m}m` : ''}` : `${m}m`;
 }
 
-/** Category-specific icon backgrounds — warm, distinct, not generic grey */
-const ICON_STYLES: Record<string, { bg: string; icon: React.ReactNode }> = {
+/** Category-specific icon backgrounds — warm, distinct, not generic grey.
+ *  Exported so other premium-UI surfaces (AddTypeMenu's type picker) can
+ *  reuse the exact same icon/color language instead of inventing their own. */
+export const ICON_STYLES: Record<string, { bg: string; icon: React.ReactNode }> = {
   flight:     { bg: 'bg-violet-100',  icon: <Plane     size={12} className="text-violet-600" fill="currentColor" /> },
   train:      { bg: 'bg-blue-100',    icon: <Train     size={12} className="text-blue-600" fill="currentColor" /> },
   bus:        { bg: 'bg-sky-100',     icon: <Bus       size={12} className="text-sky-600" fill="currentColor" /> },
@@ -38,12 +45,12 @@ const ICON_STYLES: Record<string, { bg: string; icon: React.ReactNode }> = {
   attraction: { bg: 'bg-teal-100',    icon: <Compass   size={12} className="text-teal-600" /> },
 };
 
-export default function NodeWrapper({ type, time, endTime, children, iconBgColor, isLast, onTimeChange }: NodeWrapperProps) {
+export default function NodeWrapper({ type, time, endTime, children, iconBgColor, isLast, onTimeChange, itemId }: NodeWrapperProps) {
   const [editingField, setEditingField] = useState<'start' | 'end' | null>(null);
   const duration = formatDuration(time, endTime);
 
   const iconStyle = ICON_STYLES[type] ?? {
-    bg: 'bg-slate-100',
+    bg: 'bg-line',
     icon: null,
   };
   const dotBg = iconBgColor ?? iconStyle.bg;
@@ -85,14 +92,17 @@ export default function NodeWrapper({ type, time, endTime, children, iconBgColor
   };
 
   return (
-    <div className="relative py-3 pl-[112px] pr-4">
+    <div
+      id={itemId ? `node-${itemId}` : undefined}
+      className="relative py-2 pl-[84px] pr-4 sm:pl-[112px]"
+    >
 
       {/* ── Main journey spine — soft, thin, receding ─────────────────── */}
-      <div className="absolute bottom-0 left-[20px] top-0 w-px bg-line/60" />
+      <div className="absolute bottom-0 left-[14px] top-0 w-px bg-line/60 sm:left-[20px]" />
 
       {/* ── Sub spine — dashed, softer ───────────────────────────────── */}
       <div
-        className={`absolute left-[91px] top-0 w-px ${isLast ? 'bottom-1/2' : 'bottom-0'}`}
+        className={`absolute left-[63px] top-0 w-px sm:left-[91px] ${isLast ? 'bottom-1/2' : 'bottom-0'}`}
         style={{
           backgroundImage: 'repeating-linear-gradient(to bottom, rgb(var(--line)/0.4) 0, rgb(var(--line)/0.4) 4px, transparent 4px, transparent 8px)',
           background: 'none',
@@ -100,8 +110,8 @@ export default function NodeWrapper({ type, time, endTime, children, iconBgColor
         }}
       />
 
-      {/* ── Time column ──────────────────────────────────────────────── */}
-      <div className="absolute left-[32px] top-[22px] w-[44px] text-right">
+      {/* ── Time column — narrower gutter on mobile, full width on sm+ ── */}
+      <div className="absolute left-[16px] top-[22px] w-[36px] text-right sm:left-[32px] sm:w-[44px]">
         {renderTimeValue('start', time, 'text-[11px] font-semibold tabular-nums text-ink-700 block')}
         {renderTimeValue('end', endTime, 'text-[10px] font-medium tabular-nums text-ink-400 block')}
         {duration && (
@@ -111,7 +121,7 @@ export default function NodeWrapper({ type, time, endTime, children, iconBgColor
 
       {/* ── Category icon dot on sub-spine ───────────────────────────── */}
       <div
-        className={`absolute left-[80px] top-[22px] z-10 flex h-[22px] w-[22px] items-center justify-center rounded-full shadow-surface ${dotBg}`}
+        className={`absolute left-[54px] top-[22px] z-10 flex h-[22px] w-[22px] items-center justify-center rounded-full shadow-surface sm:left-[80px] ${dotBg}`}
         style={{ boxShadow: '0 0 0 3px rgb(var(--paper-1)), var(--shadow-surface)' }}
       >
         {iconStyle.icon}

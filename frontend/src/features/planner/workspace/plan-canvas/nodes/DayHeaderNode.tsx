@@ -23,7 +23,7 @@ export default function DayHeaderNode({ day, isCollapsed, onToggle, onOptimizeRo
   const totalKm = Object.values(day.transitHints ?? {}).reduce((sum, h) => sum + h.distance_km, 0);
 
   return (
-    <div className="relative py-5 pl-[48px]" id={`day-${day.dayNumber}`}>
+    <div className="relative py-4 pl-[48px]" id={`day-${day.dayNumber}`}>
       {/* Spine — continues through */}
       <div className="absolute bottom-0 left-[20px] top-0 w-px bg-line/60" />
 
@@ -35,7 +35,7 @@ export default function DayHeaderNode({ day, isCollapsed, onToggle, onOptimizeRo
         <div className="h-[5px] w-[5px] rounded-full bg-ink-400/60" />
       </div>
 
-      <div className="flex items-start justify-between pr-4">
+      <div className="flex items-start justify-between gap-4 pr-4 max-w-3xl">
         {/* Clickable day info — left side */}
         <div
           className={`flex flex-col gap-0.5 cursor-pointer rounded-xl ${FOCUS_RING_CLASS}`}
@@ -57,10 +57,11 @@ export default function DayHeaderNode({ day, isCollapsed, onToggle, onOptimizeRo
             <p className="text-[11px] font-medium text-ink-500">{day.dateStr}</p>
           )}
 
-          {/* Micro-stats row — icon + number pairs */}
-          <div className="mt-1 flex items-center gap-2.5 flex-wrap">
+          {/* Micro-stats cluster — grouped in one chip so it reads as a unit,
+              not equal-weight text competing with decorative dot separators */}
+          <div className="mt-1.5 flex items-center gap-2.5 flex-wrap rounded-full bg-paper-0 border border-line/70 px-2.5 py-1 w-fit">
             {/* Stops */}
-            <span className="flex items-center gap-1 text-[10px] font-semibold text-ink-400">
+            <span className="flex items-center gap-1 text-[10px] font-semibold text-ink-500">
               <MapPin size={10} className="text-ink-400/70" />
               {stopCount} {stopCount === 1 ? 'stop' : 'stops'}
             </span>
@@ -68,8 +69,8 @@ export default function DayHeaderNode({ day, isCollapsed, onToggle, onOptimizeRo
             {/* Cost */}
             {totalCost > 0 && (
               <>
-                <span className="text-line/60">·</span>
-                <span className="text-[10px] font-semibold tabular-nums text-ink-400">
+                <span className="text-line-strong">·</span>
+                <span className="text-[10px] font-semibold tabular-nums text-ink-500">
                   {currencySymbol}{Math.round(totalCost).toLocaleString()}
                 </span>
               </>
@@ -78,8 +79,8 @@ export default function DayHeaderNode({ day, isCollapsed, onToggle, onOptimizeRo
             {/* Distance */}
             {totalKm > 0.3 && (
               <>
-                <span className="text-line/60">·</span>
-                <span className="flex items-center gap-1 text-[10px] font-semibold tabular-nums text-ink-400">
+                <span className="text-line-strong">·</span>
+                <span className="flex items-center gap-1 text-[10px] font-semibold tabular-nums text-ink-500">
                   <Milestone size={10} className="text-ink-400/70" />
                   {Math.round(totalKm)} km
                 </span>
@@ -89,12 +90,12 @@ export default function DayHeaderNode({ day, isCollapsed, onToggle, onOptimizeRo
             {/* Weather chip — visual first */}
             {day.weather && (
               <>
-                <span className="text-line/60">·</span>
+                <span className="text-line-strong">·</span>
                 <span
-                  className="flex items-center gap-1 rounded-full border border-sky-100 bg-sky-50/70 px-2 py-0.5 text-[9px] font-semibold text-sky-700"
+                  className="flex items-center gap-1 text-[10px] font-semibold text-sky-700"
                   title="Seasonal average from historical data — not a live forecast"
                 >
-                  <CloudSun size={9} className="text-sky-400" />
+                  <CloudSun size={10} className="text-sky-500" />
                   {day.weather} Avg
                 </span>
               </>
@@ -104,7 +105,10 @@ export default function DayHeaderNode({ day, isCollapsed, onToggle, onOptimizeRo
 
         {/* Right controls */}
         <div className="flex items-center gap-2 mt-0.5 shrink-0">
-          {/* Optimize route — amber semantic (AI action) */}
+          {/* Optimize route — violet (AI semantic), not amber (that's caution/
+              suggestion elsewhere) — this is a genuine AI-computed action, so
+              it should carry the same accent as every other AI surface and
+              stand out against the otherwise-neutral header. */}
           {onOptimizeRoute && (
             <button
               onClick={(e) => {
@@ -116,18 +120,15 @@ export default function DayHeaderNode({ day, isCollapsed, onToggle, onOptimizeRo
                   ? `Optimizing will ${timeSavedText} of travel time`
                   : 'Re-order stops by shortest distance'
               }
-              className={`flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[10px] font-semibold border transition-all cursor-pointer export-hidden ${
-                timeSavedText
-                  // C5: No animate-pulse — creates anxiety across multiple days simultaneously
-                  ? 'bg-amber-50 border-amber-200 text-amber-700'
-                  : 'bg-paper-1 border-line text-ink-600 hover:bg-amber-50 hover:border-amber-200 hover:text-amber-700'
-              }`}
-              style={{ transition: `all var(--motion-card) var(--ease-out)` }}
+              className="flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[10px] font-semibold border transition-all cursor-pointer export-hidden"
+              style={{
+                transition: `all var(--motion-card) var(--ease-out)`,
+                color: 'rgb(var(--color-ai))',
+                borderColor: `rgb(var(--color-ai) / ${timeSavedText ? 0.35 : 0.2})`,
+                background: `rgb(var(--color-ai) / ${timeSavedText ? 0.1 : 0.05})`,
+              }}
             >
-              <Sparkles
-                size={11}
-                className={timeSavedText ? 'text-amber-600' : 'text-ink-400'}
-              />
+              <Sparkles size={11} style={{ color: 'rgb(var(--color-ai))' }} />
               {/* L3: timeSavedText is already "saves ~Xm" — don't prepend "Save" */}
               <span>{timeSavedText ?? 'Optimize'}</span>
             </button>

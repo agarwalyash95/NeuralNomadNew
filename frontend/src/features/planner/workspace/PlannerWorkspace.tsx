@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MapPin, Sparkles, RefreshCw } from 'lucide-react';
+import { Sparkles, RefreshCw } from 'lucide-react';
 // exportPdf (and jsPDF within it) is dynamically imported inside
 // handleExport instead of here — it was loading on every workspace visit
 // for a button most users never click. See PF4, docs/planner-product-audit-2026-07.md.
@@ -36,7 +36,8 @@ import PlannerMap from './plan-canvas/PlannerMap';
 import AIInsightsPanel from './plan-canvas/AIInsightsPanel';
 import PlannerHeader from './plan-canvas/PlannerHeader';
 import ItineraryTimeline from './plan-canvas/ItineraryTimeline';
-import InsightStrip from './plan-canvas/InsightStrip';
+import TripStatusSpine from './plan-canvas/TripStatusSpine';
+import { inferDestType } from './plan-canvas/utils/destinationAtmosphere';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 import { TripContext, NodeClickPayload } from './types';
@@ -51,6 +52,7 @@ import {
   useSavePlan,
   useBookTrip,
   useOptimizeRoute,
+  useInsights,
   plannerKeys,
 } from '@/features/planner/hooks/usePlannerQueries';
 import { useQueryClient } from '@tanstack/react-query';
@@ -285,9 +287,32 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
     if (!planData?.cities?.[0]) return;
     if (initializedWorkspaceRef.current === workspaceId) return;
     initializedWorkspaceRef.current = workspaceId;
-    setActiveCityId(planData.cities[0].id);
-    if (planData.cities[0].days?.[0]) {
-      setFocusedDayId(planData.cities[0].days[0].id);
+
+    // If the trip is in progress, land on today's real day instead of always
+    // Day 1 — makes "current day" literal for a trip underway, falls back to
+    // Day 1 for pre-trip planning (dateStr is either a real date or a
+    // "Day N" placeholder label, so an unparseable date just skips this).
+    const todayStr = new Date().toDateString();
+    let todaysCity = null as typeof planData.cities[0] | null;
+    let todaysDay = null as typeof planData.cities[0]['days'][0] | null;
+    for (const city of planData.cities) {
+      const day = city.days.find((d) => {
+        const parsed = new Date(d.dateStr);
+        return !isNaN(parsed.getTime()) && parsed.toDateString() === todayStr;
+      });
+      if (day) { todaysCity = city; todaysDay = day; break; }
+    }
+
+    setActiveCityId((todaysCity ?? planData.cities[0]).id);
+    const initialDay = todaysDay ?? planData.cities[0].days?.[0];
+    if (initialDay) {
+      setFocusedDayId(initialDay.id);
+      if (todaysDay) {
+        // Scroll to it once the timeline has actually rendered.
+        requestAnimationFrame(() => {
+          document.getElementById(`day-${initialDay.dayNumber}`)?.scrollIntoView({ behavior: 'auto', block: 'start' });
+        });
+      }
     }
   }, [planData, workspaceId]);
 
@@ -371,10 +396,28 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
     refetch: refetchPlan,
   } = usePlan(workspaceId);
   const { data: ledger } = useLedger(workspaceId);
+  const { data: insights = [] } = useInsights(workspaceId);
   const savePlan = useSavePlan(workspaceId);
   const bookTrip = useBookTrip(workspaceId);
   // Warm rich place details for every identifiable block — hover is instant
   usePrefetchPlaceDetails(planData);
+
+  // The focused day's full object + its city name — feeds AIInsightsPanel's
+  // calm default "Day Brief" (item count, next-up, day-scoped insight, top
+  // AI tip) so the right panel has something proactive to say even when
+  // nothing is hovered/pinned, instead of sitting empty.
+  const focusedDay = useMemo(() => {
+    if (!planData || !focusedDayId) return null;
+    for (const city of planData.cities) {
+      const day = city.days.find((d) => d.id === focusedDayId);
+      if (day) return { day, cityName: city.cityName };
+    }
+    return null;
+  }, [planData, focusedDayId]);
+  const focusedDayInsights = useMemo(
+    () => insights.filter((i) => i.day_number === focusedDay?.day.dayNumber),
+    [insights, focusedDay]
+  );
 
   // Auto-poll every 4 s when the workspace has a plan but the data is absent.
   // Stops as soon as planData is populated.
@@ -820,7 +863,7 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
         <div className="flex flex-col items-center max-w-md text-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50 mb-4">
             {isRetrying ? (
-              <RefreshCw size={28} className="text-blue-500 animate-spin" />
+              <RefreshCw size={28} className="text-ink-500 animate-spin" />
             ) : (
               <Sparkles size={28} className="text-blue-500" />
             )}
@@ -1024,7 +1067,11 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
   }
 
   return (
-    <div ref={containerRef} className="relative flex h-full w-full flex-col overflow-hidden bg-paper-0">
+    <div
+      ref={containerRef}
+      data-dest-type={inferDestType(planData.cities[0]?.cityName)}
+      className="relative flex h-full w-full flex-col overflow-hidden bg-paper-0"
+    >
       {workspaceId && (
         <DockedChat
           workspaceId={workspaceId}
@@ -1068,10 +1115,9 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
           short so both the timeline and map panels start higher up. The
           city/day nav lives with the timeline below, since it only ever
           drives that column's scroll position. */}
-      <div className="border-b border-line/40 bg-paper-1 px-6 pt-5 pb-3 shrink-0">
+      <div className="border-b border-line/40 bg-paper-1 px-6 pt-4 pb-0 shrink-0">
         <PlannerHeader
           data={planData}
-          ledger={ledger ?? null}
           onExport={handleExport}
           isExporting={isExporting}
           isSavingCloud={isSavingCloud}
@@ -1102,71 +1148,26 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
             transition: isDragging ? undefined : `width 250ms var(--ease-out)`,
           }}
         >
-          <div className="flex w-full items-center justify-between gap-2 border-b border-line/40 bg-paper-1 px-6 py-3 shrink-0">
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-              {planData.cities.map((city) => {
-                const citySlug = city.cityName.replace(/\s+/g, '-').toLowerCase();
-                return (
-                  <button
-                    key={city.id}
-                    onClick={() => {
-                      const el = document.getElementById(`city-${citySlug}`);
-                      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                      setActiveCityId(city.id);
-                    }}
-                    className={`flex items-center gap-1 rounded-full px-3 py-1 text-[10px] font-semibold border transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                      activeCityId === city.id
-                        // Sand — journey/selected semantic color, NOT blue
-                        ? 'bg-[rgb(var(--color-journey)/0.18)] border-[rgb(var(--color-journey)/0.5)] text-ink-900'
-                        : 'border-line bg-white text-ink-500 hover:border-[rgb(var(--color-journey)/0.4)] hover:text-ink-900'
-                    }`}
-                    style={{ transition: `all var(--motion-hover) var(--ease-out)` }}
-                  >
-                    <MapPin size={9} className="shrink-0" /> {city.cityName}
-                  </button>
-                );
-              })}
-
-              {planData.cities.length > 0 && (
-                <div className="h-3 w-px bg-line/60 shrink-0 mx-1" />
-              )}
-
-              {planData.cities.flatMap(c => c.days).map((day) => (
-                <button
-                  key={day.id}
-                  onClick={() => {
-                    const el = document.getElementById(`day-${day.dayNumber}`);
-                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    setFocusedDayId(day.id);
-                  }}
-                  className={`rounded-full px-2.5 py-1 text-[10px] font-semibold border transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                    focusedDayId === day.id
-                      // Sand — journey/selected semantic, NOT blue
-                      ? 'bg-[rgb(var(--color-journey)/0.18)] border-[rgb(var(--color-journey)/0.5)] text-ink-900'
-                      : 'border-line bg-white text-ink-500 hover:border-[rgb(var(--color-journey)/0.4)] hover:text-ink-900'
-                  }`}
-                  style={{ transition: `all var(--motion-hover) var(--ease-out)` }}
-                >
-                  D{day.dayNumber}
-                </button>
-              ))}
-            </div>
-
-            {/* Cloud Sync Status Indicator */}
-            {isSavingCloud && (
-              <span
-                role="status"
-                aria-live="polite"
-                className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-semibold text-emerald-700 border border-emerald-200 shrink-0 motion-safe:animate-pulse"
-              >
-                Saving…
-              </span>
-            )}
-          </div>
+          <TripStatusSpine
+            data={planData}
+            ledger={ledger ?? null}
+            workspaceId={workspaceId}
+            focusedDayId={focusedDayId}
+            activeCityId={activeCityId}
+            onCityFocus={(city) => {
+              const citySlug = city.cityName.replace(/\s+/g, '-').toLowerCase();
+              document.getElementById(`city-${citySlug}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              setActiveCityId(city.id);
+            }}
+            onDayFocus={(day) => {
+              document.getElementById(`day-${day.dayNumber}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              setFocusedDayId(day.id);
+            }}
+            onReviewBooking={() => setActivePanel('checkout')}
+          />
 
           {/* Scrollable Timeline — generous breathing room */}
-          <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-6" ref={exportRef}>
-            <InsightStrip workspaceId={workspaceId ?? null} />
+          <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-4" ref={exportRef}>
             <ItineraryTimeline
               data={planData}
               onItemHover={handleItemHover}
@@ -1245,6 +1246,10 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
                   onTogglePin={() => setPinnedItemId(pinnedItem ? null : (usePlannerHoverStore.getState().hoveredItem || defaultItem)?.id ?? null)}
                   onSwapItem={handleAddToPlan}
                   onExplore={(item) => openPanelForType(item.type)}
+                  focusedDay={focusedDay?.day ?? null}
+                  focusedCityName={focusedDay?.cityName}
+                  focusedDayInsights={focusedDayInsights}
+                  onViewOnMap={() => setViewMode('map')}
                 />
               </motion.div>
             ) : (

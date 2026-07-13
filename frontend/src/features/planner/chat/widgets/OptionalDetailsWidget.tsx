@@ -187,7 +187,7 @@ export function OptionalDetailsWidget({ widget, onSubmit }: OptionalDetailsWidge
     if (isFuture) {
       return (
         <div key={field} className="py-2 opacity-40">
-          <label className="text-[11px] font-semibold uppercase text-slate-500">
+          <label className="text-[11px] font-semibold uppercase text-ink-500">
             {field.replace('_', ' ')} (Next)
           </label>
         </div>
@@ -204,29 +204,29 @@ export function OptionalDetailsWidget({ widget, onSubmit }: OptionalDetailsWidge
       else valStr = getChipVal(field);
 
       return (
-        <div key={field} className="flex items-center gap-2 py-2 text-sm font-medium text-slate-600 border-b border-slate-50 last:border-0">
+        <div key={field} className="flex items-center gap-2 py-2 text-sm font-medium text-ink-600 border-b border-line last:border-0">
           <Check size={14} className="text-emerald-500" />
           <span className="capitalize">{field.replace('_', ' ')}:</span>
-          <span className="text-slate-900 capitalize font-bold">{valStr || 'Not set'}</span>
+          <span className="text-ink-900 capitalize font-bold">{valStr || 'Not set'}</span>
         </div>
       );
     }
 
     const nextBtn = (
       <div className="mt-4 flex items-center justify-between gap-2">
-        <button onClick={handleNext} className="text-xs font-semibold text-slate-400 hover:text-slate-600 transition-colors cursor-pointer">
+        <button onClick={handleNext} className="text-xs font-semibold text-ink-400 hover:text-ink-600 transition-colors cursor-pointer">
           Skip Step →
         </button>
         <div className="flex items-center gap-3">
-          <button 
-            onClick={handleSkipAll} 
-            className="text-xs font-extrabold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
+          <button
+            onClick={handleSkipAll}
+            className="text-xs font-extrabold text-[rgb(var(--color-ai))] hover:opacity-80 transition-opacity cursor-pointer"
           >
             ⚡ Skip All & Build Plan
           </button>
-          <button 
-            onClick={handleNext} 
-            className="rounded-lg bg-slate-900 px-4 py-1.5 text-xs font-bold text-white transition-all hover:bg-slate-800 cursor-pointer"
+          <button
+            onClick={handleNext}
+            className="rounded-lg bg-[rgb(var(--color-ai))] px-4 py-1.5 text-xs font-bold text-white transition-all hover:bg-violet-700 cursor-pointer"
           >
             Next Step
           </button>
@@ -242,9 +242,9 @@ export function OptionalDetailsWidget({ widget, onSubmit }: OptionalDetailsWidge
       <div key={field} className="py-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
         {field === 'visit_purpose' && (
           <div>
-            <label className="text-[11px] font-semibold uppercase text-slate-500 flex justify-between">
+            <label className="text-[11px] font-semibold uppercase text-ink-500 flex justify-between">
               <span>Trip Purpose</span>
-              {prefilled.visit_purpose && <span className="text-[9px] text-indigo-500 flex items-center gap-0.5"><Sparkles size={8}/> AI Detected</span>}
+              {prefilled.visit_purpose && <span className="text-[9px] text-[rgb(var(--color-ai))] flex items-center gap-0.5"><Sparkles size={8}/> AI Detected</span>}
             </label>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {['Vacation', 'Business', 'Hometown', 'Family', 'Honeymoon', 'Solo'].map(p => (
@@ -252,7 +252,7 @@ export function OptionalDetailsWidget({ widget, onSubmit }: OptionalDetailsWidge
                   key={p}
                   onClick={() => { setVisitPurpose(p.toLowerCase()); setTimeout(handleNext, 150); }}
                   className={`rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-all border flex items-center gap-1 ${
-                    visitPurpose === p.toLowerCase() ? 'bg-indigo-600 text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                    visitPurpose === p.toLowerCase() ? 'bg-[rgb(var(--color-ai))] text-white border-transparent' : 'bg-paper-0 text-ink-600 border-line hover:bg-paper-1'
                   }`}
                 >
                   {p}
@@ -265,11 +265,11 @@ export function OptionalDetailsWidget({ widget, onSubmit }: OptionalDetailsWidge
 
         {field === 'travelers' && (
           <div>
-            <label className="text-[11px] font-semibold uppercase text-slate-500">Travelers</label>
+            <label className="text-[11px] font-semibold uppercase text-ink-500">Travelers</label>
             <div className="mt-2 flex items-center gap-3">
-              <button onClick={() => setTravelers(Math.max(1, travelers - 1))} className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-600 font-bold hover:bg-slate-200">-</button>
-              <span className="w-6 text-center text-sm font-bold text-slate-800">{travelers}</span>
-              <button onClick={() => setTravelers(travelers + 1)} className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-600 font-bold hover:bg-slate-200">+</button>
+              <button onClick={() => setTravelers(Math.max(1, travelers - 1))} className="flex h-8 w-8 items-center justify-center rounded-full bg-paper-0 text-ink-600 font-bold hover:bg-paper-1">-</button>
+              <span className="w-6 text-center text-sm font-bold text-ink-800">{travelers}</span>
+              <button onClick={() => setTravelers(travelers + 1)} className="flex h-8 w-8 items-center justify-center rounded-full bg-paper-0 text-ink-600 font-bold hover:bg-paper-1">+</button>
             </div>
             {nextBtn}
           </div>
@@ -277,24 +277,24 @@ export function OptionalDetailsWidget({ widget, onSubmit }: OptionalDetailsWidge
 
         {field === 'budget' && (
           <div>
-            <label className="text-[11px] font-semibold uppercase text-slate-500 flex justify-between">
+            <label className="text-[11px] font-semibold uppercase text-ink-500 flex justify-between">
               <span>Trip Budget</span>
-              {prefilled.recommended_budget_inr && <span className="text-[9px] text-indigo-500 flex items-center gap-0.5"><Sparkles size={8}/> Recommended</span>}
+              {prefilled.recommended_budget_inr && <span className="text-[9px] text-[rgb(var(--color-ai))] flex items-center gap-0.5"><Sparkles size={8}/> Recommended</span>}
             </label>
-            <div className="mt-2 text-sm font-bold text-blue-600">
+            <div className="mt-2 text-sm font-bold text-[rgb(var(--color-ai))]">
               {currencySymbol}{new Intl.NumberFormat(undefined).format(budgetVal)}
             </div>
-            <input type="range" min={config.min} max={config.max} step={config.step} value={budgetVal} onChange={(e) => setBudgetVal(Number(e.target.value))} className="mt-2 w-full h-1.5 cursor-pointer appearance-none rounded-lg bg-slate-200 accent-blue-600" />
+            <input type="range" min={config.min} max={config.max} step={config.step} value={budgetVal} onChange={(e) => setBudgetVal(Number(e.target.value))} className="mt-2 w-full h-1.5 cursor-pointer appearance-none rounded-lg bg-paper-0 accent-[rgb(var(--color-ai))]" />
             {nextBtn}
           </div>
         )}
 
         {field === 'origin' && (
           <div>
-            <label className="text-[11px] font-semibold uppercase text-slate-500">Departure City</label>
+            <label className="text-[11px] font-semibold uppercase text-ink-500">Departure City</label>
             <div className="relative mt-2">
-              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-              <input value={origin} onChange={(e) => setOrigin(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleNext()} placeholder="e.g. Mumbai" className="w-full rounded-lg border border-slate-200 bg-slate-50 py-1.5 pl-8 pr-3 text-sm text-slate-800 placeholder:text-slate-400" />
+              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" size={14} />
+              <input value={origin} onChange={(e) => setOrigin(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleNext()} placeholder="e.g. Mumbai" className="w-full rounded-lg border border-line bg-paper-0 py-1.5 pl-8 pr-3 text-sm text-ink-800 placeholder:text-ink-400" />
             </div>
             {nextBtn}
           </div>
@@ -302,14 +302,14 @@ export function OptionalDetailsWidget({ widget, onSubmit }: OptionalDetailsWidge
 
         {field === 'interests' && (
           <div>
-            <label className="text-[11px] font-semibold uppercase text-slate-500">Interests</label>
+            <label className="text-[11px] font-semibold uppercase text-ink-500">Interests</label>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {['Food', 'Culture', 'Nature', 'Nightlife', 'Shopping', 'Relaxation', 'Adventure'].map(i => {
                 const isSel = interests.includes(i.toLowerCase());
                 return (
                   <button key={i} onClick={() => {
                     setInterests(prev => isSel ? prev.filter(x => x !== i.toLowerCase()) : [...prev, i.toLowerCase()]);
-                  }} className={`rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-all border ${isSel ? 'bg-indigo-600 text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}>
+                  }} className={`rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-all border ${isSel ? 'bg-[rgb(var(--color-ai))] text-white border-transparent' : 'bg-paper-0 text-ink-600 border-line hover:bg-paper-1'}`}>
                     {i}
                   </button>
                 )
@@ -322,16 +322,16 @@ export function OptionalDetailsWidget({ widget, onSubmit }: OptionalDetailsWidge
         {/* Dynamic chip-based fields (handles all other fields + fallback) */}
         {!['visit_purpose', 'travelers', 'budget', 'origin', 'interests'].includes(field) && (
           <div>
-            <label className="text-[11px] font-semibold uppercase text-slate-500 flex justify-between">
+            <label className="text-[11px] font-semibold uppercase text-ink-500 flex justify-between">
               <span>{field.replace('_', ' ')}</span>
-              {prefilled[field] && <span className="text-[9px] text-indigo-500 flex items-center gap-0.5"><Sparkles size={8}/> Recommended</span>}
+              {prefilled[field] && <span className="text-[9px] text-[rgb(var(--color-ai))] flex items-center gap-0.5"><Sparkles size={8}/> Recommended</span>}
             </label>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {options.map(opt => (
                 <button
                   key={opt}
                   onClick={() => { setChipVal(field, opt); setTimeout(handleNext, 150); }}
-                  className={`rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-all border ${currentVal === opt ? 'bg-indigo-600 text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}
+                  className={`rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-all border ${currentVal === opt ? 'bg-[rgb(var(--color-ai))] text-white border-transparent' : 'bg-paper-0 text-ink-600 border-line hover:bg-paper-1'}`}
                 >
                   {opt}
                 </button>
@@ -345,16 +345,16 @@ export function OptionalDetailsWidget({ widget, onSubmit }: OptionalDetailsWidge
   };
 
   return (
-    <div className="mr-auto mt-2 flex w-full max-w-sm flex-col gap-3 rounded-2xl border border-line-strong bg-white p-4 shadow-sm animate-fade-in">
-      <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-        <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
-          <Sparkles size={14} className="text-indigo-500 motion-safe:animate-pulse" />
+    <div className="mr-auto mt-2 flex w-full max-w-sm flex-col gap-3 rounded-2xl border border-line-strong bg-paper-2 p-4 shadow-surface animate-fade-in">
+      <div className="flex items-center justify-between border-b border-line pb-2">
+        <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-ink-500">
+          <Sparkles size={14} className="text-[rgb(var(--color-ai))] motion-safe:animate-pulse" />
           <span>Fine-tuning your trip</span>
         </div>
         <div className="flex flex-col items-end gap-1">
-          <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">AI Confidence {confidenceScore}%</span>
-          <div className="w-20 bg-slate-100 rounded-full h-1.5 overflow-hidden">
-            <div className="bg-gradient-to-r from-indigo-500 to-blue-500 h-1.5 rounded-full transition-all duration-700 ease-out" style={{ width: `${confidenceScore}%` }} />
+          <span className="text-[10px] font-bold text-[rgb(var(--color-ai))] uppercase tracking-wider">AI Confidence {confidenceScore}%</span>
+          <div className="w-20 bg-paper-0 rounded-full h-1.5 overflow-hidden">
+            <div className="bg-gradient-to-r from-[rgb(var(--color-ai))] to-violet-700 h-1.5 rounded-full transition-all duration-700 ease-out" style={{ width: `${confidenceScore}%` }} />
           </div>
         </div>
       </div>
@@ -363,10 +363,10 @@ export function OptionalDetailsWidget({ widget, onSubmit }: OptionalDetailsWidge
         {fields.map((field, idx) => renderField(field, idx))}
       </div>
 
-      <div className="mt-2 pt-2 animate-in fade-in zoom-in duration-300 border-t border-slate-100 flex items-center justify-between gap-2">
+      <div className="mt-2 pt-2 animate-in fade-in zoom-in duration-300 border-t border-line flex items-center justify-between gap-2">
         <button
           onClick={handleSkipAll}
-          className="text-xs font-semibold text-slate-400 hover:text-slate-600 transition-colors"
+          className="text-xs font-semibold text-ink-400 hover:text-ink-600 transition-colors"
         >
           Skip All & Create
         </button>

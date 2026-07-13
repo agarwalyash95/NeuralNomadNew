@@ -31,28 +31,29 @@ export default function CanvasHeader({
   onClose,
 }: CanvasHeaderProps) {
   return (
-    <div className="sticky top-0 z-20 border-b border-slate-200 bg-white px-4 py-3">
-      <div className="flex items-center justify-between">
-        {/* Left: Icon + Label + Title */}
-        <div className="flex items-center gap-3 min-w-0">
-          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${iconColor} text-white`}>
-            {icon}
+    <div className="sticky top-0 z-20 border-b border-line bg-paper-2 px-4 py-2.5">
+      <div className="flex items-center justify-between gap-3">
+        {/* Left: icon + label share one line, title directly below —
+            same information as before, one stacked row saved. */}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ${iconColor} text-white [&>svg]:h-3.5 [&>svg]:w-3.5`}>
+              {icon}
+            </div>
+            <p className="truncate text-micro">{label}</p>
           </div>
-          <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{label}</p>
-            <h2 className="text-sm font-semibold text-slate-900 truncate">{title}</h2>
-          </div>
+          <h2 className="mt-0.5 truncate text-title">{title}</h2>
         </div>
 
         {/* Right: Trip context badge + close */}
         <div className="flex items-center gap-2 shrink-0 ml-2">
           {tripContext?.destination && (
-            <div className="hidden sm:flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-600">
+            <div className="hidden sm:flex items-center gap-1.5 rounded-full border border-line bg-paper-1 px-2.5 py-1 text-caption font-semibold">
               <MapPin size={11} />
               <span>{tripContext.destination}</span>
               {tripContext.travellers > 1 && (
                 <>
-                  <span className="text-slate-300">•</span>
+                  <span className="text-ink-400">•</span>
                   <span>{tripContext.travellers} pax</span>
                 </>
               )}
@@ -61,7 +62,7 @@ export default function CanvasHeader({
           {onClose && (
             <button
               onClick={onClose}
-              className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+              className="rounded-xl p-1.5 text-ink-400 transition-colors duration-[var(--motion-hover)] ease-[var(--ease-out)] hover:bg-paper-1 hover:text-ink-700"
             >
               <X size={18} />
             </button>

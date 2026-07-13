@@ -26,54 +26,47 @@ interface Row {
 
 function buildAttractionRows(compared: AttractionRecommendation[]): Row[] {
   return [
-    { label: 'Label', values: compared.map((r) => r.label) },
-    { label: 'Photography', values: compared.map((r) => '●'.repeat(r.experienceQualities.photography) + '○'.repeat(5 - r.experienceQualities.photography)) },
-    { label: 'Scenic', values: compared.map((r) => '●'.repeat(r.experienceQualities.scenic) + '○'.repeat(5 - r.experienceQualities.scenic)) },
-    { label: 'History', values: compared.map((r) => '●'.repeat(r.experienceQualities.history) + '○'.repeat(5 - r.experienceQualities.history)) },
-    { label: 'Walk time', values: compared.map((r) => `${r.walkTimeMins} min`) },
+    { label: 'Rating', values: compared.map((r) => (r.suggestion.rating != null ? `${r.suggestion.rating}★` : null)) },
+    { label: 'Walk time', values: compared.map((r) => (r.walkTimeMins != null ? `${r.walkTimeMins} min` : null)) },
     { label: 'Entry fee', values: compared.map((r) => r.entryFee) },
-    { label: 'Visit', values: compared.map((r) => r.visitDurationMins >= 60 ? `${Math.floor(r.visitDurationMins / 60)}h${r.visitDurationMins % 60 > 0 ? ` ${r.visitDurationMins % 60}m` : ''}` : `${r.visitDurationMins}m`) },
-    { label: 'Best time', values: compared.map((r) => r.bestTimeWindow) },
   ];
 }
 
 function buildActivityRows(compared: ActivityRecommendation[]): Row[] {
   return [
-    { label: 'Type', values: compared.map((r) => r.label) },
     { label: 'Difficulty', values: compared.map((r) => r.difficulty) },
     { label: 'Duration', values: compared.map((r) => r.durationLabel) },
     { label: 'Price', values: compared.map((r) => r.priceLabel) },
-    { label: 'Booking', values: compared.map((r) => (r.bookingRequired ? `${r.bookingLeadTimeHours}h advance` : 'Walk-in')) },
-    { label: 'Slots today', values: compared.map((r) => r.slotsAvailableLabel) },
+    { label: 'Booking', values: compared.map((r) => r.bookingRequired === true ? 'Advance booking' : r.bookingRequired === false ? 'Walk-in' : null) },
   ];
 }
 
 // ── AI verdict — the key differentiator from the restaurant compare tray ──
 function buildAttractionVerdict(compared: AttractionRecommendation[]): string | null {
   if (compared.length < 2) return null;
-  const winner = [...compared].sort(
-    (a, b) =>
-      b.experienceQualities.scenic + b.experienceQualities.photography - a.walkTimeMins / 5 -
-      (a.experienceQualities.scenic + a.experienceQualities.photography - b.walkTimeMins / 5),
-  )[0];
+  const score = (r: AttractionRecommendation) => (r.suggestion.rating ?? 4) - (r.walkTimeMins ?? 99) / 10;
+  const winner = [...compared].sort((a, b) => score(b) - score(a))[0];
   if (!winner) return null;
   const context = winner.itineraryContext || "today's route";
-  const walkNote = winner.walkTimeMins <= 10 ? `only ${winner.walkTimeMins} min walk` : `${winner.walkTimeMins} min walk`;
-  const quietNote = winner.crowdLevel === 'Low' || winner.crowdLevel === 'Moderate' ? ', quieter' : '';
-  const feeNote = winner.entryFee === 'Free' ? ', free entry' : '';
-  return `For ${context}, ${winner.suggestion.name} is the better fit — ${walkNote}${quietNote}${feeNote} and best experienced ${winner.bestTimeWindow}.`;
+  const walkNote = winner.walkTimeMins == null
+    ? 'walk time unknown'
+    : winner.walkTimeMins <= 10 ? `only ${winner.walkTimeMins} min walk` : `${winner.walkTimeMins} min walk`;
+  const feeNote = winner.entryFeeIsReal && winner.entryFee.toLowerCase().includes('free') ? ', free entry' : '';
+  return `For ${context}, ${winner.suggestion.name} is the better fit — ${walkNote}${feeNote}.`;
 }
 
 function buildActivityVerdict(compared: ActivityRecommendation[]): string | null {
   if (compared.length < 2) return null;
   const winner = [...compared].sort(
-    (a, b) => (a.bookingRequired ? 1 : 0) - (b.bookingRequired ? 1 : 0) || (b.suggestion.rating ?? 4) - (a.suggestion.rating ?? 4),
+    (a, b) => (a.bookingRequired === true ? 1 : 0) - (b.bookingRequired === true ? 1 : 0) || (b.suggestion.rating ?? 4) - (a.suggestion.rating ?? 4),
   )[0];
   if (!winner) return null;
-  const bookingNote = winner.bookingRequired
-    ? `book ${winner.bookingLeadTimeHours}h before`
-    : 'walk-in friendly';
-  return `${winner.suggestion.name} is our pick — ${winner.durationLabel} of ${winner.difficulty.toLowerCase()}-level fun at ${winner.priceLabel}. ${bookingNote}.`;
+  const parts = [`${winner.suggestion.name} is our pick`];
+  if (winner.durationLabel) parts.push(winner.difficulty ? `${winner.durationLabel} of ${winner.difficulty.toLowerCase()}-level fun` : winner.durationLabel);
+  if (winner.priceLabel) parts.push(`at ${winner.priceLabel}`);
+  if (winner.bookingRequired === true) parts.push('— book ahead');
+  else if (winner.bookingRequired === false) parts.push('— walk-in friendly');
+  return `${parts.join(' ')}.`;
 }
 
 export default function SightCompareTray({
@@ -102,8 +95,8 @@ export default function SightCompareTray({
 
   const accentColor =
     activeTab === 'attractions'
-      ? { pill: 'bg-emerald-600', select: 'bg-emerald-600 hover:bg-emerald-700' }
-      : { pill: 'bg-rose-500', select: 'bg-rose-500 hover:bg-rose-600' };
+      ? { pill: 'bg-cat-attraction', select: 'bg-cat-attraction hover:opacity-90' }
+      : { pill: 'bg-cat-activity', select: 'bg-cat-activity hover:opacity-90' };
 
   return (
     <div className="sticky bottom-0 z-30 border-t border-line bg-paper-2 shadow-modal">
@@ -114,7 +107,7 @@ export default function SightCompareTray({
         className={`flex min-h-[44px] w-full items-center justify-between gap-2 px-4 py-2.5 ${FOCUS_RING_CLASS}`}
       >
         <span className="flex items-center gap-2 text-xs font-bold text-ink-900">
-          <GitCompareArrows size={14} className={activeTab === 'attractions' ? 'text-emerald-600' : 'text-rose-500'} />
+          <GitCompareArrows size={14} className={activeTab === 'attractions' ? 'text-cat-attraction' : 'text-cat-activity'} />
           Comparing {compared.length} {activeTab === 'attractions' ? 'attraction' : 'activit'}{compared.length === 1 ? (activeTab === 'activities' ? 'y' : '') : activeTab === 'activities' ? 'ies' : 's'}
         </span>
         <ChevronUp size={16} className={`text-ink-400 transition-transform ${open ? '' : 'rotate-180'}`} />
@@ -175,14 +168,15 @@ export default function SightCompareTray({
             </table>
           </div>
 
-          {/* AI verdict — unique to sight compare tray */}
+          {/* AI verdict — unique to sight compare tray. Violet (AI semantic),
+              not amber (caution) — this is a recommendation, not a warning. */}
           {verdict && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3">
-              <div className="mb-1.5 flex items-center gap-1.5 text-amber-700">
+            <div className="rounded-xl border p-3" style={{ borderColor: 'rgb(var(--color-ai) / 0.18)', background: 'rgb(var(--color-ai) / 0.05)' }}>
+              <div className="mb-1.5 flex items-center gap-1.5" style={{ color: 'rgb(var(--color-ai))' }}>
                 <Sparkles size={12} className="fill-current" />
                 <span className="text-[11px] font-bold uppercase tracking-wide">AI Recommendation</span>
               </div>
-              <p className="text-[11.5px] leading-snug text-amber-900">{verdict}</p>
+              <p className="text-[11.5px] leading-snug text-ink-700">{verdict}</p>
             </div>
           )}
 

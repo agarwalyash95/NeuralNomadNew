@@ -3,13 +3,15 @@
 /**
  * RichHoverCard — the "enough to decide" panel for a hovered plan block.
  * Every fact here is a reference-data field (Google-Places-backed master
- * tables): photos, rating + review count, today's hours, phone, website,
- * editorial summary. Nothing synthesized. Renders nothing when the block
- * has no place_id (pre-redesign plans) or the lookup misses.
+ * tables): photos, rating + review count, today's hours, address/directions,
+ * phone, website, editorial summary, one top review quote. Nothing
+ * synthesized. Renders nothing when the block has no place_id (pre-redesign
+ * plans) or the lookup misses. The full Helper Canvas detail panel is this
+ * same card expanded — same chip/divider language, more of it.
  */
 
 import React, { useState } from 'react';
-import { Star, Phone, Globe, Clock, Loader2, Accessibility, CreditCard, ParkingCircle, Leaf, CalendarClock, Sparkles, Info, Expand } from 'lucide-react';
+import { Star, Phone, Globe, Clock, Loader2, Accessibility, CreditCard, ParkingCircle, Leaf, CalendarClock, Sparkles, Info, Expand, MapPin } from 'lucide-react';
 import type { ItineraryItem, SuggestionDetails } from './types';
 import { usePlaceDetails } from '../hooks/usePlaceDetails';
 import MediaLightbox from '@/features/planner/components/MediaLightbox';
@@ -67,6 +69,17 @@ function buildFactChips(details: SuggestionDetails) {
   return chips;
 }
 
+// Same "highest-rated real review first" selection as the full detail
+// page's review list — one quote of social proof, not a reviews panel.
+function buildTopReview(reviews: SuggestionDetails['reviews']): { text: string; author: string } | null {
+  if (!reviews || reviews.length === 0) return null;
+  const best = [...reviews].filter((r) => (r.rating ?? 0) >= 4).sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))[0] ?? reviews[0];
+  const text = typeof best.text === 'object' && best.text ? (best.text.text || '') : (best.text || '');
+  if (!text) return null;
+  const author = best.authorAttribution?.displayName || best.author_name || 'Traveler';
+  return { text, author };
+}
+
 function ThinDetailsNotice({ message }: { message: string }) {
   // Previously these cases rendered nothing at all — a hover that silently
   // shows no card reads as broken, not as "no data." An empty/error state
@@ -110,6 +123,10 @@ export default function RichHoverCard({ item }: { item: ItineraryItem | null }) 
   // side in suggestions.py::_local_tips.
   const localTip = details.local_tips?.[0] ?? null;
   const lowCompleteness = photos.length === 0 && !details.editorial_summary && factChips.length === 0 && !hours;
+  const mapsUrl = data.latitude != null && data.longitude != null
+    ? `https://www.google.com/maps/search/?api=1&query=${data.latitude},${data.longitude}`
+    : null;
+  const topReview = buildTopReview(details.reviews);
 
   return (
     <div className="rounded-[18px] border border-line bg-paper-2/70 p-3.5 shadow-2xs">
@@ -200,6 +217,16 @@ export default function RichHoverCard({ item }: { item: ItineraryItem | null }) 
         </div>
       )}
 
+      {topReview && (
+        <div className="mt-2.5 flex items-start gap-1.5 border-t border-line/70 pt-2.5">
+          <Star size={11} className="mt-0.5 shrink-0 fill-amber-400 text-amber-400" />
+          <p className="text-[10.5px] font-medium leading-relaxed text-ink-700">
+            <span className="font-bold text-ink-900">{topReview.author}</span>
+            {' — '}&quot;{topReview.text.slice(0, 110)}{topReview.text.length > 110 ? '…' : ''}&quot;
+          </p>
+        </div>
+      )}
+
       {localTip && (
         <div className="mt-2.5 flex items-start gap-1.5 border-t border-line/70 pt-2.5">
           <Info size={11} className="mt-0.5 shrink-0 text-ink-400" />
@@ -207,8 +234,19 @@ export default function RichHoverCard({ item }: { item: ItineraryItem | null }) 
         </div>
       )}
 
-      {(details.national_phone_number || details.website_uri) && (
+      {(details.national_phone_number || details.website_uri || mapsUrl) && (
         <div className="mt-2.5 flex flex-wrap items-center gap-2 border-t border-line/70 pt-2.5">
+          {mapsUrl && (
+            <a
+              href={mapsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 rounded-lg border border-line bg-paper-1 px-2 py-1 text-[10px] font-bold text-ink-700 transition hover:border-line-strong hover:bg-paper-2"
+            >
+              <MapPin size={10} className="text-ink-400" />
+              {data.address ? data.address.split(',')[0] : 'Directions'}
+            </a>
+          )}
           {details.national_phone_number && (
             <a
               href={`tel:${details.national_phone_number}`}

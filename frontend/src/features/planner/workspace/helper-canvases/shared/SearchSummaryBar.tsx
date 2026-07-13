@@ -26,19 +26,19 @@ export default function SearchSummaryBar({
   children,
 }: SearchSummaryBarProps) {
   return (
-    <div className="border-b border-slate-200 bg-slate-50 p-4">
+    <div className="border-b border-line bg-paper-1 p-4">
       <button
         onClick={onClick}
-        className="group w-full rounded-xl border border-slate-200 bg-white p-3 text-left transition-all hover:border-slate-300 hover:shadow-md"
+        className="group w-full rounded-xl border border-line bg-paper-2 p-3 text-left transition-all hover:border-line-strong hover:shadow-md"
       >
         <div className="flex items-center justify-between">
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-slate-900 truncate">{primary}</p>
+            <p className="text-sm font-semibold text-ink-900 truncate">{primary}</p>
             {secondary && (
-              <p className="mt-1 text-xs text-slate-500 truncate">{secondary}</p>
+              <p className="mt-1 text-xs text-ink-500 truncate">{secondary}</p>
             )}
           </div>
-          <Edit2 size={16} className={`shrink-0 ml-2 text-slate-400 transition-colors ${accentColor}`} />
+          <Edit2 size={16} className={`shrink-0 ml-2 text-ink-400 transition-colors ${accentColor}`} />
         </div>
       </button>
       {/* Quick filter tags slot */}

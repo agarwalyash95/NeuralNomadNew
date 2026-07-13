@@ -40,7 +40,8 @@ def embed_text(text):
         logger.warning("google-genai not installed; embedding skipped")
         return None
     try:
-        client = genai.Client()
+        from apps.common.ai import get_genai_client
+        client = get_genai_client()
         resp = client.models.embed_content(
             model=EMBEDDING_MODEL,
             contents=text,

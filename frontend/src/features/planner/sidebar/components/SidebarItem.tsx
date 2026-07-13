@@ -95,8 +95,10 @@ export function SidebarItem({
         {icon}
       </div>
 
-      {/* Content */}
-      <div className="min-w-0 flex-1">
+      {/* Content — one denser metadata line (badge · date · hint) instead of
+          three stacked rows, so the row reads at a glance without stacking
+          height on a narrow 256px column. */}
+      <div className="min-w-0 flex-1 pr-6">
         <p
           className={cn(
             'truncate text-[12px] leading-tight',
@@ -108,34 +110,35 @@ export function SidebarItem({
           {label}
         </p>
 
-        <div className="mt-0.5 flex items-center gap-1.5">
+        <div className="mt-0.5 flex items-center gap-1.5 min-w-0">
           {getStatusBadge()}
           {dateStr && (
-            <span className="text-[9px] text-ink-400 font-medium">
+            <span className="shrink-0 text-[9px] text-ink-400 font-medium">
               {dateStr}
             </span>
           )}
+          {hint && (
+            <>
+              {(dateStr || getStatusBadge()) && <span className="shrink-0 text-ink-300">·</span>}
+              <span className="truncate text-[9px] font-medium text-ink-400">{hint}</span>
+            </>
+          )}
         </div>
-
-        {hint && (
-          <p className="mt-0.5 truncate text-[10px] font-medium text-ink-400 leading-tight">
-            {hint}
-          </p>
-        )}
       </div>
 
-      {/* Delete — ghost, reveal on hover only */}
+      {/* Delete — low-emphasis but always present, not hover-only (hover-only
+          affordances are unreachable on touch devices) */}
       {onDelete && (
         <button
           onClick={onDelete}
           className={cn(
             'absolute right-2 top-1/2 -translate-y-1/2',
             'flex h-6 w-6 items-center justify-center rounded-lg',
-            'text-ink-400 opacity-0 group-hover:opacity-100',
+            'text-ink-400 opacity-40 group-hover:opacity-100 focus-visible:opacity-100',
             'hover:bg-red-50 hover:text-red-500',
-            'transition-all'
+            'transition-opacity'
           )}
-          style={{ transition: `all var(--motion-hover) var(--ease-out)` }}
+          style={{ transition: `opacity var(--motion-hover) var(--ease-out)` }}
           title="Delete Plan"
         >
           <Trash2 size={12} strokeWidth={2} />

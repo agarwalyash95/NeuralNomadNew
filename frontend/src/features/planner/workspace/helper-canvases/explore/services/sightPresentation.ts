@@ -1,15 +1,16 @@
-import type { AttractionRecommendation, TimingSlot, WeatherSuitability } from './sightRecommendationEngine';
+import type { AttractionRecommendation } from './sightRecommendationEngine';
 import type { ActivityRecommendation } from './activityRecommendationEngine';
 
 // ── Attraction AI Quick Actions ──────────────────────────────────────────
-export type AIAttractionActionId = 'quieter' | 'scenic' | 'free_entry' | 'shorter_walk' | 'indoor';
+// 'Find quieter', 'More scenic', and 'Under a roof' were removed — Google
+// Places gives no live-crowd, scenic-quality, or indoor/outdoor signal for
+// attractions, so those buttons used to sort by an invented score. Don't
+// reintroduce them without a real backend signal to sort on.
+export type AIAttractionActionId = 'free_entry' | 'shorter_walk';
 
 export const AI_ATTRACTION_QUICK_ACTIONS: { id: AIAttractionActionId; label: string; emoji: string }[] = [
-  { id: 'quieter', label: 'Find quieter', emoji: '🤫' },
-  { id: 'scenic', label: 'More scenic', emoji: '🏔️' },
   { id: 'free_entry', label: 'Free to enter', emoji: '🎫' },
   { id: 'shorter_walk', label: 'Shorter walk', emoji: '🚶' },
-  { id: 'indoor', label: 'Under a roof', emoji: '🏛️' },
 ];
 
 export function applyAttractionQuickFilter(
@@ -17,37 +18,16 @@ export function applyAttractionQuickFilter(
   action: AIAttractionActionId,
 ): AttractionRecommendation[] {
   switch (action) {
-    case 'quieter': {
-      const quiet = recommendations.filter(
-        (r) => r.crowdLevel === 'Low' || r.crowdLevel === 'Moderate',
-      );
-      return (quiet.length > 0 ? quiet : recommendations).sort(
-        (a, b) =>
-          ['Low', 'Moderate', 'Busy', 'Peak'].indexOf(a.crowdLevel) -
-          ['Low', 'Moderate', 'Busy', 'Peak'].indexOf(b.crowdLevel),
-      );
-    }
-    case 'scenic':
-      return [...recommendations].sort(
-        (a, b) =>
-          b.experienceQualities.scenic +
-          b.experienceQualities.photography -
-          (a.experienceQualities.scenic + a.experienceQualities.photography),
-      );
     case 'free_entry': {
-      const free = recommendations.filter((r) => r.entryFee.toLowerCase().includes('free'));
+      const free = recommendations.filter((r) => r.entryFeeIsReal && r.entryFee.toLowerCase().includes('free'));
       return free.length > 0 ? free : recommendations;
     }
     case 'shorter_walk':
-      return [...recommendations].sort((a, b) => a.walkTimeMins - b.walkTimeMins);
-    case 'indoor': {
-      const indoor = recommendations.filter(
-        (r) =>
-          r.weatherSuitability === 'indoor_only' ||
-          r.experienceQualities.accessibility >= 4,
-      );
-      return indoor.length > 0 ? indoor : recommendations;
-    }
+      return [...recommendations].sort((a, b) => {
+        if (a.walkTimeMins == null) return 1; // unknown distances sort last
+        if (b.walkTimeMins == null) return -1;
+        return a.walkTimeMins - b.walkTimeMins;
+      });
     default:
       return recommendations;
   }
@@ -70,18 +50,17 @@ export function applyActivityQuickFilter(
 ): ActivityRecommendation[] {
   switch (action) {
     case 'beginner':
-      return [...recommendations]
-        .filter((r) => r.difficultyScore <= 2)
-        .sort((a, b) => a.difficultyScore - b.difficultyScore);
+      return recommendations
+        .filter((r) => r.difficultyScore !== null && r.difficultyScore <= 2)
+        .sort((a, b) => (a.difficultyScore ?? 0) - (b.difficultyScore ?? 0));
     case 'short':
-      return [...recommendations]
-        .sort((a, b) => a.durationMins - b.durationMins)
-        .filter((r) => r.durationMins <= 120);
+      return recommendations
+        .filter((r) => r.durationMins !== null && r.durationMins <= 120)
+        .sort((a, b) => (a.durationMins ?? 0) - (b.durationMins ?? 0));
     case 'budget': {
-      const cheap = recommendations.filter((r) => r.pricePerPerson < 500);
-      return cheap.length > 0
-        ? cheap.sort((a, b) => a.pricePerPerson - b.pricePerPerson)
-        : recommendations.sort((a, b) => a.pricePerPerson - b.pricePerPerson);
+      const cheap = recommendations.filter((r) => r.pricePerPerson !== null && r.pricePerPerson < 500);
+      const base = cheap.length > 0 ? cheap : recommendations.filter((r) => r.pricePerPerson !== null);
+      return base.sort((a, b) => (a.pricePerPerson ?? 0) - (b.pricePerPerson ?? 0));
     }
     case 'indoor': {
       const indoor = recommendations.filter(
@@ -96,42 +75,11 @@ export function applyActivityQuickFilter(
       return indoor.length > 0 ? indoor : recommendations;
     }
     case 'walkin': {
-      const walkIn = recommendations.filter((r) => !r.bookingRequired);
+      const walkIn = recommendations.filter((r) => r.bookingRequired === false);
       return walkIn.length > 0 ? walkIn : recommendations;
     }
     default:
       return recommendations;
-  }
-}
-
-// ── Timing badge helpers ───────────────────────────────────────────────────
-export function getTimingBadge(slot: TimingSlot): { emoji: string; label: string; color: string } {
-  switch (slot) {
-    case 'sunrise':
-      return { emoji: '🌅', label: 'Best at Sunrise', color: 'text-amber-700 bg-amber-50 border-amber-200' };
-    case 'morning':
-      return { emoji: '☀️', label: 'Best Before Noon', color: 'text-sky-700 bg-sky-50 border-sky-200' };
-    case 'golden_hour':
-      return { emoji: '🌇', label: 'Golden Hour Pick', color: 'text-orange-700 bg-orange-50 border-orange-200' };
-    case 'evening':
-      return { emoji: '🌙', label: 'Evening Only', color: 'text-indigo-700 bg-indigo-50 border-indigo-200' };
-    case 'anytime':
-    default:
-      return { emoji: '🕐', label: 'Any Time', color: 'text-slate-600 bg-slate-50 border-slate-200' };
-  }
-}
-
-export function getWeatherBadge(weather: WeatherSuitability): { emoji: string; label: string; color: string } | null {
-  switch (weather) {
-    case 'outdoor_sunny':
-      return { emoji: '☀️', label: 'Clear day preferred', color: 'text-amber-700 bg-amber-50 border-amber-200' };
-    case 'outdoor_cloudy':
-      return { emoji: '🌤️', label: 'Good in any weather', color: 'text-slate-600 bg-slate-50 border-slate-200' };
-    case 'indoor_only':
-      return { emoji: '🏛️', label: 'Perfect rain escape', color: 'text-blue-700 bg-blue-50 border-blue-200' };
-    case 'any':
-    default:
-      return null;
   }
 }
 

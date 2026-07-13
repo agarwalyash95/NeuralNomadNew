@@ -1,21 +1,18 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Download, MoreVertical, CreditCard, Loader2, Route, Bookmark, BookmarkCheck,
-  Calendar, Users, Pencil, Ticket, MapPin, Milestone, Undo2, Redo2, Gauge,
+  Calendar, Users, Pencil, Ticket, Undo2, Redo2, Gauge,
   List, Map as MapViewIcon,
 } from 'lucide-react';
 import { MockTripData } from './types';
-import { parsePriceToInteger } from './utils/priceParser';
-import type { TripLedger } from '@/services/planner.types';
 import TransportPreferencesPanel from '@/features/planner/components/TransportPreferencesPanel';
 
 export type CanvasViewMode = 'details' | 'map';
 
 interface PlannerHeaderProps {
   data: MockTripData;
-  ledger?: TripLedger | null;
   onExport?: () => void;
   isExporting?: boolean;
   isSavingCloud?: boolean;
@@ -34,13 +31,8 @@ interface PlannerHeaderProps {
   onViewModeChange?: (mode: CanvasViewMode) => void;
 }
 
-const HATCH_AMBER =
-  'repeating-linear-gradient(135deg, rgb(var(--trust-estimated) / 0.75) 0 4px, rgb(var(--trust-estimated) / 0.35) 4px 8px)';
-const HATCH_VIOLET =
-  'repeating-linear-gradient(135deg, rgb(var(--trust-suggested) / 0.7) 0 4px, rgb(var(--trust-suggested) / 0.3) 4px 8px)';
-
 export default function PlannerHeader({
-  data, ledger, onExport, isExporting, isSavingCloud, onBook, onViewPasses,
+  data, onExport, isExporting, isSavingCloud, onBook, onViewPasses,
   onOptimizeRoutes, onSave, isSaving, isSaved, onRenameTitle,
   onUndo, onRedo, canUndo, canRedo,
   viewMode, onViewModeChange,
@@ -64,60 +56,7 @@ export default function PlannerHeader({
     return city.days.some(day => day.items.some(item => item.status === 'Confirmed'));
   });
 
-  const stats = useMemo(() => {
-    const dayCount = data.cities.reduce((n, c) => n + c.days.length, 0);
-    const cityCount = data.cities.length;
-    let totalKm = 0;
-    data.cities.forEach(c =>
-      c.days.forEach(d => {
-        Object.values(d.transitHints ?? {}).forEach(h => { totalKm += h.distance_km; });
-      })
-    );
-    return { dayCount, cityCount, totalKm: Math.round(totalKm) };
-  }, [data]);
-
   const dateRange = data.startDate && data.endDate ? `${data.startDate} → ${data.endDate}` : null;
-
-  const money = useMemo(() => {
-    if (ledger) {
-      return {
-        currency: ledger.currency,
-        committed: ledger.committed,
-        planned: ledger.planned_estimate,
-        plannedTier: ledger.planned_tier,
-        budget: ledger.budget,
-      };
-    }
-    let committed = 0;
-    data.cities.forEach(city => {
-      const count = (item: typeof city.transitToNext) => {
-        if (!item || item.isInactive || item.status !== 'Confirmed') return;
-        committed += item.cost?.amount ?? (item.price ? parsePriceToInteger(item.price) : 0);
-      };
-      count(city.transitToNext);
-      city.days.forEach(day => day.items.forEach(count));
-    });
-    return {
-      currency: data.budget?.currency ?? 'INR',
-      committed,
-      planned: 0,
-      plannedTier: null as TripLedger['planned_tier'],
-      budget: data.budget?.amount ?? null,
-    };
-  }, [ledger, data]);
-
-  const symbol = money.currency === 'INR' ? '₹' : `${money.currency} `;
-  const barTotal = Math.max(money.budget ?? 0, money.committed + money.planned, 1);
-  const committedPct = Math.min(100, (money.committed / barTotal) * 100);
-  const plannedPct = Math.min(100 - committedPct, (money.planned / barTotal) * 100);
-  const isOver = money.budget !== null && money.committed + money.planned > money.budget;
-
-  // Budget bar gradient: green → amber → red based on usage
-  const budgetBarColor = isOver
-    ? 'bg-red-500'
-    : committedPct > 80
-      ? 'bg-amber-500'
-      : 'bg-[rgb(var(--color-confirmed))]';
 
   const commitTitle = () => {
     setIsEditingTitle(false);
@@ -127,7 +66,7 @@ export default function PlannerHeader({
   };
 
   return (
-    <div className="mb-3 rounded-2xl bg-white px-4 py-3.5 shadow-surface">
+    <div className="mb-2 rounded-2xl bg-white px-4 py-3 shadow-surface">
 
       {/* ── Row 1: Trip title + actions ─────────────────────────────────── */}
       <div className="flex items-center gap-3">
@@ -149,7 +88,7 @@ export default function PlannerHeader({
           ) : (
             <button
               onClick={() => { setTitleDraft(data.title); setIsEditingTitle(true); }}
-              className="group flex min-w-[88px] items-center gap-2 text-left cursor-text export-hidden"
+              className="group flex min-w-0 flex-1 items-center gap-2 text-left cursor-text export-hidden"
               title="Rename trip"
             >
               {/* Information hierarchy #1: Destination */}
@@ -162,7 +101,7 @@ export default function PlannerHeader({
 
           {/* Date chip */}
           {dateRange && (
-            <span className="hidden shrink-0 items-center gap-1.5 rounded-full border border-line bg-paper-0 px-2.5 py-1 text-[10px] font-semibold text-ink-600 sm:flex">
+            <span className="hidden shrink-0 items-center gap-1.5 rounded-full border border-line bg-paper-0 px-2.5 py-1 text-caption font-semibold !text-ink-600 sm:flex">
               <Calendar size={10} className="text-ink-400" />
               {dateRange}
             </span>
@@ -170,7 +109,7 @@ export default function PlannerHeader({
 
           {/* Travelers chip */}
           {data.travelers != null && data.travelers > 0 && (
-            <span className="hidden shrink-0 items-center gap-1.5 rounded-full border border-line bg-paper-0 px-2.5 py-1 text-[10px] font-semibold text-ink-600 md:flex">
+            <span className="hidden shrink-0 items-center gap-1.5 rounded-full border border-line bg-paper-0 px-2.5 py-1 text-caption font-semibold !text-ink-600 md:flex">
               <Users size={10} className="text-ink-400" />
               {data.travelers}
             </span>
@@ -215,7 +154,7 @@ export default function PlannerHeader({
             <button
               onClick={onSave}
               disabled={isSaving || isSaved}
-              className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[11px] font-semibold transition-all active:scale-95 ${
+              className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-caption font-semibold transition-all active:scale-95 ${
                 isSaved
                   ? 'cursor-default border-emerald-200 bg-emerald-50 text-emerald-700'
                   : 'cursor-pointer border-line bg-white text-ink-700 hover:bg-paper-0 hover:shadow-surface disabled:opacity-60'
@@ -235,7 +174,7 @@ export default function PlannerHeader({
           {/* Book — primary dark button (NOT blue) */}
           <button
             onClick={onBook}
-            className="flex cursor-pointer items-center gap-1.5 rounded-xl bg-ink-900 px-3 py-1.5 text-[11px] font-semibold text-paper-1 shadow-surface transition-all hover:shadow-hover hover:opacity-90 active:scale-95"
+            className="flex cursor-pointer items-center gap-1.5 rounded-xl bg-ink-900 px-3 py-1.5 text-caption font-semibold !text-paper-1 shadow-surface transition-all hover:shadow-hover hover:opacity-90 active:scale-95"
             style={{ transition: `all var(--motion-card) var(--ease-out)` }}
           >
             <CreditCard size={11} />
@@ -321,9 +260,9 @@ export default function PlannerHeader({
                 role="tab"
                 aria-selected={viewMode !== 'map'}
                 onClick={() => onViewModeChange('details')}
-                className={`flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-semibold whitespace-nowrap ${
+                className={`flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-caption font-semibold whitespace-nowrap ${
                   viewMode !== 'map'
-                    ? 'bg-[rgb(var(--color-journey)/0.18)] text-ink-900 shadow-sm'
+                    ? 'bg-[rgb(var(--color-journey)/0.18)] text-ink-900 shadow-surface'
                     : 'text-ink-500 hover:text-ink-900'
                 }`}
                 style={{ transition: `all var(--motion-card) var(--ease-out)` }}
@@ -335,9 +274,9 @@ export default function PlannerHeader({
                 role="tab"
                 aria-selected={viewMode === 'map'}
                 onClick={() => onViewModeChange('map')}
-                className={`flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-semibold whitespace-nowrap ${
+                className={`flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-caption font-semibold whitespace-nowrap ${
                   viewMode === 'map'
-                    ? 'bg-[rgb(var(--color-journey)/0.18)] text-ink-900 shadow-sm'
+                    ? 'bg-[rgb(var(--color-journey)/0.18)] text-ink-900 shadow-surface'
                     : 'text-ink-500 hover:text-ink-900'
                 }`}
                 style={{ transition: `all var(--motion-card) var(--ease-out)` }}
@@ -347,81 +286,6 @@ export default function PlannerHeader({
               </button>
             </div>
           )}
-        </div>
-      </div>
-
-      {/* ── Row 2: Stats + budget bar ────────────────────────────────────── */}
-      <div className="mt-3 flex items-center gap-3">
-        {/* Stat chips */}
-        <div className="flex shrink-0 items-center gap-2 text-[10px] font-semibold text-ink-500">
-          <span className="flex items-center gap-1">
-            <Calendar size={10} className="text-ink-400" />
-            {stats.dayCount}d
-          </span>
-          <span className="text-line-strong">·</span>
-          <span className="flex items-center gap-1">
-            <MapPin size={10} className="text-ink-400" />
-            {stats.cityCount} {stats.cityCount === 1 ? 'city' : 'cities'}
-          </span>
-          {stats.totalKm > 0 && (
-            <>
-              <span className="text-line-strong">·</span>
-              <span className="flex items-center gap-1 tabular-nums">
-                <Milestone size={10} className="text-ink-400" />
-                {stats.totalKm} km
-              </span>
-            </>
-          )}
-        </div>
-
-        {/* Budget bar — animated fill, gradient color system */}
-        <div className="flex min-w-0 flex-1 items-center gap-2.5">
-          <span
-            className="shrink-0 text-[10px] font-semibold tabular-nums text-ink-700"
-            title="Committed (booked) spend"
-          >
-            {symbol}{Math.round(money.committed).toLocaleString()}
-          </span>
-
-          <div
-            className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-paper-0 border border-line/60"
-            title={
-              `Committed ${symbol}${Math.round(money.committed).toLocaleString()}` +
-              (money.planned > 0
-                ? ` · planned${money.plannedTier === 'verified' ? '' : ' (est.)'} ${symbol}${Math.round(money.planned).toLocaleString()}`
-                : '') +
-              (money.budget !== null ? ` · budget ${symbol}${Math.round(money.budget).toLocaleString()}` : '')
-            }
-          >
-            <div className="flex h-full w-full">
-              <div
-                className={`h-full ${budgetBarColor} rounded-full`}
-                style={{
-                  width: `${committedPct}%`,
-                  transition: `width var(--motion-bar) var(--ease-out)`,
-                }}
-              />
-              {plannedPct > 0 && (
-                <div
-                  className="h-full rounded-r-full"
-                  style={{
-                    width: `${plannedPct}%`,
-                    backgroundImage: money.plannedTier === 'suggested' ? HATCH_VIOLET : HATCH_AMBER,
-                    transition: `width var(--motion-bar) var(--ease-out)`,
-                  }}
-                />
-              )}
-            </div>
-          </div>
-
-          <span
-            className="shrink-0 text-[10px] font-semibold tabular-nums text-ink-500"
-            title="Trip budget"
-          >
-            {money.budget !== null
-              ? `${symbol}${Math.round(money.budget).toLocaleString()}`
-              : 'No budget set'}
-          </span>
         </div>
       </div>
 

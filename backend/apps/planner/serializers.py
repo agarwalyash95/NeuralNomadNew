@@ -17,6 +17,7 @@ class TripDraftStateSerializer(serializers.ModelSerializer):
         model = TripDraftState
         fields = [
             "id",
+            "intent",
             "destination_city",
             "destination_text",
             "start_date",

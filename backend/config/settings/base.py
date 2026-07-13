@@ -160,6 +160,9 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    # Decimals serialize as real JSON numbers, matching the `number` types
+    # already assumed almost everywhere on the frontend (contract-audit.md §1).
+    "COERCE_DECIMAL_TO_STRING": False,
 }
 
 # Simple JWT Configuration
@@ -210,6 +213,9 @@ BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://localhost:8000")
 # LLM (Gemini) — the google-genai client also reads GEMINI_API_KEY from the
 # environment directly; exposing it here makes the dependency explicit.
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+VERTEX_AI_ENABLED = os.getenv("VERTEX_AI_ENABLED", "False").lower() in ("true", "1", "t")
+VERTEX_AI_PROJECT = os.getenv("VERTEX_AI_PROJECT", "")
+VERTEX_AI_LOCATION = os.getenv("VERTEX_AI_LOCATION", "us-central1")
 
 # Live travel-search providers (RapidAPI). Mock providers are used unless
 # LIVE_PROVIDERS_ENABLED is true AND RAPIDAPI_KEY is set — one env flip to go live.

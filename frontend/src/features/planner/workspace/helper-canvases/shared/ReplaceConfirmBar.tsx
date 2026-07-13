@@ -69,7 +69,7 @@ export default function ReplaceConfirmBar({
       <div className="flex gap-2">
         <button
           onClick={onCancel}
-          className="flex-1 rounded-xl border border-slate-300 bg-white py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+          className="flex-1 rounded-xl border border-line bg-paper-2 py-2 text-xs font-semibold text-ink-700 transition-colors hover:bg-paper-1"
         >
           <X size={12} className="mr-1 inline" />
           Cancel
@@ -84,7 +84,7 @@ export default function ReplaceConfirmBar({
         {onConfirmSecondary && (
           <button
             onClick={onConfirmSecondary}
-            className="flex-1 rounded-xl bg-slate-900 py-2 text-xs font-semibold text-white transition-colors hover:bg-slate-800"
+            className="flex-1 rounded-xl bg-ink-900 py-2 text-xs font-semibold text-white transition-colors hover:bg-ink-700"
           >
             {secondaryLabel}
             <ArrowRight size={12} className="ml-1 inline" />

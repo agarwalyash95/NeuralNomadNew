@@ -49,9 +49,9 @@ export default function DockedChat({ workspaceId, onOpenHelper, onOptimizeRoutes
             exit={{ scale: 0, opacity: 0 }}
             onClick={() => setIsOpen(true)}
             aria-label="Open trip conversation"
-            className="group fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 text-white shadow-xl transition-all hover:scale-105 hover:shadow-indigo-500/30"
+            className="group fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-tr from-[rgb(var(--color-ai))] to-violet-700 text-white shadow-modal transition-transform duration-[var(--motion-hover)] ease-[var(--ease-out)] hover:scale-105"
           >
-            <Sparkles size={24} className="transition-transform group-hover:scale-110" />
+            <Sparkles size={24} className="transition-transform duration-[var(--motion-hover)] ease-[var(--ease-out)] group-hover:scale-110" />
           </motion.button>
         )}
       </AnimatePresence>
@@ -63,16 +63,16 @@ export default function DockedChat({ workspaceId, onOpenHelper, onOptimizeRoutes
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 40 }}
             transition={{ type: 'spring', stiffness: 300, damping: 28 }}
-            className="fixed bottom-0 right-0 top-16 z-50 flex w-[400px] max-w-full flex-col overflow-hidden border-l border-line bg-paper-1 shadow-[-16px_0_48px_-24px_rgba(15,23,42,0.25)]"
+            className="fixed bottom-0 right-0 top-16 z-50 flex w-[400px] max-w-full flex-col overflow-hidden border-l border-line bg-paper-1 shadow-modal"
           >
-            <div className="flex items-center justify-between border-b border-line bg-white/70 px-5 py-3.5">
+            <div className="flex items-center justify-between border-b border-line bg-paper-2/70 px-5 py-3.5">
               <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white shadow-md">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-tr from-[rgb(var(--color-ai))] to-violet-700 text-white shadow-surface">
                   <Bot size={18} />
                 </div>
                 <div>
-                  <h3 className="text-xs font-bold text-slate-800">Trip conversation</h3>
-                  <p className="text-[10px] font-medium text-slate-500">
+                  <h3 className="text-title">Trip conversation</h3>
+                  <p className="text-caption">
                     The same thread that built this plan
                   </p>
                 </div>
@@ -80,14 +80,14 @@ export default function DockedChat({ workspaceId, onOpenHelper, onOptimizeRoutes
               <button
                 onClick={() => setIsOpen(false)}
                 aria-label="Close trip conversation"
-                className="rounded-xl p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                className="rounded-xl p-1.5 text-ink-400 transition-colors duration-[var(--motion-hover)] ease-[var(--ease-out)] hover:bg-paper-1 hover:text-ink-700"
               >
                 <X size={18} />
               </button>
             </div>
 
             {/* Quick refine actions */}
-            <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto border-b border-line/70 bg-white/40 px-3 py-2">
+            <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto border-b border-line/70 bg-paper-2/40 px-3 py-2">
               {[
                 { label: '⚡ Optimize Routes', action: 'optimize' },
                 { label: '🍽️ Local Foodie Spots', panel: 'restaurants' },
@@ -105,7 +105,7 @@ export default function DockedChat({ workspaceId, onOpenHelper, onOptimizeRoutes
                       setIsOpen(false);
                     }
                   }}
-                  className="shrink-0 cursor-pointer whitespace-nowrap rounded-full border border-indigo-200/70 bg-indigo-50/70 px-2.5 py-1 text-[10px] font-bold text-indigo-700 shadow-2xs transition-all hover:border-indigo-600 hover:bg-indigo-600 hover:text-white"
+                  className="shrink-0 cursor-pointer whitespace-nowrap rounded-full border border-[rgb(var(--color-ai)/0.3)] bg-[rgb(var(--color-ai)/0.08)] px-2.5 py-1 text-caption font-bold !text-[rgb(var(--color-ai))] shadow-surface transition-all duration-[var(--motion-hover)] ease-[var(--ease-out)] hover:border-[rgb(var(--color-ai))] hover:bg-[rgb(var(--color-ai))] hover:!text-white"
                 >
                   {chip.label}
                 </button>
@@ -116,8 +116,8 @@ export default function DockedChat({ workspaceId, onOpenHelper, onOptimizeRoutes
             <div className="custom-scrollbar flex-1 space-y-4 overflow-y-auto p-5">
               {messages.length === 0 && !isSending && (
                 <div className="flex justify-start">
-                  <div className="max-w-[85%] rounded-2xl rounded-tl-md border border-[#e5dfd2] bg-white px-4 py-3 shadow-sm">
-                    <p className="text-sm text-slate-700">
+                  <div className="max-w-[85%] rounded-2xl rounded-tl-md border border-line bg-paper-2 px-4 py-3 shadow-surface">
+                    <p className="text-body">
                       I can refine the trip plan, compare routes, or help with logistics.
                     </p>
                   </div>
@@ -136,10 +136,10 @@ export default function DockedChat({ workspaceId, onOpenHelper, onOptimizeRoutes
                   >
                     <div
                       className={cn(
-                        'max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm shadow-sm',
+                        'max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-body shadow-surface',
                         message.role === 'user'
-                          ? 'rounded-tr-md bg-gradient-to-br from-blue-600 to-indigo-600 text-white'
-                          : 'rounded-tl-md border border-[#e5dfd2] bg-white text-slate-700'
+                          ? 'rounded-tr-md bg-gradient-to-br from-[rgb(var(--color-ai))] to-violet-700 !text-white'
+                          : 'rounded-tl-md border border-line bg-paper-2'
                       )}
                     >
                       {message.message}
@@ -155,17 +155,17 @@ export default function DockedChat({ workspaceId, onOpenHelper, onOptimizeRoutes
 
               {isSending && (
                 <div className="flex justify-start">
-                  <div className="mr-auto w-fit rounded-2xl rounded-tl-md border border-[#e5dfd2] bg-white px-4 py-3 shadow-sm">
-                    <div className="flex items-center gap-2 text-slate-400">
+                  <div className="mr-auto w-fit rounded-2xl rounded-tl-md border border-line bg-paper-2 px-4 py-3 shadow-surface">
+                    <div className="flex items-center gap-2 text-ink-400">
                       <Loader2 size={16} className="animate-spin" />
-                      <span className="text-sm">NeuralNomad is thinking...</span>
+                      <span className="text-body !text-ink-400">NeuralNomad is thinking...</span>
                     </div>
                   </div>
                 </div>
               )}
 
               {error && (
-                <div className="mr-auto rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <div className="mr-auto rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-body !text-red-700">
                   {error}
                 </div>
               )}
@@ -174,7 +174,7 @@ export default function DockedChat({ workspaceId, onOpenHelper, onOptimizeRoutes
             </div>
 
             {/* Composer */}
-            <div className="border-t border-[#e5dfd2] bg-white/75 p-4">
+            <div className="border-t border-line bg-paper-2/75 p-4">
               <div className="group relative">
                 <textarea
                   value={query}
@@ -186,7 +186,7 @@ export default function DockedChat({ workspaceId, onOpenHelper, onOptimizeRoutes
                     }
                   }}
                   placeholder="Ask about this itinerary..."
-                  className="custom-scrollbar min-h-[52px] max-h-[150px] w-full resize-none rounded-[24px] border border-line-strong bg-white py-3 pl-4 pr-12 text-sm text-slate-900 shadow-sm transition-all placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/15"
+                  className="custom-scrollbar min-h-[52px] max-h-[150px] w-full resize-none rounded-[24px] border border-line-strong bg-paper-2 py-3 pl-4 pr-12 text-body !text-ink-900 shadow-surface transition-all duration-[var(--motion-hover)] ease-[var(--ease-out)] placeholder:text-ink-400 focus:border-[rgb(var(--color-ai))] focus:outline-none focus:ring-2 focus:ring-[rgb(var(--color-ai)/0.15)]"
                   rows={1}
                   onInput={(e) => {
                     const target = e.target as HTMLTextAreaElement;
@@ -198,10 +198,10 @@ export default function DockedChat({ workspaceId, onOpenHelper, onOptimizeRoutes
                   onClick={() => handleSubmit()}
                   aria-label="Send message"
                   className={cn(
-                    'absolute bottom-2 right-2 rounded-xl p-1.5 transition-all',
+                    'absolute bottom-2 right-2 rounded-xl p-1.5 transition-all duration-[var(--motion-hover)] ease-[var(--ease-out)]',
                     query.trim().length > 0 && !isSending
-                      ? 'bg-blue-600 text-white shadow-sm hover:bg-blue-700'
-                      : 'cursor-not-allowed bg-slate-100 text-slate-400'
+                      ? 'bg-[rgb(var(--color-ai))] text-white shadow-surface hover:bg-violet-700'
+                      : 'cursor-not-allowed bg-paper-1 text-ink-400'
                   )}
                   disabled={query.trim().length === 0 || isSending}
                 >

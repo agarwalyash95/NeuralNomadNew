@@ -122,7 +122,7 @@ export default function PlannerChat({ workspaceId }: PlannerChatProps) {
   const isHighlighted = isMandatoryComplete && confidenceScore >= 85;
 
   return (
-    <div className="relative flex h-full w-full flex-col overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(26,86,219,0.08),_transparent_32%),linear-gradient(180deg,#fbfaf7_0%,#f6f4ef_100%)]">
+    <div className="relative flex h-full w-full flex-col overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(124,58,237,0.08),_transparent_32%),linear-gradient(180deg,#fbfaf7_0%,#f6f4ef_100%)]">
       <div className={cn(
         "flex flex-1 flex-col items-center overflow-y-auto px-4 transition-all duration-300",
         messages.length === 0 ? "pb-48 pt-12" : "pb-36 pt-6"
@@ -130,13 +130,13 @@ export default function PlannerChat({ workspaceId }: PlannerChatProps) {
         {/* Hero header — only shown on landing empty state */}
         {messages.length === 0 && (
           <div className="mb-10 mt-6 flex w-full max-w-4xl flex-col items-center text-center">
-            <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl border border-[#cfe0ff] bg-white text-blue-600 shadow-sm">
+            <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl border border-[rgb(var(--color-ai)/0.3)] bg-paper-2 text-[rgb(var(--color-ai))] shadow-surface">
               <Plane size={32} strokeWidth={2} />
             </div>
-            <h1 className="mb-3 text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl">
+            <h1 className="mb-3 text-4xl font-semibold tracking-tight text-ink-900 sm:text-5xl">
               Build your next trip with intent
             </h1>
-            <p className="max-w-2xl text-base text-slate-600 sm:text-lg">
+            <p className="max-w-2xl text-base text-ink-600 sm:text-lg">
               Tell me what you need — a flight, hotel, train, or full itinerary — and I&apos;ll take care of the rest.
             </p>
           </div>
@@ -152,14 +152,14 @@ export default function PlannerChat({ workspaceId }: PlannerChatProps) {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.05 }}
                 onClick={() => onSuggestClick(item.title)}
-                className="group flex items-start gap-4 rounded-2xl border border-line-strong bg-white px-5 py-5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-[#c7c0b1] hover:shadow-md"
+                className="group flex items-start gap-4 rounded-2xl border border-line-strong bg-paper-2 px-5 py-5 text-left shadow-surface transition-all hover:-translate-y-0.5 hover:border-[rgb(var(--color-ai)/0.35)] hover:shadow-hover"
               >
-                <div className="mt-0.5 rounded-xl bg-paper-0 p-2 text-slate-500 transition-colors group-hover:bg-blue-50 group-hover:text-blue-600">
+                <div className="mt-0.5 rounded-xl bg-paper-0 p-2 text-ink-500 transition-colors group-hover:bg-[rgb(var(--color-ai)/0.08)] group-hover:text-[rgb(var(--color-ai))]">
                   {item.icon}
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold text-slate-800">{item.title}</h3>
-                  <p className="mt-1 text-sm text-slate-500">{item.desc}</p>
+                  <h3 className="text-sm font-semibold text-ink-900">{item.title}</h3>
+                  <p className="mt-1 text-sm text-ink-500">{item.desc}</p>
                 </div>
               </motion.button>
             ))}
@@ -191,8 +191,8 @@ export default function PlannerChat({ workspaceId }: PlannerChatProps) {
               onClick={() => (chip.startsWith('Create my plan') ? handleCreatePlan() : handleSubmit(chip))}
               className={`rounded-full border px-3 py-1 text-[11px] font-bold transition-all active:scale-95 cursor-pointer ${
                 chip.startsWith('Create my plan')
-                  ? 'border-indigo-200 bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-sm hover:shadow-md'
-                  : 'border-line-strong bg-paper-2 text-ink-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700'
+                  ? 'border-[rgb(var(--color-ai)/0.3)] bg-gradient-to-r from-[rgb(var(--color-ai))] to-violet-700 text-white shadow-surface hover:shadow-hover'
+                  : 'border-line-strong bg-paper-2 text-ink-700 hover:border-[rgb(var(--color-ai)/0.4)] hover:bg-[rgb(var(--color-ai)/0.08)] hover:text-[rgb(var(--color-ai))]'
               }`}
             >
               {chip}

@@ -2,22 +2,21 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Utensils, Search } from 'lucide-react';
-import { referenceService } from '@/services/reference.service';
+import { IndianRupee, Clock, Check } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { referenceService, type ExploreSource } from '@/services/reference.service';
 import type { TripContext } from '../../types';
-import CanvasHeader from '../shared/CanvasHeader';
-import SearchSummaryBar from '../shared/SearchSummaryBar';
-import ReplaceConfirmBar from '../shared/ReplaceConfirmBar';
+import CanvasSearchToolbar from '../shared/CanvasSearchToolbar';
+import SortFilterPopover from '../shared/SortFilterPopover';
+import { TierBadge } from '../shared/ExploreStatusUI';
+import { CanvasErrorCard, classifyFetchErrorVariant, type CanvasErrorVariant } from '../shared/CanvasErrorCard';
 import { ItineraryItem, Suggestion } from '../../plan-canvas/types';
 
-// Core dependencies of the new assistant design
-import MealDecisionCard from './MealDecisionCard';
 import RestaurantSuggestionCard from './RestaurantSuggestionCard';
+import RestaurantDetailPanel from './RestaurantDetailPanel';
 import RestaurantCardSkeleton from './RestaurantCardSkeleton';
-import RestaurantCompareTray from './RestaurantCompareTray';
-import AIQuickActionsRow from './AIQuickActionsRow';
 import { getMealRecommendations } from './services/mealRecommendationEngine';
-import { applyAIQuickFilter, type AIQuickActionId } from './services/mealPresentation';
+import { applyAIQuickFilter, AI_QUICK_ACTIONS, type AIQuickActionId } from './services/mealPresentation';
 
 interface RestaurantsCanvasProps {
   onClose?: () => void;
@@ -26,48 +25,47 @@ interface RestaurantsCanvasProps {
 }
 
 const INTENT_FILTER_TAGS = [
-  'AI Picks', 
-  'Breakfast', 
-  'Lunch', 
-  'Dinner', 
-  'Cafés', 
-  'Desserts', 
-  'Breweries', 
-  'Street Food', 
-  'Local Food', 
-  'Vegetarian', 
-  'Family Friendly', 
-  'Budget', 
-  'Highly Rated'
+  'AI Picks',
+  'Breakfast',
+  'Lunch',
+  'Dinner',
+  'Cafés',
+  'Desserts',
+  'Breweries',
+  'Street Food',
+  'Local Food',
+  'Vegetarian',
+  'Family Friendly',
+  'Budget',
+  'Highly Rated',
 ];
+
+const SORT_ICONS: Record<AIQuickActionId, React.ElementType> = {
+  cheaper: IndianRupee,
+  open_now: Clock,
+};
 
 export default function RestaurantsCanvas({ onClose, tripContext, onAddToPlan }: RestaurantsCanvasProps) {
   const defaultLocation = tripContext.activeNodeCityName || tripContext.destination || 'Manali';
   const [searchQuery, setSearchQuery] = useState(`${defaultLocation}, India`);
-  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [loading, setLoading] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>(['AI Picks']);
-
-  // Selected item pending plan confirmation
-  const [pendingItem, setPendingItem] = useState<Suggestion | null>(null);
-
-  // Accordion details lazy-loading state
-  const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [expandedData, setExpandedData] = useState<Suggestion | null>(null);
-
-
-  // Raw places fetched from backend
-  const [results, setResults] = useState<Suggestion[]>([]);
-
-  // Compared items state
-  const [comparedIds, setComparedIds] = useState<number[]>([]);
-
-  // Contextual AI quick-refine action (re-sorts/filters the already-scored list)
+  const [filterOpen, setFilterOpen] = useState(false);
   const [activeAIAction, setActiveAIAction] = useState<AIQuickActionId | null>(null);
 
-  // Hero card shrinks once the feed has scrolled a little
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [heroCompact, setHeroCompact] = useState(false);
+  const [canvasMode, setCanvasMode] = useState<'compare' | 'decide'>('compare');
+  const [listScrollTop, setListScrollTop] = useState(0);
+  const listScrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedData, setSelectedData] = useState<Suggestion | null>(null);
+
+  const [results, setResults] = useState<Suggestion[]>([]);
+  const [source, setSource] = useState<ExploreSource | null>(null);
+  const [fetchError, setFetchError] = useState<CanvasErrorVariant | null>(null);
+  const [comparedIds, setComparedIds] = useState<number[]>([]);
+  const [isCommitSuccess, setIsCommitSuccess] = useState(false);
 
   const queryClient = useQueryClient();
 
@@ -79,89 +77,136 @@ export default function RestaurantsCanvas({ onClose, tripContext, onAddToPlan }:
   const fetchRestaurants = async (query: string) => {
     if (!query.trim()) {
       setResults([]);
+      setSource(null);
+      setFetchError(null);
       return;
     }
     setLoading(true);
+    setFetchError(null);
     try {
       const loc = tripContext.activeNodeCityName || tripContext.destination;
       const useCoords = loc && query.toLowerCase().includes(loc.toLowerCase());
-      const data = await referenceService.exploreRestaurants(
+      const { results: data, source: src } = await referenceService.exploreRestaurants(
         query,
         useCoords ? tripContext.activeNodeLatitude : undefined,
         useCoords ? tripContext.activeNodeLongitude : undefined
       );
-      setResults(Array.isArray(data) ? data : []);
+      setResults(data);
+      setSource(src);
     } catch (err: any) {
       console.error('Error fetching restaurants:', err?.message || err);
       setResults([]);
+      setSource(null);
+      setFetchError(classifyFetchErrorVariant(err));
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { 
-    fetchRestaurants(searchQuery); 
+  useEffect(() => {
+    fetchRestaurants(searchQuery);
   }, [searchQuery]);
 
-  // Don't recommend what's already planned for the day in view
   const plannedTitles = useMemo(
     () => new Set((tripContext.activeDayItemTitles || []).map(t => t.trim().toLowerCase())),
     [tripContext.activeDayItemTitles]
   );
-  
+
   const visibleResults = useMemo(
     () => results.filter(r => !plannedTitles.has(r.name.trim().toLowerCase())),
     [results, plannedTitles]
   );
 
-  const toggleExpand = async (suggestion: Suggestion) => {
-    if (expandedId === suggestion.id) {
-      setExpandedId(null);
-      return;
+  const recommendations = useMemo(
+    () => getMealRecommendations(visibleResults, tripContext, selectedTags),
+    [visibleResults, tripContext, selectedTags]
+  );
+
+  const refinedRecommendations = useMemo(
+    () => (activeAIAction ? applyAIQuickFilter(recommendations, activeAIAction) : recommendations),
+    [recommendations, activeAIAction]
+  );
+
+  useEffect(() => {
+    if (selectedId != null && !refinedRecommendations.some(r => r.suggestion.id === selectedId)) {
+      setSelectedId(null);
+      setCanvasMode('compare');
     }
-    setExpandedId(suggestion.id);
-    setExpandedData(null);
-    try {
-      const resp = await queryClient.fetchQuery({
-        queryKey: ['place-details', 'restaurant', suggestion.id],
-        queryFn: () => referenceService.getRestaurantDetails(suggestion.id),
-        staleTime: 30 * 60_000,
-      });
-      setExpandedData(resp);
-    } catch (err) {
-      console.error('Error fetching details:', err);
+  }, [refinedRecommendations, selectedId]);
+
+  useEffect(() => {
+    if (selectedId == null) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await queryClient.fetchQuery({
+          queryKey: ['place-details', 'restaurant', selectedId],
+          queryFn: () => referenceService.getRestaurantDetails(selectedId),
+          staleTime: 30 * 60_000,
+        });
+        if (!cancelled) setSelectedData(resp);
+      } catch (err) {
+        console.error('Error fetching details:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedId, queryClient]);
+
+  const selectedRecommendation = useMemo(() => {
+    const base = refinedRecommendations.find(r => r.suggestion.id === selectedId);
+    if (!base) return null;
+    if (selectedData && selectedData.id === selectedId) {
+      return { ...base, suggestion: { ...base.suggestion, details: { ...base.suggestion.details, ...selectedData.details } } };
     }
+    return base;
+  }, [refinedRecommendations, selectedId, selectedData]);
+
+  // Restore scroll height on returning to recommendations list view
+  useEffect(() => {
+    if (canvasMode === 'compare') {
+      const el = listScrollContainerRef.current;
+      if (el && listScrollTop > 0) {
+        requestAnimationFrame(() => {
+          el.scrollTop = listScrollTop;
+        });
+      }
+    }
+  }, [canvasMode, listScrollTop]);
+
+  const handleSelectRecommendation = (id: number) => {
+    const el = listScrollContainerRef.current;
+    if (el) {
+      setListScrollTop(el.scrollTop);
+    }
+    setSelectedId(id);
+    setCanvasMode('decide');
   };
 
-  const handleSelect = (place: Suggestion) => {
-    // Merge expanded detail fields if available
-    const mergedPlace = place.id === expandedId && expandedData ? {
-      ...place,
-      details: { ...place.details, ...expandedData.details }
-    } : place;
-    setPendingItem(mergedPlace);
-  };
-
-  const handleConfirmReplace = () => {
-    if (!pendingItem || !onAddToPlan) return;
+  const handleAddSuggestion = (place: Suggestion) => {
+    if (!onAddToPlan) return;
     const newItem: ItineraryItem = {
-      id: `food-${pendingItem.id}-${Date.now()}`,
+      id: `food-${place.id}-${Date.now()}`,
       type: 'food',
-      title: pendingItem.name,
-      subtitle: pendingItem.address || '',
-      details: pendingItem.price_label || undefined,
+      title: place.name,
+      subtitle: place.address || '',
+      details: place.price_label || undefined,
       status: 'Pending',
-      rating: pendingItem.rating != null ? Math.round(pendingItem.rating * 10) / 10 : undefined,
+      rating: place.rating != null ? Math.round(place.rating * 10) / 10 : undefined,
       geoTag: tripContext.activeNodeCityName || tripContext.destination || '',
-      image: pendingItem.image_url || undefined,
-      latitude: pendingItem.latitude ?? undefined,
-      longitude: pendingItem.longitude ?? undefined,
-      place_id: pendingItem.place_id ?? undefined,
-      cost: pendingItem.cost,
+      image: place.image_url || undefined,
+      latitude: place.latitude ?? undefined,
+      longitude: place.longitude ?? undefined,
+      place_id: place.place_id ?? undefined,
+      cost: place.cost,
     };
     onAddToPlan(newItem);
-    setPendingItem(null);
-    setExpandedId(null);
+    
+    // Trigger commitment success reward
+    setIsCommitSuccess(true);
+    setTimeout(() => {
+      setIsCommitSuccess(false);
+      if (onClose) onClose();
+    }, 1200);
   };
 
   const handleToggleTag = (tag: string) => {
@@ -172,7 +217,6 @@ export default function RestaurantsCanvas({ onClose, tripContext, onAddToPlan }:
     setSelectedTags(prev => {
       const hasTag = prev.includes(tag);
       const filteredTags = prev.filter(t => t !== tag && t !== 'AI Picks');
-      
       const nextTags = hasTag ? filteredTags : [...filteredTags, tag];
       return nextTags.length === 0 ? ['AI Picks'] : nextTags;
     });
@@ -180,193 +224,180 @@ export default function RestaurantsCanvas({ onClose, tripContext, onAddToPlan }:
 
   const handleCompareToggle = (id: number) => {
     setComparedIds(prev => {
-      if (prev.includes(id)) {
-        return prev.filter(item => item !== id);
-      }
-      if (prev.length >= 3) return prev; // Capped at max 3 items
+      if (prev.includes(id)) return prev.filter(item => item !== id);
+      if (prev.length >= 3) return prev;
       return [...prev, id];
     });
   };
 
-  // Process data using the recommendation engine
-  const recommendations = useMemo(() => {
-    // Merge current expanded data inside visibleResults for the active item
-    const mergedResults = visibleResults.map(place => {
-      if (place.id === expandedId && expandedData) {
-        return {
-          ...place,
-          details: {
-            ...place.details,
-            ...expandedData.details
-          }
-        };
-      }
-      return place;
-    });
-    return getMealRecommendations(mergedResults, tripContext, selectedTags);
-  }, [visibleResults, expandedId, expandedData, tripContext, selectedTags]);
+  const activeFilterCount = (activeAIAction ? 1 : 0) + (selectedTags.length === 1 && selectedTags[0] === 'AI Picks' ? 0 : selectedTags.length);
 
-  // Apply the active AI quick-refine action, if any, on top of the base scoring
-  const refinedRecommendations = useMemo(
-    () => (activeAIAction ? applyAIQuickFilter(recommendations, activeAIAction) : recommendations),
-    [recommendations, activeAIAction]
-  );
-
-  // Separate top recommendation (for the Decision card) from secondary recommendations
-  const topRecommendation = refinedRecommendations[0];
-  const secondaryRecommendations = refinedRecommendations.slice(1);
-
-  const comparedRecommendations = useMemo(() => {
-    return recommendations.filter(r => comparedIds.includes(r.suggestion.id));
-  }, [comparedIds, recommendations]);
-
-  const handleAIActionToggle = (action: AIQuickActionId) => {
-    setActiveAIAction(prev => (prev === action ? null : action));
-  };
-
-  const searchSummary = `Dining in ${tripContext.destination || 'Manali'}`;
+  const addedMessage = tripContext.activeNodeDayLabel
+    ? `Added to ${tripContext.activeNodeDayLabel}`
+    : 'Added to your plan';
 
   return (
-    <div className="flex h-full flex-col bg-paper-0 relative">
-      <CanvasHeader
-        icon={<Utensils size={18} />}
-        iconColor="bg-violet-600"
-        label="Meal Companion"
-        title={searchSummary}
-        tripContext={tripContext}
-        onClose={onClose}
-      />
+    <div className="helper-canvas-premium flex h-full flex-col bg-paper-0 relative overflow-hidden select-none">
+      
+      {/* Commitment Success Overlay */}
+      <AnimatePresence>
+        {isCommitSuccess && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.98 }}
+            className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-paper-1/95 p-6 text-center select-none"
+          >
+            <div className="h-12 w-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 mb-4 animate-bounce">
+              <Check size={24} strokeWidth={3} />
+            </div>
+            <h3 className="text-lg font-bold text-ink-900">{addedMessage}</h3>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {!isSearchExpanded ? (
-        <div className="shrink-0 bg-paper-1 px-4 pt-2.5 pb-2">
-          <SearchSummaryBar
-            primary={searchSummary}
-            secondary="AI-curated meals near your stops"
-            accentColor="group-hover:text-cat-food"
-            onClick={() => setIsSearchExpanded(true)}
-          />
-        </div>
-      ) : (
-        <div className="shrink-0 border-b border-line bg-paper-2 p-3.5">
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-xs font-bold text-ink-700 uppercase tracking-wider">Search Dining Spots</h3>
-            <button onClick={() => setIsSearchExpanded(false)} className="text-xs font-semibold text-ink-500 hover:text-ink-700">Cancel</button>
-          </div>
-          <div className="relative">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder="e.g. Manali, India"
-              className="w-full rounded-xl border border-line pl-9 pr-3 py-2 text-xs text-ink-900 outline-none focus:border-cat-food focus:ring-2 focus:ring-cat-food/15"
-            />
-            <Search size={14} className="absolute left-3 top-2.5 text-ink-400" />
-          </div>
-        </div>
-      )}
+      <AnimatePresence mode="wait">
+        {canvasMode === 'compare' ? (
+          <motion.div
+            key="compare-list"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="flex flex-col h-full"
+          >
+            <div className="relative shrink-0">
+              <CanvasSearchToolbar
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+                isSearchFocused={isSearchFocused}
+                onFocusChange={setIsSearchFocused}
+                activeFilterCount={activeFilterCount}
+                onOpenFilter={() => setFilterOpen(true)}
+                onClose={onClose}
+                accentClassName="focus:border-cat-food focus:ring-cat-food/15"
+              />
+              <SortFilterPopover
+                open={filterOpen}
+                onClose={() => setFilterOpen(false)}
+                showReset={activeFilterCount > 0}
+                onReset={() => { setActiveAIAction(null); setSelectedTags(['AI Picks']); }}
+              >
+                <div className="mb-4">
+                  <p className="text-micro mb-2">Sort by</p>
+                  <div className="space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => setActiveAIAction(null)}
+                      className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[12px] font-semibold cursor-pointer ${
+                        activeAIAction === null ? 'bg-cat-food/10 text-cat-food' : 'text-ink-600 hover:bg-paper-0'
+                      }`}
+                    >
+                      Default order
+                      {activeAIAction === null && <Check size={13} />}
+                    </button>
+                    {AI_QUICK_ACTIONS.map(({ id, label }) => {
+                      const Icon = SORT_ICONS[id];
+                      const isActive = activeAIAction === id;
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => setActiveAIAction(id)}
+                          className={`flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-[12px] font-semibold cursor-pointer ${
+                            isActive ? 'bg-cat-food/10 text-cat-food' : 'text-ink-600 hover:bg-paper-0'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2"><Icon size={13} /> {label}</span>
+                          {isActive && <Check size={13} />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
 
-      {/* Horizontal scrolling Intent Chips */}
-      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1.5 px-4 border-b border-line bg-paper-1 shrink-0">
-        {INTENT_FILTER_TAGS.map(tag => {
-          const isActive = selectedTags.includes(tag);
-          return (
-            <button
-              key={tag}
-              onClick={() => handleToggleTag(tag)}
-              className={`rounded-full px-3 py-1 text-[11px] font-bold border transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                isActive
-                  ? 'bg-cat-food border-transparent text-white shadow-sm'
-                  : 'border-line bg-paper-2 text-ink-600 hover:border-cat-food/40 hover:bg-cat-food/5'
-              }`}
-            >
-              {tag}
-            </button>
-          );
-        })}
-      </div>
+                <div>
+                  <p className="text-micro mb-2">Filter</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {INTENT_FILTER_TAGS.map(tag => {
+                      const isActive = selectedTags.includes(tag);
+                      return (
+                        <button
+                          key={tag}
+                          onClick={() => handleToggleTag(tag)}
+                          className={`rounded-full px-2.5 py-1 text-[10.5px] font-bold border transition-colors cursor-pointer ${
+                            isActive
+                              ? 'bg-cat-food border-transparent text-white shadow-sm'
+                              : 'border-line bg-paper-1 text-ink-600 hover:border-cat-food/40 hover:bg-cat-food/5'
+                          }`}
+                        >
+                          {tag}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </SortFilterPopover>
+            </div>
 
-      {/* Contextual AI quick-refine actions */}
-      <div className="px-4 py-2 border-b border-line bg-paper-1 shrink-0">
-        <AIQuickActionsRow active={activeAIAction} onToggle={handleAIActionToggle} />
-      </div>
-
-      {/* Scrollable Feed Container */}
-      <div
-        ref={scrollRef}
-        onScroll={(e) => setHeroCompact(e.currentTarget.scrollTop > 24)}
-        className="custom-scrollbar flex-1 overflow-y-auto p-4 pb-6"
-      >
-        {loading ? (
-          <div className="space-y-3">
-            <RestaurantCardSkeleton variant="hero" />
-            <RestaurantCardSkeleton />
-            <RestaurantCardSkeleton />
-          </div>
-        ) : refinedRecommendations.length > 0 ? (
-          <div className="space-y-4">
-
-            {/* AI Top Decision Recommendation */}
-            {topRecommendation && (
-              <div>
-                <p className="text-micro mb-2">Top meal decision pick</p>
-                <MealDecisionCard
-                  recommendation={topRecommendation}
-                  isPending={pendingItem?.id === topRecommendation.suggestion.id}
-                  compact={heroCompact}
-                  onSelect={() => handleSelect(topRecommendation.suggestion)}
-                />
+            {loading ? (
+              <div className="flex-1 space-y-3 overflow-y-auto p-4">
+                <RestaurantCardSkeleton />
+                <RestaurantCardSkeleton />
+                <RestaurantCardSkeleton />
               </div>
-            )}
-
-            {/* Other suggestions in list (Compact Cards) */}
-            {secondaryRecommendations.length > 0 && (
-              <div>
-                <p className="text-micro mb-2">Alternative matches</p>
-                <div className="space-y-3">
-                  {secondaryRecommendations.map((rec) => (
+            ) : fetchError ? (
+              <CanvasErrorCard variant={fetchError} onRetry={() => fetchRestaurants(searchQuery)} />
+            ) : refinedRecommendations.length > 0 ? (
+              <div ref={listScrollContainerRef} className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4">
+                <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold text-ink-500">
+                  {refinedRecommendations.length} restaurant{refinedRecommendations.length === 1 ? '' : 's'}
+                  <span className="font-medium text-ink-400"> — ranked for walking distance · budget · cuisine preference</span>
+                  {source && <TierBadge source={source} />}
+                </p>
+                <div className="flex flex-col gap-3">
+                  {refinedRecommendations.map((rec) => (
                     <RestaurantSuggestionCard
                       key={rec.suggestion.id}
                       recommendation={rec}
-                      isExpanded={expandedId === rec.suggestion.id}
-                      isPending={pendingItem?.id === rec.suggestion.id}
-                      onToggleExpand={() => toggleExpand(rec.suggestion)}
-                      onSelect={() => handleSelect(rec.suggestion)}
-                      onCompareToggle={() => handleCompareToggle(rec.suggestion.id)}
-                      isCompared={comparedIds.includes(rec.suggestion.id)}
+                      isPending={false}
+                      onSelect={() => handleSelectRecommendation(rec.suggestion.id)}
+                      onAdd={() => handleAddSuggestion(rec.suggestion)}
+                      tripContext={tripContext}
                     />
                   ))}
                 </div>
               </div>
+            ) : (
+              <div className="m-4 rounded-2xl border border-line bg-paper-2 p-8 text-center shadow-surface">
+                <div className="mx-auto mb-3 text-3xl">🍲</div>
+                <p className="text-sm font-semibold text-ink-700">No meal matches found</p>
+                <p className="mt-1 text-xs text-ink-400">Try adjusting your filters or active location</p>
+              </div>
             )}
-          </div>
+
+           </motion.div>
         ) : (
-          <div className="rounded-2xl bg-paper-2 p-8 text-center border border-line shadow-surface">
-            <div className="mx-auto mb-3 text-3xl">🍲</div>
-            <p className="text-sm font-semibold text-ink-700">No meal matches found</p>
-            <p className="mt-1 text-xs text-ink-400">Try adjusting your filters or active location</p>
-          </div>
+          <motion.div
+            key="decide-detail"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="h-full"
+          >
+            {selectedRecommendation && (
+              <RestaurantDetailPanel
+                recommendation={selectedRecommendation}
+                isPending={false}
+                onSelect={() => handleAddSuggestion(selectedRecommendation.suggestion)}
+                onCompareToggle={() => handleCompareToggle(selectedRecommendation.suggestion.id)}
+                isCompared={comparedIds.includes(selectedRecommendation.suggestion.id)}
+                onBack={() => { setCanvasMode('compare'); setSelectedId(null); }}
+                tripContext={tripContext}
+              />
+            )}
+          </motion.div>
         )}
-      </div>
-
-      {!pendingItem && (
-        <RestaurantCompareTray
-          compared={comparedRecommendations}
-          onRemove={handleCompareToggle}
-          onSelect={handleSelect}
-        />
-      )}
-
-      {/* Add node replacement confirmation bar */}
-      {pendingItem && onAddToPlan && (
-        <ReplaceConfirmBar
-          newItemTitle={pendingItem.name}
-          newItemPrice={pendingItem.price_label || undefined}
-          tripContext={tripContext}
-          confirmColor="bg-cat-food hover:brightness-110"
-          onCancel={() => setPendingItem(null)}
-          onConfirm={handleConfirmReplace}
-        />
-      )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -67,7 +67,7 @@ function GenericNode({ item, isLast, onClick, onRemove, onHover, onVerifyLivePri
 
   return (
     <div ref={setNodeRef} style={style} className="relative">
-      <NodeWrapper type={item.type} time={item.startTime} endTime={item.endTime} isLast={isLast} onTimeChange={onTimeChange}>
+      <NodeWrapper type={item.type} time={item.startTime} endTime={item.endTime} isLast={isLast} onTimeChange={onTimeChange} itemId={item.id}>
         <div
           className="relative group"
           onMouseEnter={() => {
@@ -79,9 +79,23 @@ function GenericNode({ item, isLast, onClick, onRemove, onHover, onVerifyLivePri
             onHover?.(false);
           }}
         >
+          {/* Hover Action overlay — absolutely positioned at top-right */}
+          <div className="absolute top-2 right-2 z-20 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-200 flex items-center gap-1 bg-paper-2/95 backdrop-blur-xs border border-line shadow-modal rounded-xl p-1 px-1.5 export-hidden">
+            {moveDayOptions && currentDayId && onMoveToDay && (
+              <MoveToDaySelect options={moveDayOptions} currentDayId={currentDayId} onMove={onMoveToDay} />
+            )}
+            <button
+              onClick={(e) => { e.stopPropagation(); onRemove?.(); }}
+              className="rounded-lg p-1.5 text-ink-400 hover:bg-red-50 hover:text-red-500 active:scale-95 cursor-pointer flex items-center justify-center"
+              style={{ transition: `all var(--motion-hover) var(--ease-out)`, minWidth: 28, minHeight: 28 }}
+              title="Delete"
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
           {/* ── Travel card — one canonical style ───────────────────── */}
           <div
-            className={`flex items-stretch rounded-2xl bg-white overflow-hidden ${bookedAccentClass(item.blockStatus)}`}
+            className={`travel-card flex items-stretch overflow-hidden ${bookedAccentClass(item.blockStatus)}`}
             style={{
               boxShadow: isHovered ? 'var(--shadow-hover)' : 'var(--shadow-surface)',
               transform: isHovered ? 'translateY(-2px)' : 'translateY(0)',
@@ -160,9 +174,9 @@ function GenericNode({ item, isLast, onClick, onRemove, onHover, onVerifyLivePri
                       ) : null}
                     </div>
 
-                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-500 font-medium">
+                    <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-ink-500 font-medium">
                       {item.geoTag && (
-                        <span className="flex items-center gap-1 truncate">
+                        <span className="flex items-center gap-1">
                           <MapPin size={10} className="text-ink-400/70 shrink-0" />
                           {item.geoTag}
                         </span>
@@ -171,7 +185,7 @@ function GenericNode({ item, isLast, onClick, onRemove, onHover, onVerifyLivePri
                         <span className="text-line-strong">·</span>
                       )}
                       {item.subtitle && (
-                        <span className="truncate text-ink-400">{item.subtitle}</span>
+                        <span className="text-ink-400">{item.subtitle}</span>
                       )}
                     </div>
 
@@ -200,7 +214,7 @@ function GenericNode({ item, isLast, onClick, onRemove, onHover, onVerifyLivePri
               </div>
 
               {/* ── Price + actions — right side ─────────────────────── */}
-              <div className="flex flex-col items-end justify-between shrink-0 pl-1 min-w-[60px]">
+              <div className={`flex flex-col items-end justify-between shrink-0 pl-1 ${item.price ? 'min-w-[60px]' : ''}`}>
                 {item.price ? (
                   <div className="text-right">
                     <p className="text-[13px] font-semibold tabular-nums text-ink-900">
@@ -233,8 +247,15 @@ function GenericNode({ item, isLast, onClick, onRemove, onHover, onVerifyLivePri
                                 e.stopPropagation();
                                 onVerifyLivePrice?.(item.id);
                               }}
-                              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-semibold text-ink-600 border border-line bg-paper-1 hover:bg-paper-0 hover:text-ink-900 active:scale-95 cursor-pointer"
-                              style={{ transition: `all var(--motion-hover) var(--ease-out)`, minHeight: 28 }}
+                              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-semibold border cursor-pointer active:scale-95"
+                              style={{
+                                transition: `all var(--motion-hover) var(--ease-out)`, minHeight: 28,
+                                color: 'rgb(var(--color-booking))',
+                                borderColor: 'rgb(var(--color-booking) / 0.35)',
+                                background: 'rgb(var(--color-booking) / 0.06)',
+                              }}
+                              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--color-booking) / 0.12)'; }}
+                              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--color-booking) / 0.06)'; }}
                             >
                               Verify Price
                             </button>
@@ -251,8 +272,15 @@ function GenericNode({ item, isLast, onClick, onRemove, onHover, onVerifyLivePri
                             e.stopPropagation();
                             onClick?.();
                           }}
-                          className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[9px] font-semibold border border-line bg-paper-1 text-ink-600 hover:bg-paper-0 hover:text-ink-900 active:scale-95 cursor-pointer"
-                          style={{ transition: `all var(--motion-hover) var(--ease-out)` }}
+                          className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[9px] font-semibold border cursor-pointer active:scale-95"
+                          style={{
+                            transition: `all var(--motion-hover) var(--ease-out)`,
+                            color: 'rgb(var(--color-ai))',
+                            borderColor: 'rgb(var(--color-ai) / 0.3)',
+                            background: 'rgb(var(--color-ai) / 0.06)',
+                          }}
+                          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--color-ai) / 0.12)'; }}
+                          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--color-ai) / 0.06)'; }}
                         >
                           Change
                         </button>
@@ -261,32 +289,11 @@ function GenericNode({ item, isLast, onClick, onRemove, onHover, onVerifyLivePri
                   </div>
                 ) : <div />}
 
-                {/* Bottom actions — ghost pill style */}
-                <div className="mt-auto flex items-center gap-1.5 export-hidden">
-                  {moveDayOptions && currentDayId && onMoveToDay && (
-                    <MoveToDaySelect options={moveDayOptions} currentDayId={currentDayId} onMove={onMoveToDay} />
-                  )}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onRemove?.(); }}
-                    className="rounded-xl p-2 text-ink-400 hover:bg-red-50 hover:text-red-500 active:scale-95 cursor-pointer"
-                    style={{ transition: `all var(--motion-hover) var(--ease-out)`, minWidth: 32, minHeight: 32 }}
-                    title="Delete"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
+                {/* Spacer */}
+                <div className="mt-auto" />
               </div>
             </div>
           </div>
-
-          {/* Distance badge between nodes */}
-          {item.distanceToNext && (
-            <div className="absolute -bottom-4 left-[71px] z-10 flex -translate-x-1/2 -translate-y-1/2 items-center bg-paper-1 py-0.5 px-1">
-              <div className="rounded-full border border-line bg-white px-2 py-0.5 text-[9px] font-medium text-ink-500 shadow-surface">
-                {item.distanceToNext}
-              </div>
-            </div>
-          )}
         </div>
       </NodeWrapper>
     </div>

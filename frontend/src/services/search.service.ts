@@ -33,14 +33,12 @@ export const searchService = {
     if (params.roomCount) queryParams.append('roomCount', params.roomCount);
     if (params.cabType) queryParams.append('cabType', params.cabType);
 
-    try {
-      const response = await apiClient.get<TravelSearchResult[]>(
-        `/bookings/inventory/search/?${queryParams.toString()}`
-      );
-      return Array.isArray(response) ? response : [];
-    } catch (err: any) {
-      console.warn('Search API request failed:', err?.message || err);
-      return [];
-    }
+    // Errors propagate to the caller — swallowing them to `[]` here made a
+    // failed search indistinguishable from a real "no inventory" result
+    // (design-system-spec.md §8). Canvases decide how to render a failure.
+    const response = await apiClient.get<TravelSearchResult[]>(
+      `/bookings/inventory/search/?${queryParams.toString()}`
+    );
+    return Array.isArray(response) ? response : [];
   },
 };

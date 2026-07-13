@@ -78,24 +78,24 @@ export function DateRangeWidget({ onSubmit, widget }: DateRangeWidgetProps) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="mr-auto mt-2 flex w-full max-w-sm flex-col gap-3 rounded-2xl border border-line-strong bg-white p-4 shadow-sm animate-fade-in"
+      className="mr-auto mt-2 flex w-full max-w-sm flex-col gap-3 rounded-2xl border border-line-strong bg-paper-2 p-4 shadow-surface animate-fade-in"
     >
       <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Travel Dates</p>
-        <span className="flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-600">
+        <p className="text-xs font-semibold uppercase tracking-wider text-ink-500">Travel Dates</p>
+        <span className="flex items-center gap-1 rounded-full bg-[rgb(var(--color-ai)/0.08)] px-2 py-0.5 text-[10px] font-bold text-[rgb(var(--color-ai))]">
           <Calendar size={10} /> Optimize Season
         </span>
       </div>
 
       {isTransit && (
-        <div className="flex rounded-xl bg-slate-100 p-1">
+        <div className="flex rounded-xl bg-paper-0 p-1">
           <button
             type="button"
             onClick={() => setTripType('one_way')}
             className={`flex-1 rounded-lg py-1.5 text-xs font-semibold transition-all ${
               tripType === 'one_way'
-                ? 'bg-white text-slate-800 shadow-sm'
-                : 'text-slate-500 hover:text-slate-800'
+                ? 'bg-paper-2 text-ink-900 shadow-surface'
+                : 'text-ink-500 hover:text-ink-900'
             }`}
           >
             One-Way
@@ -105,8 +105,8 @@ export function DateRangeWidget({ onSubmit, widget }: DateRangeWidgetProps) {
             onClick={() => setTripType('round_trip')}
             className={`flex-1 rounded-lg py-1.5 text-xs font-semibold transition-all ${
               tripType === 'round_trip'
-                ? 'bg-white text-slate-800 shadow-sm'
-                : 'text-slate-500 hover:text-slate-800'
+                ? 'bg-paper-2 text-ink-900 shadow-surface'
+                : 'text-ink-500 hover:text-ink-900'
             }`}
           >
             Round-Trip
@@ -120,7 +120,7 @@ export function DateRangeWidget({ onSubmit, widget }: DateRangeWidgetProps) {
             key={qp.label}
             type="button"
             onClick={() => applyQuickPick(qp.label, qp.startOffset, qp.endOffset)}
-            className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+            className="rounded-lg border border-line bg-paper-0 px-2.5 py-1 text-[11px] font-medium text-ink-600 hover:border-[rgb(var(--color-ai)/0.4)] hover:bg-[rgb(var(--color-ai)/0.08)] hover:text-[rgb(var(--color-ai))] transition-colors"
           >
             {qp.label}
           </button>
@@ -129,26 +129,26 @@ export function DateRangeWidget({ onSubmit, widget }: DateRangeWidgetProps) {
 
       <div className="flex items-center gap-2">
         <div className="flex-1">
-          <label className="text-[10px] font-semibold uppercase text-slate-500">{startLabel}</label>
+          <label className="text-[10px] font-semibold uppercase text-ink-500">{startLabel}</label>
           <input
             type="date"
             required
             min={todayStr}
             value={startDate}
             onChange={(e) => setStartDate(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="mt-1 w-full rounded-lg border border-line bg-paper-0 px-3 py-2 text-sm text-ink-700 shadow-surface focus:border-[rgb(var(--color-ai))] focus:outline-none focus:ring-2 focus:ring-[rgb(var(--color-ai)/0.2)]"
           />
         </div>
         {tripType === 'round_trip' && (
           <div className="flex-1">
-            <label className="text-[10px] font-semibold uppercase text-slate-500">{endLabel}</label>
+            <label className="text-[10px] font-semibold uppercase text-ink-500">{endLabel}</label>
             <input
               type="date"
               required
               value={endDate}
               min={startDate || todayStr}
               onChange={(e) => setEndDate(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="mt-1 w-full rounded-lg border border-line bg-paper-0 px-3 py-2 text-sm text-ink-700 shadow-surface focus:border-[rgb(var(--color-ai))] focus:outline-none focus:ring-2 focus:ring-[rgb(var(--color-ai)/0.2)]"
             />
           </div>
         )}
@@ -157,7 +157,7 @@ export function DateRangeWidget({ onSubmit, widget }: DateRangeWidgetProps) {
       <button
         type="submit"
         disabled={tripType === 'one_way' ? !startDate : (!startDate || !endDate)}
-        className="mt-1 w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:from-blue-700 hover:to-indigo-700 disabled:from-slate-300 disabled:to-slate-300 disabled:text-slate-500"
+        className="mt-1 w-full rounded-xl bg-gradient-to-r from-[rgb(var(--color-ai))] to-violet-700 py-2 text-sm font-semibold text-white shadow-surface transition-all hover:opacity-90 disabled:from-line disabled:to-line disabled:text-ink-400"
       >
         Confirm Dates
       </button>

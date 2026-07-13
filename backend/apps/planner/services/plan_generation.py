@@ -301,7 +301,8 @@ Rules:
 - Day 1 is 'arrival', the last day is 'departure' (unless single-day intent).
 """
 
-    client = genai.Client()
+    from apps.common.ai import get_genai_client
+    client = get_genai_client()
     response = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=prompt,
@@ -563,7 +564,8 @@ RULES:
 - Times must be realistic and sequential within each day.
 - Notes must be factual and generic (what/when/why) — no made-up prices, no invented details."""
 
-    client = genai.Client()
+    from apps.common.ai import get_genai_client
+    client = get_genai_client()
     response = client.models.generate_content(
         model="gemini-2.5-pro",
         contents=prompt,

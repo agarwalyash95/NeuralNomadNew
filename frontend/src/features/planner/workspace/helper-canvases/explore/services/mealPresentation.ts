@@ -1,5 +1,5 @@
 import type { Suggestion } from '../../../plan-canvas/types';
-import type { BudgetImpact, MealRecommendation } from './mealRecommendationEngine';
+import type { MealRecommendation } from './mealRecommendationEngine';
 
 /**
  * Presentation-only helpers for the restaurant canvas. Nothing here changes
@@ -70,42 +70,14 @@ function parseClockTime(text: string): number | null {
   return hours * 60 + minutes;
 }
 
-// ── Budget breakdown (allocated / spent / remaining) ─────────────────────
-// budgetImpact.impactPercentage is estimatedCostForTwo expressed as a
-// percentage of the day's meal budget. We recover that same daily budget by
-// inverting the percentage rather than restating the ₹2000 constant here —
-// if the engine's assumption changes, this stays correct automatically.
-export interface BudgetBreakdown {
-  allocated: number;
-  spent: number;
-  remaining: number;
-  overBudget: boolean;
-}
-
-export function getBudgetBreakdown(budgetImpact: BudgetImpact): BudgetBreakdown {
-  const { estimatedCostForTwo, impactPercentage } = budgetImpact;
-  const allocated = impactPercentage > 0 ? Math.round(estimatedCostForTwo / (impactPercentage / 100)) : estimatedCostForTwo;
-  const remaining = allocated - estimatedCostForTwo;
-  return {
-    allocated,
-    spent: estimatedCostForTwo,
-    remaining,
-    overBudget: remaining < 0,
-  };
-}
-
-// ── Contextual AI quick actions ──────────────────────────────────────────
-// Re-sort/filter over the already-scored recommendation list. None of these
-// mutate labels, confidence, or reasoning — they only change which items
-// surface first for a specific intent.
-export type AIQuickActionId = 'quieter' | 'authentic' | 'cheaper' | 'open_now';
-
-const CROWD_RANK: Record<MealRecommendation['crowdLevel'], number> = {
-  Low: 0,
-  Moderate: 1,
-  Busy: 2,
-  Peak: 3,
-};
+// ── Contextual quick actions ──────────────────────────────────────────────
+// Re-sort/filter over the already-scored recommendation list, using only
+// real fields (cost, real opening_hours). 'Find quieter' and 'More
+// authentic' were removed — Google Places gives us no live-crowd or
+// cuisine-authenticity signal, so those buttons used to invent a
+// crowdLevel/label to sort by. Don't reintroduce them without a real
+// backend signal to sort on.
+export type AIQuickActionId = 'cheaper' | 'open_now';
 
 export function applyAIQuickFilter(
   recommendations: MealRecommendation[],
@@ -114,18 +86,8 @@ export function applyAIQuickFilter(
   switch (action) {
     case 'cheaper':
       return [...recommendations].sort(
-        (a, b) => a.budgetImpact.estimatedCostForTwo - b.budgetImpact.estimatedCostForTwo
+        (a, b) => (a.estimatedCostForTwo ?? Infinity) - (b.estimatedCostForTwo ?? Infinity)
       );
-    case 'quieter': {
-      const quiet = recommendations.filter((r) => r.crowdLevel === 'Low' || r.crowdLevel === 'Moderate');
-      const base = quiet.length > 0 ? quiet : recommendations;
-      return [...base].sort((a, b) => CROWD_RANK[a.crowdLevel] - CROWD_RANK[b.crowdLevel]);
-    }
-    case 'authentic': {
-      const local = recommendations.filter((r) => r.label === 'Best Local Food');
-      if (local.length > 0) return local;
-      return recommendations;
-    }
     case 'open_now': {
       const open = recommendations.filter((r) => isOpenNow(r.suggestion.details?.opening_hours) !== 'closed');
       return open.length > 0 ? open : recommendations;
@@ -136,8 +98,6 @@ export function applyAIQuickFilter(
 }
 
 export const AI_QUICK_ACTIONS: { id: AIQuickActionId; label: string }[] = [
-  { id: 'quieter', label: 'Find quieter' },
-  { id: 'authentic', label: 'More authentic' },
   { id: 'cheaper', label: 'Cheaper' },
   { id: 'open_now', label: 'Open now' },
 ];

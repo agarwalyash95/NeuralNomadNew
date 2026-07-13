@@ -72,7 +72,7 @@ export interface Booking {
   booking_type: BookingType;
   reference_number: string;
   status: BookingStatus;
-  amount: string;
+  amount: number;
   currency: string;
   booking_date: string;
   start_date: string;

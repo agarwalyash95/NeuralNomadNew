@@ -61,17 +61,17 @@ export function DestinationWidget({ onSubmit, widget }: DestinationWidgetProps) 
   return (
     <form
       onSubmit={handleSelect}
-      className="mr-auto mt-2 flex w-full max-w-sm flex-col gap-2 rounded-2xl border border-line-strong bg-white p-3 shadow-sm"
+      className="mr-auto mt-2 flex w-full max-w-sm flex-col gap-2 rounded-2xl border border-line-strong bg-paper-2 p-3 shadow-surface"
     >
       <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{title}</p>
-        <span className="flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-600">
+        <p className="text-xs font-semibold uppercase tracking-wider text-ink-500">{title}</p>
+        <span className="flex items-center gap-1 rounded-full bg-[rgb(var(--color-ai)/0.08)] px-2 py-0.5 text-[10px] font-bold text-[rgb(var(--color-ai))]">
           <Sparkles size={10} /> AI Analyzing
         </span>
       </div>
 
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" size={16} />
         <input
           autoFocus
           value={city}
@@ -79,18 +79,18 @@ export function DestinationWidget({ onSubmit, widget }: DestinationWidgetProps) 
           onFocus={() => setShowSuggestions(true)}
           onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
           placeholder={placeholder}
-          className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-4 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          className="w-full rounded-xl border border-line bg-paper-2 py-2 pl-9 pr-4 text-sm text-ink-800 placeholder:text-ink-400 shadow-surface focus:border-[rgb(var(--color-ai))] focus:outline-none focus:ring-2 focus:ring-[rgb(var(--color-ai)/0.2)]"
         />
         {showSuggestions && filtered.length > 0 && (
-          <div className="absolute z-10 mt-1 w-full rounded-xl border border-slate-100 bg-white shadow-lg overflow-hidden">
+          <div className="absolute z-10 mt-1 w-full rounded-xl border border-line bg-paper-2 shadow-modal overflow-hidden">
             {filtered.slice(0, 5).map((dest) => (
               <button
                 key={dest}
                 type="button"
                 onMouseDown={() => handleSelect(undefined, dest)}
-                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-ink-700 hover:bg-[rgb(var(--color-ai)/0.08)] hover:text-[rgb(var(--color-ai))] transition-colors"
               >
-                <MapPin size={13} className="text-slate-400" /> {dest}
+                <MapPin size={13} className="text-ink-400" /> {dest}
               </button>
             ))}
           </div>
@@ -104,7 +104,7 @@ export function DestinationWidget({ onSubmit, widget }: DestinationWidgetProps) 
               key={dest}
               type="button"
               onClick={() => handleSelect(undefined, dest)}
-              className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+              className="rounded-lg border border-line bg-paper-0 px-2.5 py-1 text-[11px] font-medium text-ink-600 hover:border-[rgb(var(--color-ai)/0.4)] hover:bg-[rgb(var(--color-ai)/0.08)] hover:text-[rgb(var(--color-ai))] transition-colors"
             >
               {dest}
             </button>
@@ -115,7 +115,7 @@ export function DestinationWidget({ onSubmit, widget }: DestinationWidgetProps) 
       <button
         type="submit"
         disabled={!city.trim()}
-        className="mt-1 w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:from-blue-700 hover:to-indigo-700 disabled:from-slate-300 disabled:to-slate-300 disabled:text-slate-500"
+        className="mt-1 w-full rounded-xl bg-gradient-to-r from-[rgb(var(--color-ai))] to-violet-700 py-2 text-sm font-semibold text-white shadow-surface transition-all hover:opacity-90 disabled:from-line disabled:to-line disabled:text-ink-400"
       >
         Confirm Location
       </button>

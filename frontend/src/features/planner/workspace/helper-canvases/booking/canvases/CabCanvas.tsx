@@ -13,6 +13,15 @@ import ReplaceConfirmBar from '../../shared/ReplaceConfirmBar';
 import { ItineraryItem, CostProvenance } from '../../../plan-canvas/types';
 import { ProvenanceBadge } from '../../../../components/ProvenanceBadge';
 import CurrentlyBookedCard from '../../shared/CurrentlyBookedCard';
+import { CanvasErrorCard, classifyFetchErrorVariant, type CanvasErrorVariant } from '../../shared/CanvasErrorCard';
+import { LiveSearchProgress, useLiveSearchPhases, useTierEscalation } from '../../shared/LiveSearchProgress';
+import TransportCardSkeleton from './TransportCardSkeleton';
+
+const CAB_SEARCH_PHASES = [
+  { key: 'search', label: 'Searching cab inventory' },
+  { key: 'route', label: 'Measuring route distance' },
+  { key: 'finalize', label: 'Finalizing results' },
+];
 
 interface CabCanvasProps {
   onClose?: () => void;
@@ -97,10 +106,14 @@ export default function CabCanvas({ onClose, tripContext, onAddToPlan }: CabCanv
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<any[]>([]);
+  const [fetchError, setFetchError] = useState<CanvasErrorVariant | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>(['Full Day']);
   const [pendingItem, setPendingItem] = useState<any | null>(null);
   /** Real road distance for pickup → drop, from /planner/distances/ (cached server-side) */
   const [routeInfo, setRouteInfo] = useState<{ km: number; mins: number } | null>(null);
+
+  const escalated = useTierEscalation(loading);
+  const { activeIndex, elapsedMs } = useLiveSearchPhases(loading && escalated, CAB_SEARCH_PHASES.length);
 
   useEffect(() => { setParams(buildInitialParams(tripContext)); }, [tripContext.tripId]);
 
@@ -145,6 +158,7 @@ export default function CabCanvas({ onClose, tripContext, onAddToPlan }: CabCanv
 
   const fetchCabs = async (searchParams: BookingSearchParams) => {
     setLoading(true);
+    setFetchError(null);
     try {
       const apiResults = await searchService.search(searchParams);
       const mapped = apiResults.map((cab) => {
@@ -160,8 +174,10 @@ export default function CabCanvas({ onClose, tripContext, onAddToPlan }: CabCanv
         };
       });
       setResults(mapped);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching cabs:', err);
+      setResults([]);
+      setFetchError(classifyFetchErrorVariant(err));
     } finally {
       setLoading(false);
     }
@@ -209,7 +225,7 @@ export default function CabCanvas({ onClose, tripContext, onAddToPlan }: CabCanv
   const searchSummary = `Cabs in ${params.pickup || tripContext.destination}`;
 
   return (
-    <div className="flex h-full flex-col bg-white">
+    <div className="flex h-full flex-col bg-paper-1">
       <CanvasHeader icon={<Car size={18} />} iconColor="bg-amber-600" label="Cabs" title={searchSummary} tripContext={tripContext} onClose={onClose} />
       <CurrentlyBookedCard tripContext={tripContext} nodeType={['taxi', 'cab']} />
       <div className="custom-scrollbar flex-1 overflow-y-auto">
@@ -217,17 +233,17 @@ export default function CabCanvas({ onClose, tripContext, onAddToPlan }: CabCanv
           <SearchSummaryBar primary={searchSummary} secondary={[params.departureDate, `${params.travellers} pax`].filter(Boolean).join(' • ')}
             accentColor="group-hover:text-amber-600" onClick={() => setIsSearchExpanded(true)}>
             <QuickFilterBar tags={QUICK_FILTER_TAGS} selected={selectedTags}
-              activeColor="border-amber-600 bg-amber-600 text-white shadow-sm"
-              hoverColor="border-slate-200 bg-white text-slate-600 hover:border-amber-300 hover:bg-amber-50"
+              activeColor="border-amber-600 bg-amber-600 text-white shadow-surface"
+              hoverColor="border-line bg-paper-2 text-ink-600 hover:border-amber-300 hover:bg-amber-50"
               onToggle={tag => setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])} />
           </SearchSummaryBar>
         )}
         {isSearchExpanded && (
-          <div className="border-b border-slate-200 bg-white p-4">
+          <div className="border-b border-line bg-paper-2 p-4">
             <form onSubmit={handleSearch} className="space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-800">Edit Search</h3>
-                <button type="button" onClick={() => setIsSearchExpanded(false)} className="text-xs font-semibold text-slate-500">Cancel</button>
+                <h3 className="text-sm font-semibold text-ink-800">Edit Search</h3>
+                <button type="button" onClick={() => setIsSearchExpanded(false)} className="text-xs font-semibold text-ink-500">Cancel</button>
               </div>
               <CabSearchForm params={params} onUpdateParam={(field, value) => updateParam(setParams, field, value)} />
               <button type="submit" disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-amber-600 py-3 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50">
@@ -237,15 +253,20 @@ export default function CabCanvas({ onClose, tripContext, onAddToPlan }: CabCanv
           </div>
         )}
         <div className="p-4">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-8">
-              <div className="mb-3 h-10 w-10 animate-spin rounded-full border-3 border-slate-200 border-t-amber-600" />
-              <p className="text-sm font-semibold text-slate-600">Finding cabs...</p>
+          {loading && !escalated ? (
+            <div className="space-y-3">
+              {Array.from({ length: Math.min(results.length || 3, 6) }).map((_, i) => (
+                <TransportCardSkeleton key={i} />
+              ))}
             </div>
+          ) : loading && escalated ? (
+            <LiveSearchProgress phases={CAB_SEARCH_PHASES} activeIndex={activeIndex} elapsedMs={elapsedMs} />
+          ) : fetchError ? (
+            <CanvasErrorCard variant={fetchError} onRetry={() => fetchCabs(params)} />
           ) : filteredResults.length > 0 ? (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-slate-500">{filteredResults.length} cabs found</p>
+                <p className="text-xs font-semibold text-ink-500">{filteredResults.length} cabs found</p>
                 {routeInfo && (
                   <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700" title="Measured road distance for this route">
                     🛣 ~{routeInfo.km} km · {Math.round(routeInfo.mins / 60 * 10) / 10}h drive
@@ -255,11 +276,11 @@ export default function CabCanvas({ onClose, tripContext, onAddToPlan }: CabCanv
               {filteredResults.map((cab) => {
                 const fare = fareFor(cab);
                 return (
-                  <div key={cab.id} className={`rounded-xl border bg-white p-4 transition-all hover:shadow-md ${pendingItem?.id === cab.id ? 'border-amber-400 ring-2 ring-amber-100' : 'border-slate-200 hover:border-amber-300'}`}>
+                  <div key={cab.id} className={`rounded-xl border bg-paper-2 p-4 transition-all hover:shadow-md ${pendingItem?.id === cab.id ? 'border-amber-400 ring-2 ring-amber-100' : 'border-line hover:border-amber-300'}`}>
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
-                        <p className="text-sm font-semibold text-slate-900">{cab.title}</p>
-                        <p className="text-xs text-slate-500">{cab.origin} • {cab.duration}</p>
+                        <p className="text-sm font-semibold text-ink-900">{cab.title}</p>
+                        <p className="text-xs text-ink-500">{cab.origin} • {cab.duration}</p>
                         <div className="mt-2 flex flex-wrap gap-1">
                           {cab.cabTypes?.map((t: any, tIdx: number) => (
                             <span key={`${t.type || 'type'}-${tIdx}`} className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">{t.type}</span>
@@ -267,8 +288,8 @@ export default function CabCanvas({ onClose, tripContext, onAddToPlan }: CabCanv
                         </div>
                       </div>
                       <div className="ml-4 text-right shrink-0">
-                        <p className="text-xl font-bold tabular-nums text-slate-900">{fare.price != null ? `₹${fare.price.toLocaleString()}` : 'Price on request'}</p>
-                        <p className="text-xs text-slate-500 mb-1">{fare.basisLabel}</p>
+                        <p className="text-xl font-bold tabular-nums text-ink-900">{fare.price != null ? `₹${fare.price.toLocaleString()}` : 'Price on request'}</p>
+                        <p className="text-xs text-ink-500 mb-1">{fare.basisLabel}</p>
                         <ProvenanceBadge provenance={fare.provenance} className="mb-1.5" />
                         <button onClick={() => setPendingItem(cab)}
                           className={`mt-2 rounded-lg px-4 py-2 text-xs font-semibold transition-colors ${pendingItem?.id === cab.id ? 'bg-amber-700 text-white' : 'bg-amber-600 text-white hover:bg-amber-700'}`}>
@@ -281,9 +302,9 @@ export default function CabCanvas({ onClose, tripContext, onAddToPlan }: CabCanv
               })}
             </div>
           ) : (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-8 text-center">
-              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-200"><Car size={24} className="text-slate-400" /></div>
-              <p className="text-sm font-semibold text-slate-600">No cabs found in {params.pickup}</p>
+            <div className="rounded-xl border border-line bg-paper-0 p-8 text-center">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-line"><Car size={24} className="text-ink-400" /></div>
+              <p className="text-sm font-semibold text-ink-600">No cabs found in {params.pickup}</p>
             </div>
           )}
         </div>

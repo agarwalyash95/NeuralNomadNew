@@ -71,7 +71,8 @@ Hub type: {hub_type}
 """
 
     try:
-        client = genai.Client()
+        from apps.common.ai import get_genai_client
+        client = get_genai_client()
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,

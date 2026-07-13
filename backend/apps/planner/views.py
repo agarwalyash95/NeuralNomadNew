@@ -603,7 +603,8 @@ class PlannerWorkspaceViewSet(viewsets.ModelViewSet):
             # trip changes enough to move updated_at, a dismissed insight is
             # eligible to resurface (it may no longer even apply, or a new
             # variant of it will get a new hash).
-            basis = f"{insight['rule']}:{insight.get('day_number')}:{trip.updated_at.isoformat()}"
+            related = ",".join(str(i) for i in sorted(insight.get("related_block_ids") or []))
+            basis = f"{insight['rule']}:{insight.get('day_number')}:{related}:{insight['message']}:{trip.updated_at.isoformat()}"
             context_hash = hashlib.sha256(basis.encode()).hexdigest()[:32]
             if context_hash in dismissed:
                 continue
@@ -643,8 +644,9 @@ def _suggested_replies(result):
 
 def _sse(event, payload):
     import json
+    from rest_framework.utils.encoders import JSONEncoder
 
-    return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
+    return f"event: {event}\ndata: {json.dumps(payload, cls=JSONEncoder)}\n\n"
 
 
 def _stream_chat_response(user, message, workspace, structured_value):

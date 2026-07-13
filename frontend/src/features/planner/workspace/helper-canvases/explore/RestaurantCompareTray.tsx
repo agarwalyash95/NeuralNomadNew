@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { GitCompareArrows, X, ChevronUp } from 'lucide-react';
+import { GitCompareArrows, X, ChevronUp, Sparkles } from 'lucide-react';
 import type { Suggestion } from '../../plan-canvas/types';
 import { FOCUS_RING_CLASS } from '@/lib/utils';
 import type { MealRecommendation } from './services/mealRecommendationEngine';
@@ -17,6 +17,22 @@ interface Row {
   values: (string | null)[];
 }
 
+// Verdict — ranks by real rating and real (or estimated) cost only.
+// Parity with the Attractions canvas's SightCompareTray, so both compare
+// trays give the same "which should I pick" closing argument instead of
+// leaving the traveler to read the raw table themselves.
+function buildMealVerdict(compared: MealRecommendation[]): string | null {
+  if (compared.length < 2) return null;
+  const score = (r: MealRecommendation) => (r.suggestion.rating ?? 4) - (r.estimatedCostForTwo ?? 1000) / 500;
+  const winner = [...compared].sort((a, b) => score(b) - score(a))[0];
+  if (!winner) return null;
+  const context = winner.itineraryContext || "today's plan";
+  const costNote = winner.estimatedCostForTwo !== null
+    ? ` — ${winner.costIsEstimate ? 'est. ' : ''}₹${winner.estimatedCostForTwo} for two`
+    : '';
+  return `For ${context}, ${winner.suggestion.name} is the better fit${costNote}.`;
+}
+
 /**
  * Persistent sticky bottom comparison bar — appears once 2+ restaurants are
  * marked for comparison and stays out of the way (collapsed pill) until
@@ -27,13 +43,13 @@ export default function RestaurantCompareTray({ compared, onRemove, onSelect }: 
   const [open, setOpen] = useState(false);
   if (compared.length === 0) return null;
 
+  const verdict = buildMealVerdict(compared);
+
   const rows: Row[] = [
-    { label: 'Match type', values: compared.map((r) => r.label) },
+    { label: 'Cuisine', values: compared.map((r) => r.suggestion.subtitle || null) },
     { label: 'Rating', values: compared.map((r) => (r.suggestion.rating != null ? `${r.suggestion.rating}★` : null)) },
-    { label: 'Walk time', values: compared.map((r) => `${Math.round((r.suggestion.distance_km ?? 1.2) * 12)} min`) },
-    { label: 'Cost for two', values: compared.map((r) => `₹${r.budgetImpact.estimatedCostForTwo}`) },
-    { label: 'Crowd level', values: compared.map((r) => r.crowdLevel) },
-    { label: 'Signature dish', values: compared.map((r) => r.signatureDishes[0] || null) },
+    { label: 'Walk time', values: compared.map((r) => (r.walkTimeMins != null ? `${r.walkTimeMins} min` : null)) },
+    { label: 'Cost for two', values: compared.map((r) => r.estimatedCostForTwo !== null ? `${r.costIsEstimate ? 'est. ' : ''}₹${r.estimatedCostForTwo}` : null) },
   ];
 
   return (
@@ -93,6 +109,17 @@ export default function RestaurantCompareTray({ compared, onRemove, onSelect }: 
               </tbody>
             </table>
           </div>
+
+          {/* AI verdict — violet (AI semantic), matching SightCompareTray */}
+          {verdict && (
+            <div className="mt-3 rounded-xl border p-3" style={{ borderColor: 'rgb(var(--color-ai) / 0.18)', background: 'rgb(var(--color-ai) / 0.05)' }}>
+              <div className="mb-1.5 flex items-center gap-1.5" style={{ color: 'rgb(var(--color-ai))' }}>
+                <Sparkles size={12} className="fill-current" />
+                <span className="text-[11px] font-bold uppercase tracking-wide">AI Recommendation</span>
+              </div>
+              <p className="text-[11.5px] leading-snug text-ink-700">{verdict}</p>
+            </div>
+          )}
 
           <div className="mt-3 flex gap-2">
             {compared.map((r) => (

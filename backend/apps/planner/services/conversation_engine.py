@@ -332,7 +332,8 @@ class ExtractedTripData(BaseModel):
 
 class ConversationEngine:
     def __init__(self):
-        self.client = genai.Client()
+        from apps.common.ai import get_genai_client
+        self.client = get_genai_client()
 
     # ─────────────────────────────────────────────────────────────────────────
     # Public API

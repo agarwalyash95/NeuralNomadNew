@@ -14,6 +14,15 @@ import { ItineraryItem, CostProvenance } from '../../../plan-canvas/types';
 import { ProvenanceBadge } from '../../../../components/ProvenanceBadge';
 import CurrentlyBookedCard from '../../shared/CurrentlyBookedCard';
 import { useTransportPreference } from '@/features/planner/hooks/usePlannerQueries';
+import { CanvasErrorCard, classifyFetchErrorVariant, type CanvasErrorVariant } from '../../shared/CanvasErrorCard';
+import { LiveSearchProgress, useLiveSearchPhases, useTierEscalation } from '../../shared/LiveSearchProgress';
+import TransportCardSkeleton from './TransportCardSkeleton';
+
+const BUS_SEARCH_PHASES = [
+  { key: 'search', label: 'Searching bus inventory' },
+  { key: 'seats', label: 'Checking seat availability' },
+  { key: 'finalize', label: 'Finalizing results' },
+];
 
 interface BusCanvasProps {
   onClose?: () => void;
@@ -87,8 +96,12 @@ export default function BusCanvas({ onClose, tripContext, onAddToPlan }: BusCanv
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<any[]>([]);
+  const [fetchError, setFetchError] = useState<CanvasErrorVariant | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>(['AC Sleeper']);
   const [pendingItem, setPendingItem] = useState<any | null>(null);
+
+  const escalated = useTierEscalation(loading);
+  const { activeIndex, elapsedMs } = useLiveSearchPhases(loading && escalated, BUS_SEARCH_PHASES.length);
 
   useEffect(() => { setParams(buildInitialParams(tripContext)); }, [tripContext.tripId]);
 
@@ -105,6 +118,7 @@ export default function BusCanvas({ onClose, tripContext, onAddToPlan }: BusCanv
 
   const fetchBuses = async (searchParams: BookingSearchParams) => {
     setLoading(true);
+    setFetchError(null);
     try {
       const apiResults = await searchService.search(searchParams);
       const mapped = apiResults.map((bus) => {
@@ -124,8 +138,10 @@ export default function BusCanvas({ onClose, tripContext, onAddToPlan }: BusCanv
         };
       });
       setResults(mapped);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching buses:', err);
+      setResults([]);
+      setFetchError(classifyFetchErrorVariant(err));
     } finally {
       setLoading(false);
     }
@@ -179,24 +195,24 @@ export default function BusCanvas({ onClose, tripContext, onAddToPlan }: BusCanv
   const searchSecondary = [params.departureDate, `${params.travellers} passenger(s)`].filter(Boolean).join(' • ');
 
   return (
-    <div className="flex h-full flex-col bg-white">
+    <div className="flex h-full flex-col bg-paper-1">
       <CanvasHeader icon={<Bus size={18} />} iconColor="bg-sky-600" label="Buses" title={searchSummary} tripContext={tripContext} onClose={onClose} />
       <CurrentlyBookedCard tripContext={tripContext} nodeType="bus" />
       <div className="custom-scrollbar flex-1 overflow-y-auto">
         {!isSearchExpanded && (
           <SearchSummaryBar primary={searchSummary} secondary={searchSecondary} accentColor="group-hover:text-sky-600" onClick={() => setIsSearchExpanded(true)}>
             <QuickFilterBar tags={QUICK_FILTER_TAGS} selected={selectedTags}
-              activeColor="border-sky-600 bg-sky-600 text-white shadow-sm"
-              hoverColor="border-slate-200 bg-white text-slate-600 hover:border-sky-300 hover:bg-sky-50"
+              activeColor="border-sky-600 bg-sky-600 text-white shadow-surface"
+              hoverColor="border-line bg-paper-2 text-ink-600 hover:border-sky-300 hover:bg-sky-50"
               onToggle={tag => setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])} />
           </SearchSummaryBar>
         )}
         {isSearchExpanded && (
-          <div className="border-b border-slate-200 bg-white p-4">
+          <div className="border-b border-line bg-paper-2 p-4">
             <form onSubmit={handleSearch} className="space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-800">Edit Search</h3>
-                <button type="button" onClick={() => setIsSearchExpanded(false)} className="text-xs font-semibold text-slate-500 hover:text-slate-700">Cancel</button>
+                <h3 className="text-sm font-semibold text-ink-800">Edit Search</h3>
+                <button type="button" onClick={() => setIsSearchExpanded(false)} className="text-xs font-semibold text-ink-500 hover:text-ink-700">Cancel</button>
               </div>
               <BusSearchForm params={params} onUpdateParam={(field, value) => updateParam(setParams, field, value)} />
               <button type="submit" disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-sky-600 py-3 text-sm font-semibold text-white transition-all hover:bg-sky-700 disabled:opacity-50">
@@ -206,30 +222,35 @@ export default function BusCanvas({ onClose, tripContext, onAddToPlan }: BusCanv
           </div>
         )}
         <div className="p-4">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-8">
-              <div className="mb-3 h-10 w-10 animate-spin rounded-full border-3 border-slate-200 border-t-sky-600" />
-              <p className="text-sm font-semibold text-slate-600">Searching buses...</p>
+          {loading && !escalated ? (
+            <div className="space-y-3">
+              {Array.from({ length: Math.min(results.length || 3, 6) }).map((_, i) => (
+                <TransportCardSkeleton key={i} />
+              ))}
             </div>
+          ) : loading && escalated ? (
+            <LiveSearchProgress phases={BUS_SEARCH_PHASES} activeIndex={activeIndex} elapsedMs={elapsedMs} />
+          ) : fetchError ? (
+            <CanvasErrorCard variant={fetchError} onRetry={() => fetchBuses(params)} />
           ) : filteredResults.length > 0 ? (
             <div className="space-y-3">
-              <p className="text-xs font-semibold text-slate-500">{filteredResults.length} buses found</p>
+              <p className="text-xs font-semibold text-ink-500">{filteredResults.length} buses found</p>
               {filteredResults.map((bus) => (
-                <div key={bus.id} className={`rounded-xl border bg-white p-4 transition-all hover:shadow-md ${pendingItem?.id === bus.id ? 'border-sky-400 ring-2 ring-sky-100' : 'border-slate-200 hover:border-sky-300'}`}>
+                <div key={bus.id} className={`rounded-xl border bg-paper-2 p-4 transition-all hover:shadow-md ${pendingItem?.id === bus.id ? 'border-sky-400 ring-2 ring-sky-100' : 'border-line hover:border-sky-300'}`}>
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <p className="text-sm font-semibold text-slate-900">{bus.operator}</p>
-                      <p className="text-xs text-slate-500">{bus.busType}</p>
+                      <p className="text-sm font-semibold text-ink-900">{bus.operator}</p>
+                      <p className="text-xs text-ink-500">{bus.busType}</p>
                       <div className="mt-2 flex items-center gap-3 text-xs">
-                        <span className="font-bold text-slate-900">{bus.departure.time || '--:--'}</span>
-                        <span className="text-slate-400">→</span>
-                        <span className="font-bold text-slate-900">{bus.arrival.time || '--:--'}</span>
-                        <span className="text-slate-500">• {bus.duration || 'Duration TBD'}</span>
+                        <span className="font-bold text-ink-900">{bus.departure.time || '--:--'}</span>
+                        <span className="text-ink-400">→</span>
+                        <span className="font-bold text-ink-900">{bus.arrival.time || '--:--'}</span>
+                        <span className="text-ink-500">• {bus.duration || 'Duration TBD'}</span>
                       </div>
-                      {bus.seats && <p className="mt-1 text-xs text-slate-500">{bus.seats}</p>}
+                      {bus.seats && <p className="mt-1 text-xs text-ink-500">{bus.seats}</p>}
                     </div>
                     <div className="ml-4 text-right shrink-0">
-                      <p className="text-xl font-bold text-slate-900">{bus.price != null ? `₹${bus.price.toLocaleString()}` : 'Price on request'}</p>
+                      <p className="text-xl font-bold text-ink-900">{bus.price != null ? `₹${bus.price.toLocaleString()}` : 'Price on request'}</p>
                       <div className="mb-1 flex justify-end"><ProvenanceBadge provenance={RESULT_PROVENANCE} /></div>
                       <button onClick={() => setPendingItem(bus)}
                         className={`mt-2 rounded-lg px-4 py-2 text-xs font-semibold transition-colors ${pendingItem?.id === bus.id ? 'bg-sky-700 text-white' : 'bg-sky-600 text-white hover:bg-sky-700'}`}>
@@ -241,9 +262,9 @@ export default function BusCanvas({ onClose, tripContext, onAddToPlan }: BusCanv
               ))}
             </div>
           ) : (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-8 text-center">
-              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-200"><Bus size={24} className="text-slate-400" /></div>
-              <p className="text-sm font-semibold text-slate-600">No buses found</p>
+            <div className="rounded-xl border border-line bg-paper-0 p-8 text-center">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-line"><Bus size={24} className="text-ink-400" /></div>
+              <p className="text-sm font-semibold text-ink-600">No buses found</p>
             </div>
           )}
         </div>

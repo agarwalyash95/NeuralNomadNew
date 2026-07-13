@@ -23,7 +23,7 @@ export interface Attraction {
   rating: number;
   review_count: number;
   opening_hours: Record<string, string> | null;
-  ticket_price: string;
+  ticket_price: number;
   image_url: string;
   is_featured: boolean;
   

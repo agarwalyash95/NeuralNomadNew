@@ -35,14 +35,14 @@ export default function MoveToDaySelect({ options, currentDayId, onMove, classNa
         }}
         title="Move to a different day"
         aria-label="Move to a different day"
-        className="cursor-pointer appearance-none rounded-xl border border-slate-200 bg-white py-2 pl-2 pr-6 text-[9px] font-bold text-slate-400 shadow-xs transition-all hover:border-slate-300 hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-200"
+        className="cursor-pointer appearance-none rounded-xl border border-line bg-paper-2 py-2 pl-2 pr-6 text-[9px] font-bold text-ink-400 shadow-xs transition-all hover:border-line-strong hover:text-ink-600 focus:outline-none focus:ring-2 focus:ring-blue-200"
       >
         <option value="" disabled>Move to…</option>
         {choices.map((o) => (
           <option key={o.id} value={o.id}>{o.label}</option>
         ))}
       </select>
-      <CornerDownRight size={11} className="pointer-events-none absolute right-1.5 text-slate-400" />
+      <CornerDownRight size={11} className="pointer-events-none absolute right-1.5 text-ink-400" />
     </div>
   );
 }

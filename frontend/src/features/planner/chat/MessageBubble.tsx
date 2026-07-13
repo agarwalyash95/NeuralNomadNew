@@ -23,10 +23,10 @@ export function MessageBubble({
 
       <div
         className={cn(
-          'max-w-[82%] rounded-2xl px-4 py-3 text-sm shadow-sm',
+          'max-w-[82%] rounded-2xl px-4 py-3 text-body shadow-surface',
           role === 'user'
-            ? 'ml-auto bg-gradient-to-br from-blue-600 to-indigo-600 text-white'
-            : 'mr-auto border border-[#e5dfd2] bg-white text-slate-700 whitespace-pre-wrap leading-relaxed'
+            ? 'ml-auto bg-gradient-to-br from-[rgb(var(--color-ai))] to-violet-700 !text-white'
+            : 'mr-auto border border-line bg-paper-2 whitespace-pre-wrap leading-relaxed'
         )}
       >
         {content}

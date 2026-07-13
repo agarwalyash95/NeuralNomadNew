@@ -1,7 +1,7 @@
 import React from 'react';
 import { Trash2, Plane, Train, Bus, Car, Eye, GripVertical } from 'lucide-react';
 import { ItineraryItem } from '../types';
-import NodeWrapper from './NodeWrapper';
+import NodeWrapper, { formatDuration } from './NodeWrapper';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { formatConvertedPrice } from '../utils/routeOptimizer';
@@ -95,6 +95,7 @@ function TransportNode({
   };
 
   const config = typeConfig[item.type as keyof typeof typeConfig] ?? typeConfig.flight;
+  const legDuration = formatDuration(item.startTime, item.endTime);
 
   const hasRealCodes =
     (item.type === 'flight' || item.type === 'train') &&
@@ -113,12 +114,27 @@ function TransportNode({
         endTime={item.endTime}
         isLast={isLast}
         onTimeChange={onTimeChange}
+        itemId={item.id}
       >
         <div
           className="relative group"
           onMouseEnter={() => onHover?.(true)}
           onMouseLeave={() => onHover?.(false)}
         >
+          {/* Hover Action overlay — absolutely positioned at top-right */}
+          <div className="absolute top-2 right-2 z-20 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-200 flex items-center gap-1 bg-paper-2/95 backdrop-blur-xs border border-line shadow-modal rounded-xl p-1 px-1.5 export-hidden">
+            {moveDayOptions && currentDayId && onMoveToDay && (
+              <MoveToDaySelect options={moveDayOptions} currentDayId={currentDayId} onMove={onMoveToDay} />
+            )}
+            <button
+              onClick={(e) => { e.stopPropagation(); onRemove?.(); }}
+              className="rounded-lg p-1.5 text-ink-400 hover:bg-red-50 hover:text-red-500 active:scale-95 cursor-pointer flex items-center justify-center"
+              style={{ transition: `all var(--motion-hover) var(--ease-out)`, minWidth: 28, minHeight: 28 }}
+              title={`Delete ${config.label}`}
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
           {/* ── Boarding-pass card ────────────────────────────────────────── */}
           <div
             className={`flex items-stretch rounded-2xl overflow-hidden ${bookedAccentClass(item.blockStatus)}`}
@@ -177,19 +193,7 @@ function TransportNode({
                   </div>
                 </div>
 
-                <div className="flex shrink-0 items-center gap-1.5 export-hidden">
-                  {moveDayOptions && currentDayId && onMoveToDay && (
-                    <MoveToDaySelect options={moveDayOptions} currentDayId={currentDayId} onMove={onMoveToDay} />
-                  )}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onRemove?.(); }}
-                    className="rounded-xl p-2 text-ink-400 hover:bg-red-50 hover:text-red-500 active:scale-95 cursor-pointer"
-                    style={{ transition: `all var(--motion-hover) var(--ease-out)`, minWidth: 32, minHeight: 32 }}
-                    title={`Delete ${config.label}`}
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
+
               </div>
 
               {/* ── Boarding pass departure → arrival ──────────────────── */}
@@ -211,7 +215,9 @@ function TransportNode({
 
                 {/* Animated route connector — the visual journey */}
                 <div className="flex flex-1 flex-col items-center px-3 gap-1">
-                  <p className="text-[9px] font-semibold uppercase tracking-wider text-ink-400">Direct</p>
+                  <p className="text-[9px] font-semibold uppercase tracking-wider text-ink-400">
+                    {legDuration ? `Direct · ${legDuration}` : 'Direct'}
+                  </p>
                   <div
                     className="relative w-full flex items-center justify-center"
                     style={{ height: 24 }}
@@ -263,7 +269,7 @@ function TransportNode({
               {/* Footer: details + status */}
               <div className="flex items-center justify-between gap-4">
                 {item.details ? (
-                  <p className="text-[11px] font-medium text-ink-500 truncate flex-1 leading-relaxed">
+                  <p className="text-[11px] font-medium text-ink-500 line-clamp-2 flex-1 leading-relaxed">
                     {item.details}
                   </p>
                 ) : <div className="flex-1" />}

@@ -1,212 +1,161 @@
-'use client';
-
-import React, { useState } from 'react';
-import { Sparkles, ChevronDown, Check, ArrowRightLeft, Phone, Map, Globe, Clock, BedDouble, Info } from 'lucide-react';
+import React, { useRef, useMemo } from 'react';
+import { BedDouble, ArrowLeft, Wallet, Building2, MapPinned } from 'lucide-react';
 import type { Suggestion } from '@/features/planner/workspace/plan-canvas/types';
-import { ProvenanceBadge } from '@/features/planner/components/ProvenanceBadge';
-import { FOCUS_RING_CLASS } from '@/lib/utils';
 import type { TripFitResult } from './tripFit';
-import HotelPhotoGallery from './HotelPhotoGallery';
 import HotelReviewSummary from './HotelReviewSummary';
 import { buildHotelFacts } from './hotelFacts';
+import { getCategoryStyle } from '@/features/planner/workspace/plan-canvas/utils/categoryStyle';
+import DetailHero from '@/features/planner/workspace/helper-canvases/shared/detail-panel/DetailHero';
+import DecisionBand, { type DecisionStat } from '@/features/planner/workspace/helper-canvases/shared/detail-panel/DecisionBand';
+import FitChecklist from '@/features/planner/workspace/helper-canvases/shared/detail-panel/FitChecklist';
+import ReferenceRows from '@/features/planner/workspace/helper-canvases/shared/detail-panel/ReferenceRows';
+import CommentSection from '@/features/planner/workspace/helper-canvases/shared/detail-panel/CommentSection';
+import DetailCTAFooter from '@/features/planner/workspace/helper-canvases/shared/detail-panel/DetailCTAFooter';
+import { TripContext } from '@/features/planner/workspace/types';
 
 interface HotelDetailSectionsProps {
   hotel: Suggestion;
   expandedDetails: Suggestion | null;
   detailsLoading: boolean;
   fit: TripFitResult;
+  isPending: boolean;
+  isCompared: boolean;
+  onSelect: () => void;
+  onCompareToggle: () => void;
+  onBack?: () => void;
+  tripContext: TripContext;
 }
 
 /**
- * Everything that isn't the collapsed-card decision facts, organized so the
- * itinerary story (why it scores well, what it does to the plan) reads
- * before the traditional catalog sections (photos, rooms, amenities,
- * reviews) — those support the decision, they don't lead it. The detailed
- * day-by-day "Nearby itinerary" breakdown was cut for taking up too much
- * space per session feedback — the Trip Fit reasons below already surface
- * the same distance/time facts in one line each.
+ * Same anatomy as the explore detail panels, which mirror RichHoverCard:
+ * hero (identity + gallery + swap context) → decision band (Trip Fit meter
+ * + the numbers) → fit reasons → hours/directions → narrative + amenity
+ * chips → rating summary → comments (last, every review, each expandable).
+ * No tabs, no big stat cards, no oversized CTA bar. Only real reference
+ * data renders — the invented per-name tagline and fabricated About
+ * fallback that previously lived here are gone.
  */
-export default function HotelDetailSections({ hotel, expandedDetails, detailsLoading, fit }: HotelDetailSectionsProps) {
-  if (detailsLoading) {
-    return (
-      <div className="flex justify-center p-6">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-line border-t-cat-stay" />
-      </div>
-    );
-  }
+export default function HotelDetailSections({
+  hotel, expandedDetails, detailsLoading, fit, onSelect, onBack, tripContext, isCompared: _isCompared, onCompareToggle: _onCompareToggle,
+}: HotelDetailSectionsProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
 
+  const theme = getCategoryStyle('hotel');
   const source = expandedDetails || hotel;
   const d = source.details || {};
   const photos = [source.image_url, ...(source.secondary_images || [])].filter(Boolean) as string[];
   const facts = buildHotelFacts(source);
 
+  const stats = useMemo(() => {
+    const items: DecisionStat[] = [];
+    if (source.price_label) items.push({ icon: Wallet, text: source.price_label });
+    if (d.star_rating != null) items.push({ icon: Building2, text: `${d.star_rating}-star` });
+    if (source.distance_km != null) items.push({ icon: MapPinned, text: `${source.distance_km.toFixed(1)} km away` });
+    return items;
+  }, [source.price_label, d.star_rating, source.distance_km]);
+
+  const meterHeadline = fit.score >= 80 ? 'Excellent' : fit.score >= 60 ? 'Good' : 'Fair';
+  const meterCaption = fit.score >= 80 ? 'Closest match for your itinerary' : fit.score >= 60 ? 'Good alignment with your plan' : 'Some compromises on location';
+
+  const positiveChecks = useMemo(
+    () => fit.reasons.filter(r => r.tone === 'positive').slice(0, 3),
+    [fit.reasons],
+  );
+
+  const ctaReason = useMemo(() => {
+    const first = fit.reasons.find(r => r.tone === 'positive');
+    return first ? first.text : `${fit.score}% trip fit score`;
+  }, [fit.reasons, fit.score]);
+
+  if (detailsLoading) {
+    return (
+      <div className="flex h-full items-center justify-center p-6">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-line border-t-cat-stay" />
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-3">
-      {/* AI reasoning — always open, this is the headline content */}
-      <div className="rounded-xl border border-dashed border-trust-estimated/40 bg-trust-estimated/5 p-3">
-        <div className="mb-2 flex items-center gap-1.5 text-trust-estimated">
-          <Sparkles size={13} strokeWidth={2.5} />
-          <span className="text-xs font-bold">Trip Fit — {fit.score}%</span>
+    <div className="relative flex h-full flex-col bg-paper-1 select-none">
+      {onBack && (
+        <button type="button" onClick={onBack} className="absolute top-4 left-4 z-40 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 backdrop-blur-sm shadow-md text-ink-700 hover:bg-white cursor-pointer transition-all active:scale-95">
+          <ArrowLeft size={16} />
+        </button>
+      )}
+
+      <div ref={scrollRef} className="flex-1 overflow-y-auto no-scrollbar">
+        <DetailHero
+          photos={photos}
+          badgeLabel="Hotel"
+          title={source.name}
+          tagline={source.subtitle}
+          rating={source.rating}
+          ratingsCount={source.ratings_count}
+          replacingLabel={tripContext.activeNodeTitle}
+          replacingDetail={tripContext.activeNodeDayLabel ? `${tripContext.activeNodeDayLabel}, overnight` : null}
+          FallbackIcon={BedDouble}
+          fallbackGradientClassName={theme.gradient}
+          fallbackIconClassName={theme.text}
+        />
+
+        <div className="px-6 pt-5 pb-20">
+          <DecisionBand
+            stats={stats}
+            meter={{
+              label: 'Trip fit',
+              headline: `${meterHeadline} · ${fit.score}%`,
+              caption: meterCaption,
+              filled: Math.round(fit.score / 10),
+              total: 10,
+              accentBgClassName: 'bg-cat-stay',
+              accentTextClassName: 'text-cat-stay',
+            }}
+          />
+
+          {positiveChecks.length > 0 && (
+            <div className="mt-3">
+              <FitChecklist items={positiveChecks.map(c => c.text)} accentClassName="text-cat-stay" />
+            </div>
+          )}
+
+          <div className="mt-3 border-t border-line/70 pt-3">
+            <ReferenceRows
+              openingHours={d.opening_hours}
+              address={source.address}
+              latitude={source.latitude}
+              longitude={source.longitude}
+              phone={d.national_phone_number}
+              website={d.website_uri}
+            />
+          </div>
+
+          {d.editorial_summary && (
+            <p className="mt-3 text-[12px] font-medium leading-relaxed text-ink-600">{d.editorial_summary}</p>
+          )}
+
+          {facts.length > 0 && (
+            <div className="mt-2.5 flex flex-wrap gap-1.5">
+              {facts.slice(0, 8).map((f, i) => (
+                <span key={i} className="flex items-center gap-1 rounded-lg border border-line bg-paper-1 px-2 py-1 text-[10px] font-bold text-ink-600">
+                  {f.label}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {d.reviews && d.reviews.length > 0 && (
+            <div className="mt-4 border-t border-line/70 pt-3">
+              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-ink-400">Reviews</p>
+              <HotelReviewSummary reviews={d.reviews} rating={source.rating} ratingsCount={source.ratings_count} />
+              <div className="mt-3">
+                <CommentSection reviews={d.reviews} />
+              </div>
+            </div>
+          )}
         </div>
-        {fit.reasons.length > 0 ? (
-          <ul className="space-y-1.5">
-            {fit.reasons.map((r, i) => (
-              <li key={i} className="flex items-start gap-1.5 text-xs leading-snug text-ink-700">
-                {r.tone === 'positive' ? (
-                  <Check size={13} className="mt-0.5 shrink-0 text-trust-estimated" strokeWidth={3} />
-                ) : (
-                  <ArrowRightLeft size={12} className="mt-0.5 shrink-0 text-ink-400" />
-                )}
-                <span>{r.text}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-xs text-ink-500">Add planned stops to your itinerary to see how this hotel fits your trip.</p>
-        )}
       </div>
 
-      {d.editorial_summary && (
-        <Section title="Overview" defaultOpen>
-          <p className="rounded-lg border border-line bg-paper-2 p-3 text-xs italic leading-relaxed text-ink-700">&quot;{d.editorial_summary}&quot;</p>
-          {d.opening_hours?.[0] && (
-            <p className="mt-2 flex items-center gap-2 text-xs text-ink-500">
-              <Clock size={12} className="text-ink-400" /> {d.opening_hours[0]}
-            </p>
-          )}
-        </Section>
-      )}
-
-      {photos.length > 0 && (
-        <Section title="Photos" defaultOpen>
-          <HotelPhotoGallery images={photos} title={source.name} />
-        </Section>
-      )}
-
-      {d.room_tiers && d.room_tiers.length > 0 && (
-        <Section title="Rooms">
-          <div className="space-y-1.5">
-            {d.room_tiers.map((tier: any, i: number) => (
-              <div key={i} className="flex items-center justify-between gap-2 rounded-lg border border-line bg-paper-2 p-2.5 text-xs">
-                <span className="flex items-center gap-1.5 font-semibold text-ink-800">
-                  <BedDouble size={12} className="text-cat-stay" /> {tier.tier_name}
-                </span>
-                {tier.price_premium_pct != null && (
-                  <span className="font-medium text-ink-500">+{tier.price_premium_pct}% vs. base</span>
-                )}
-              </div>
-            ))}
-          </div>
-        </Section>
-      )}
-
-      {(facts.length > 0 || (d.seasonal_amenities && d.seasonal_amenities.length > 0)) && (
-        <Section title="Amenities">
-          <div className="flex flex-wrap gap-1.5">
-            {facts.map((f, i) => (
-              <span key={i} className="rounded-full border border-line bg-paper-2 px-2.5 py-1 text-[11px] font-medium text-ink-700">
-                {f.label}
-              </span>
-            ))}
-            {(d.seasonal_amenities || []).map((a: any, i: number) => (
-              <span key={`s-${i}`} className="rounded-full border border-line bg-paper-2 px-2.5 py-1 text-[11px] font-medium text-ink-700">
-                {a.amenity}
-              </span>
-            ))}
-          </div>
-        </Section>
-      )}
-
-      {d.reviews && d.reviews.length > 0 && (
-        <Section title="Reviews">
-          <HotelReviewSummary reviews={d.reviews} rating={source.rating} ratingsCount={source.ratings_count} />
-        </Section>
-      )}
-
-      <Section title="Location">
-        <p className="mb-2 text-xs text-ink-700">{source.address}</p>
-        <div className="flex items-center gap-2">
-          {d.national_phone_number && (
-            <a href={`tel:${d.national_phone_number}`} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-paper-2 border border-line py-2 text-xs font-semibold text-ink-700 transition hover:bg-paper-1">
-              <Phone size={13} /> Call
-            </a>
-          )}
-          {source.latitude != null && source.longitude != null && (
-            <a
-              href={`https://www.google.com/maps/search/?api=1&query=${source.latitude},${source.longitude}`}
-              target="_blank"
-              rel="noreferrer"
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-paper-2 border border-line py-2 text-xs font-semibold text-ink-700 transition hover:bg-paper-1"
-            >
-              <Map size={13} /> Directions
-            </a>
-          )}
-          {d.website_uri && (
-            <a
-              href={d.website_uri}
-              target="_blank"
-              rel="noreferrer"
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-cat-stay/10 py-2 text-xs font-semibold text-cat-stay transition hover:bg-cat-stay/15"
-            >
-              <Globe size={13} /> Website
-            </a>
-          )}
-        </div>
-      </Section>
-
-      {(d.reservation_policy || d.accessibility_detail) && (
-        <Section title="Policies">
-          <div className="space-y-1.5 text-xs text-ink-700">
-            {d.reservation_policy && <p>Reservation: <span className="font-semibold capitalize">{d.reservation_policy.replace(/_/g, ' ')}</span></p>}
-            {d.accessibility_detail?.step_free != null && (
-              <p>{d.accessibility_detail.step_free ? 'Step-free access' : 'Not step-free'}</p>
-            )}
-          </div>
-          <p className="mt-2 flex items-start gap-1.5 text-[10.5px] text-ink-400">
-            <Info size={11} className="mt-0.5 shrink-0" />
-            Cancellation, refund, and breakfast policy aren&apos;t confirmed yet for this listing — check with the property before booking.
-          </p>
-        </Section>
-      )}
-
-      <Section title="Price & availability">
-        <div className="flex items-center justify-between">
-          <div>
-            {source.cost?.amount != null ? (
-              <p className="text-lg font-bold tabular-nums text-ink-900">{source.price_label}</p>
-            ) : d.price_range ? (
-              <div>
-                <p className="text-sm font-bold text-ink-900">Price tier {d.price_range}</p>
-                <p className="text-[10.5px] text-ink-400">Live rate not connected yet</p>
-              </div>
-            ) : (
-              <p className="text-xs text-ink-400">No pricing data available</p>
-            )}
-          </div>
-          {source.cost?.provenance && <ProvenanceBadge provenance={source.cost.provenance} detail />}
-        </div>
-      </Section>
-    </div>
-  );
-}
-
-function Section({ title, defaultOpen = false, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className="overflow-hidden rounded-xl border border-line bg-paper-1">
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen((o) => !o);
-        }}
-        aria-expanded={open}
-        className={`flex min-h-[40px] w-full items-center justify-between px-3 py-2 text-left ${FOCUS_RING_CLASS}`}
-      >
-        <span className="text-xs font-bold uppercase tracking-wider text-ink-700">{title}</span>
-        <ChevronDown size={14} className={`text-ink-400 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-      {open && <div className="border-t border-line p-3 pt-2.5">{children}</div>}
+      <DetailCTAFooter label="Replace" onClick={onSelect} metricLabel={ctaReason} accentClassName="text-cat-stay" />
     </div>
   );
 }

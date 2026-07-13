@@ -42,7 +42,7 @@ function CityBriefingSection({ city }: { city: ItineraryCity }) {
         <div
           role="status"
           aria-live="polite"
-          className="mt-2 flex flex-col gap-2.5 rounded-2xl border border-line/60 bg-white p-4 text-xs max-w-lg shadow-surface ml-3 border-l-2 border-l-[rgb(var(--color-journey)/0.6)]"
+          className="mt-2 flex flex-col gap-2.5 rounded-2xl border border-line/60 bg-white p-4 text-xs max-w-2xl shadow-surface ml-3 border-l-2 border-l-[rgb(var(--color-journey)/0.6)]"
         >
           {isLoading && (
             <div className="flex flex-col gap-2">
@@ -96,7 +96,7 @@ function CityBriefingSection({ city }: { city: ItineraryCity }) {
 
 export default function CityHeaderNode({ city, isCollapsed, onToggle }: CityHeaderNodeProps) {
   return (
-    <div className="relative mt-10 mb-1 py-2 pl-[48px]">
+    <div className="relative mt-6 mb-1 py-2 pl-[48px]">
       {/* Main spine — soft, continues down */}
       <div className="absolute bottom-[-8px] left-[20px] top-0 w-px bg-line/60" />
 
@@ -114,7 +114,7 @@ export default function CityHeaderNode({ city, isCollapsed, onToggle }: CityHead
       </div>
 
       {/* City header content */}
-      <div className="relative z-10 flex items-start justify-between pr-4">
+      <div className="relative z-10 flex items-start justify-between gap-4 pr-4 max-w-3xl">
         <div className="flex-1 min-w-0">
 
           {/* City name — chapter heading */}

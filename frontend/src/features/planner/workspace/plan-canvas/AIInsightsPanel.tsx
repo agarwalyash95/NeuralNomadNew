@@ -12,9 +12,12 @@ import {
   Bus,
   Pin,
   PinOff,
+  Map as MapIcon,
+  AlertTriangle,
 } from 'lucide-react';
 
-import { ItineraryItem } from './types';
+import { ItineraryItem, ItineraryDay } from './types';
+import type { PlanInsight } from '@/services/planner.types';
 import { ProvenanceBadge } from '@/features/planner/components/ProvenanceBadge';
 import RichHoverCard from './RichHoverCard';
 import { calculateHaversineDistanceKm } from './utils/routeOptimizer';
@@ -65,22 +68,95 @@ interface AIInsightsPanelProps {
   /** Whether `item` is pinned — survives the pointer moving elsewhere */
   isPinned?: boolean;
   onTogglePin?: () => void;
+  /** The currently-focused day (scroll-spy) — feeds the calm default state
+   *  below when nothing is hovered/pinned, so the panel has something
+   *  proactive to say ("Day Brief") instead of sitting empty. */
+  focusedDay?: ItineraryDay | null;
+  focusedCityName?: string;
+  focusedDayInsights?: PlanInsight[];
+  onViewOnMap?: () => void;
 }
 
-export default function AIInsightsPanel({ pinnedItem, defaultItem, onSwapItem, onExplore, isPinned, onTogglePin }: AIInsightsPanelProps) {
+export default function AIInsightsPanel({
+  pinnedItem, defaultItem, onSwapItem, onExplore, isPinned, onTogglePin,
+  focusedDay, focusedCityName, focusedDayInsights, onViewOnMap,
+}: AIInsightsPanelProps) {
   // Subscribed locally so hover changes only re-render this panel, never the
   // parent workspace or the timeline — see planner-hover.store.ts.
   const ambientHovered = usePlannerHoverStore((s) => s.hoveredItem);
   const item = pinnedItem || ambientHovered || defaultItem || null;
 
   if (!item) {
+    if (focusedDay) {
+      const activeItems = focusedDay.items.filter((i) => !i.isInactive);
+      const parsedDate = new Date(focusedDay.dateStr);
+      const isToday = !isNaN(parsedDate.getTime()) && parsedDate.toDateString() === new Date().toDateString();
+      const nowHHMM = new Date().toTimeString().slice(0, 5);
+      const nextItem = isToday
+        ? activeItems.find((i) => i.startTime && i.startTime >= nowHHMM) ?? activeItems[activeItems.length - 1]
+        : activeItems[0];
+      const tipItem = activeItems.find((i) => i.aiTip);
+
+      return (
+        <div className="flex h-full w-full flex-col gap-4 bg-paper-1 p-5 overflow-y-auto custom-scrollbar">
+          <div>
+            <p className="text-micro !text-ink-400">
+              Day {focusedDay.dayNumber}{focusedCityName ? ` · ${focusedCityName}` : ''}
+            </p>
+            <p className="mt-1 text-body font-semibold !text-ink-900">
+              {activeItems.length} stop{activeItems.length === 1 ? '' : 's'} planned
+            </p>
+          </div>
+
+          {nextItem && (
+            <div className="rounded-2xl border border-line bg-white p-3.5 shadow-surface">
+              <p className="text-micro !text-ink-400">Next</p>
+              <p className="mt-1 text-body font-semibold !text-ink-900">{nextItem.title}</p>
+              {(nextItem.startTime || nextItem.subtitle) && (
+                <p className="mt-0.5 text-caption">
+                  {[nextItem.startTime, nextItem.subtitle].filter(Boolean).join(' · ')}
+                </p>
+              )}
+            </div>
+          )}
+
+          {focusedDayInsights && focusedDayInsights.length > 0 && (
+            <div className="rounded-2xl border-l-2 border-amber-400 bg-amber-50/70 p-3 flex items-start gap-2">
+              <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-500" />
+              <p className="text-[11.5px] font-medium leading-relaxed text-amber-900">{focusedDayInsights[0]!.message}</p>
+            </div>
+          )}
+
+          {tipItem?.aiTip && (
+            <div className="rounded-2xl border p-3.5" style={{ borderColor: 'rgb(var(--color-ai) / 0.18)', background: 'rgb(var(--color-ai) / 0.04)' }}>
+              <div className="flex items-center gap-2">
+                <Sparkles size={13} style={{ color: 'rgb(var(--color-ai))' }} />
+                <h4 className="text-micro !text-[rgb(var(--color-ai))]">AI suggests</h4>
+              </div>
+              <p className="mt-1.5 text-caption font-medium leading-relaxed !text-ink-700">{tipItem.aiTip}</p>
+            </div>
+          )}
+
+          {onViewOnMap && (
+            <button
+              type="button"
+              onClick={onViewOnMap}
+              className="mt-auto flex items-center justify-center gap-1.5 rounded-xl border border-line bg-white px-3 py-2 text-caption font-semibold !text-ink-700 hover:bg-paper-0 cursor-pointer"
+            >
+              <MapIcon size={12} /> View on map
+            </button>
+          )}
+        </div>
+      );
+    }
+
     return (
       <div className="flex h-full w-full flex-col items-center justify-center p-6 text-center bg-paper-1">
         <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-paper-0 shadow-surface">
           <Compass size={22} className="text-ink-400" />
         </div>
-        <p className="text-[13px] font-semibold text-ink-700">Explore your itinerary</p>
-        <p className="mt-1.5 max-w-[200px] text-[11px] text-ink-400 leading-relaxed">
+        <p className="text-body font-semibold">Explore your itinerary</p>
+        <p className="mt-1.5 max-w-[200px] text-caption !text-ink-400 leading-relaxed">
           Hover any destination on the left to reveal insights and smart alternatives.
         </p>
       </div>
@@ -121,7 +197,7 @@ export default function AIInsightsPanel({ pinnedItem, defaultItem, onSwapItem, o
       case 'flight':
         return {
           icon: <Plane size={18} className="text-indigo-600" />,
-          badgeBg: 'bg-indigo-50 border-indigo-100 text-indigo-700',
+          badgeBg: 'bg-indigo-50 border-indigo-100 !text-indigo-700',
           gradient: 'from-indigo-50/20 to-indigo-100/10',
           cardBorder: 'border-indigo-100',
           focusColor: 'text-indigo-600',
@@ -129,7 +205,7 @@ export default function AIInsightsPanel({ pinnedItem, defaultItem, onSwapItem, o
       case 'train':
         return {
           icon: <Train size={18} className="text-sky-600" />,
-          badgeBg: 'bg-sky-50 border-sky-100 text-sky-700',
+          badgeBg: 'bg-sky-50 border-sky-100 !text-sky-700',
           gradient: 'from-sky-50/20 to-sky-100/10',
           cardBorder: 'border-sky-100',
           focusColor: 'text-sky-600',
@@ -137,7 +213,7 @@ export default function AIInsightsPanel({ pinnedItem, defaultItem, onSwapItem, o
       case 'bus':
         return {
           icon: <Bus size={18} className="text-teal-600" />,
-          badgeBg: 'bg-teal-50 border-teal-100 text-teal-700',
+          badgeBg: 'bg-teal-50 border-teal-100 !text-teal-700',
           gradient: 'from-teal-50/20 to-teal-100/10',
           cardBorder: 'border-teal-100',
           focusColor: 'text-teal-600',
@@ -152,7 +228,7 @@ export default function AIInsightsPanel({ pinnedItem, defaultItem, onSwapItem, o
         const Icon = style.icon;
         return {
           icon: <Icon size={18} className={style.text} />,
-          badgeBg: `${style.bg} ${style.border} ${style.text}`,
+          badgeBg: `${style.bg} ${style.border} !${style.text}`,
           gradient: style.gradient,
           cardBorder: style.border,
           focusColor: style.text,
@@ -160,11 +236,11 @@ export default function AIInsightsPanel({ pinnedItem, defaultItem, onSwapItem, o
       }
       default:
         return {
-          icon: <Compass size={18} className="text-slate-600" />,
-          badgeBg: 'bg-slate-50 border-slate-100 text-slate-700',
-          gradient: 'from-slate-50/20 to-slate-100/10',
-          cardBorder: 'border-slate-100',
-          focusColor: 'text-slate-600',
+          icon: <Compass size={18} className="text-ink-600" />,
+          badgeBg: 'bg-paper-0 border-line !text-ink-700',
+          gradient: 'from-paper-0/40 to-paper-1/20',
+          cardBorder: 'border-line',
+          focusColor: 'text-ink-600',
         };
     }
   };
@@ -180,13 +256,13 @@ export default function AIInsightsPanel({ pinnedItem, defaultItem, onSwapItem, o
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -15 }}
           transition={{ duration: 0.22 }}
-          className="flex flex-col gap-5 h-full"
+          className="flex flex-col gap-4 h-full"
         >
           {/* A. Header Section */}
           <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className={`flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider ${theme.badgeBg}`}>
+                <span className={`flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-micro ${theme.badgeBg}`}>
                   {theme.icon}
                   {item.type}
                 </span>
@@ -220,12 +296,12 @@ export default function AIInsightsPanel({ pinnedItem, defaultItem, onSwapItem, o
                 )}
               </div>
 
-              <h3 className="mt-2 text-xl lg:text-2xl font-black text-slate-900 leading-tight tracking-tight">
+              <h3 className="mt-2 text-display leading-tight">
                 {item.title}
               </h3>
               {item.subtitle && (
-                <p className="text-xs font-semibold text-slate-500 mt-0.5 flex items-center gap-1">
-                  <MapPin size={12} className="text-slate-400 shrink-0" />
+                <p className="text-xs font-semibold text-ink-500 mt-0.5 flex items-center gap-1">
+                  <MapPin size={12} className="text-ink-400 shrink-0" />
                   {item.subtitle}
                 </p>
               )}
@@ -233,10 +309,10 @@ export default function AIInsightsPanel({ pinnedItem, defaultItem, onSwapItem, o
 
             {item.price && (
               <div className="flex flex-col items-end shrink-0">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest block">
+                <span className="text-xs font-bold text-ink-400 uppercase tracking-widest block">
                   {item.cost?.provenance?.tier === 'verified' ? 'Cost' : 'Est. Cost'}
                 </span>
-                <span className="text-lg font-black text-slate-900">{item.price}</span>
+                <span className="text-lg text-tabular text-ink-900">{item.price}</span>
                 <ProvenanceBadge provenance={item.cost?.provenance} className="mt-1" />
               </div>
             )}
@@ -260,8 +336,12 @@ export default function AIInsightsPanel({ pinnedItem, defaultItem, onSwapItem, o
               />
             </div>
           ) : (
-            <div className={`relative h-24 w-full overflow-hidden rounded-[20px] border ${theme.cardBorder} bg-gradient-to-br ${theme.gradient} flex items-center justify-center p-4 shrink-0`}>
-              <Sparkles className={`w-8 h-8 ${theme.focusColor} opacity-20`} />
+            // No photo for this block — a thin category-tinted strip instead
+            // of a full decorative hero, so Alternatives surfaces higher
+            // without scrolling when there's no real content to show here.
+            <div className={`relative h-10 w-full overflow-hidden rounded-2xl border ${theme.cardBorder} bg-gradient-to-br ${theme.gradient} flex items-center gap-2 px-3 shrink-0`}>
+              <Sparkles className={`w-4 h-4 ${theme.focusColor} opacity-40 shrink-0`} />
+              <span className={`text-micro font-semibold ${theme.focusColor} opacity-70`}>{item.type}</span>
             </div>
           )}
 
@@ -284,9 +364,9 @@ export default function AIInsightsPanel({ pinnedItem, defaultItem, onSwapItem, o
                   style={{ color: 'rgb(var(--color-ai))' }}
                 />
                 {/* H3: Violet, not blue */}
-                <h4 className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'rgb(var(--color-ai))' }}>AI Insight</h4>
+                <h4 className="text-micro !text-[rgb(var(--color-ai))]">AI Insight</h4>
               </div>
-              <p className="mt-1.5 text-[11px] font-medium leading-relaxed text-ink-700">
+              <p className="mt-1.5 text-caption font-medium leading-relaxed !text-ink-700">
                 {item.aiTip}
               </p>
             </div>
@@ -295,13 +375,13 @@ export default function AIInsightsPanel({ pinnedItem, defaultItem, onSwapItem, o
           {/* D. Alternatives — real cached candidates, or an honest path to search */}
           <div className="mt-1 flex flex-col gap-2 border-t border-line/60 pt-3">
             <div className="flex items-center justify-between">
-              <span className="flex items-center gap-1.5 text-[11px] font-semibold text-ink-700">
+              <span className="flex items-center gap-1.5 text-caption font-semibold !text-ink-700">
                 {/* H3: Violet (AI intelligence) not blue */}
                 <Sparkles size={12} style={{ color: 'rgb(var(--color-ai))' }} />
                 Alternatives
               </span>
               {candidates.length > 0 && (
-                <span className="text-[10px] font-semibold text-ink-400">1-click swap</span>
+                <span className="text-caption font-semibold !text-ink-400">1-click swap</span>
               )}
             </div>
 
@@ -334,12 +414,12 @@ export default function AIInsightsPanel({ pinnedItem, defaultItem, onSwapItem, o
                         )}
                       </div>
                       {cand.comparativeReason && (
-                        <p className="flex items-center gap-1 text-[10px] font-semibold truncate mt-0.5" style={{ color: 'rgb(var(--color-ai))' }}>
+                        <p className="flex items-center gap-1 text-caption font-semibold truncate mt-0.5 !text-[rgb(var(--color-ai))]">
                           <Sparkles size={9} className="shrink-0" />
                           {cand.comparativeReason}
                         </p>
                       )}
-                      {cand.aiTip && <p className="text-[10px] text-ink-400 truncate mt-0.5">{cand.aiTip}</p>}
+                      {cand.aiTip && <p className="text-caption !text-ink-400 truncate mt-0.5">{cand.aiTip}</p>}
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
@@ -347,7 +427,7 @@ export default function AIInsightsPanel({ pinnedItem, defaultItem, onSwapItem, o
                       {/* C4: Violet (AI discovery), not blue (booking) */}
                       <button
                         onClick={() => onSwapItem?.(cand)}
-                        className="rounded-xl px-2.5 py-1 text-[10px] font-semibold text-white shadow-surface cursor-pointer active:scale-95"
+                        className="rounded-xl px-2.5 py-1 text-caption font-semibold !text-white shadow-surface cursor-pointer active:scale-95"
                         style={{
                           background: 'rgb(var(--color-ai))',
                           transition: `all var(--motion-hover) var(--ease-out)`,
@@ -363,13 +443,13 @@ export default function AIInsightsPanel({ pinnedItem, defaultItem, onSwapItem, o
               </div>
             ) : (
               <div className="flex flex-col items-start gap-2.5 rounded-xl border border-dashed border-line bg-paper-0 p-3">
-                <p className="text-[11px] font-medium leading-relaxed text-ink-500">
+                <p className="text-caption font-medium leading-relaxed">
                   No verified alternatives yet. Want me to find real options nearby?
                 </p>
                 {/* C4: Violet (AI discovery), not blue (booking) */}
                 <button
                   onClick={() => onExplore?.(item)}
-                  className="rounded-xl px-3 py-1.5 text-[11px] font-semibold text-white shadow-surface cursor-pointer active:scale-95"
+                  className="rounded-xl px-3 py-1.5 text-caption font-semibold !text-white shadow-surface cursor-pointer active:scale-95"
                   style={{
                     background: 'rgb(var(--color-ai))',
                     transition: `all var(--motion-hover) var(--ease-out)`,

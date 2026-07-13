@@ -70,7 +70,7 @@ export default function PlannerSidebar({ isOpen, onToggle }: PlannerSidebarProps
               className="flex h-full w-[256px] flex-col overflow-hidden"
             >
               {/* ── Header ──────────────────────────────────────────────── */}
-              <div className="px-5 pt-6 pb-4">
+              <div className="px-5 pt-5 pb-4">
                 <div className="flex items-center justify-between">
                   <div>
                     {/* Eyebrow — travel notebook tone */}
@@ -97,7 +97,7 @@ export default function PlannerSidebar({ isOpen, onToggle }: PlannerSidebarProps
               </div>
 
               {/* ── New Plan CTA ─────────────────────────────────────────── */}
-              <div className="px-4 pb-5">
+              <div className="px-4 pb-4">
                 <motion.button
                   whileHover={{ y: -1 }}
                   whileTap={{ scale: 0.98 }}
@@ -142,6 +142,7 @@ export default function PlannerSidebar({ isOpen, onToggle }: PlannerSidebarProps
                   activeWorkspaceId={activeWorkspaceId}
                   onOpen={handleOpenWorkspace}
                   onDelete={handleDelete}
+                  emptyMessage="Booked trips will appear here"
                 />
               </nav>
             </motion.div>

@@ -211,6 +211,18 @@ export default function PlannerMap({ planData, pinnedItem, focusedDayId, onPinCl
   // call below rather than silently centering an unrelated trip on Darjeeling.
   const mainCityName = planData.cities[0]?.cityName || '';
 
+  // Focused-day label for the info overlay — same lookup pattern used
+  // elsewhere (Trip Status Spine, Day Brief) so the map states its own
+  // "what am I looking at" instead of being the one surface with none.
+  const focusedDayLabel = useMemo(() => {
+    if (!focusedDayId) return null;
+    for (const city of planData.cities) {
+      const day = city.days.find((d) => d.id === focusedDayId);
+      if (day) return { dayNumber: day.dayNumber, cityName: city.cityName };
+    }
+    return null;
+  }, [planData, focusedDayId]);
+
   const pins: MapPinNode[] = useMemo(() => {
     const list: MapPinNode[] = [];
     planData.cities.forEach((city) => {
@@ -504,6 +516,33 @@ export default function PlannerMap({ planData, pinnedItem, focusedDayId, onPinCl
           {isRouteView ? 'Full Trip' : 'Today'}
         </button>
       </div>
+
+      {/* Info overlay — "what am I looking at" + a count, so the map isn't
+          just controls floating over an otherwise-silent canvas. */}
+      {isLoaded && pins.length > 0 && (
+        <div
+          className="absolute left-3 bottom-3 z-10 rounded-2xl px-3 py-2 shadow-modal"
+          style={{
+            background: 'rgba(255,255,255,0.85)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+            border: '1px solid rgba(255,255,255,0.6)',
+          }}
+        >
+          <p className="text-[11px] font-semibold text-ink-900">
+            {isRouteView
+              ? `Full trip · ${pins.length} stop${pins.length === 1 ? '' : 's'}`
+              : focusedDayLabel
+                ? `Day ${focusedDayLabel.dayNumber} · ${focusedDayLabel.cityName}`
+                : mainCityName || 'Your trip'}
+          </p>
+          {!isRouteView && (
+            <p className="text-[10px] font-medium text-ink-500">
+              {pins.length} stop{pins.length === 1 ? '' : 's'} shown
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

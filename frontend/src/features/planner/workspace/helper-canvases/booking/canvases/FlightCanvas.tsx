@@ -14,6 +14,15 @@ import { ItineraryItem, CostProvenance } from '../../../plan-canvas/types';
 import { ProvenanceBadge } from '../../../../components/ProvenanceBadge';
 import CurrentlyBookedCard from '../../shared/CurrentlyBookedCard';
 import { useTransportPreference } from '@/features/planner/hooks/usePlannerQueries';
+import { CanvasErrorCard, classifyFetchErrorVariant, type CanvasErrorVariant } from '../../shared/CanvasErrorCard';
+import { LiveSearchProgress, LiveResultsBadge, useLiveSearchPhases, useTierEscalation } from '../../shared/LiveSearchProgress';
+import FlightCardSkeleton from './FlightCardSkeleton';
+
+const FLIGHT_SEARCH_PHASES = [
+  { key: 'search', label: 'Searching flight inventory' },
+  { key: 'fares', label: 'Checking fares & seat availability' },
+  { key: 'finalize', label: 'Finalizing results' },
+];
 
 interface FlightCanvasProps {
   onClose?: () => void;
@@ -91,10 +100,21 @@ export default function FlightCanvas({ onClose, tripContext, onAddToPlan }: Flig
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<any[]>([]);
+  const [fetchError, setFetchError] = useState<CanvasErrorVariant | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>(['Cheapest']);
   const [pendingItem, setPendingItem] = useState<any | null>(null);
   /** 'trip' = plan the flight; 'booking' = price it and go straight to Checkout */
   const [pendingAction, setPendingAction] = useState<'trip' | 'booking'>('trip');
+  const [wasLiveSearch, setWasLiveSearch] = useState(false);
+
+  // No backend tier signal exists for this DB-backed search (unlike explore's
+  // cache/google_places source) — escalate from skeleton to phased progress
+  // purely on elapsed time, and only claim "live" on the resolved badge when
+  // that escalation actually happened, never a fabricated cache/live split.
+  const escalated = useTierEscalation(loading);
+  const escalatedRef = useRef(false);
+  useEffect(() => { escalatedRef.current = escalated; }, [escalated]);
+  const { activeIndex, elapsedMs } = useLiveSearchPhases(loading && escalated, FLIGHT_SEARCH_PHASES.length);
 
   // Re-prefill if trip context changes
   useEffect(() => {
@@ -115,6 +135,7 @@ export default function FlightCanvas({ onClose, tripContext, onAddToPlan }: Flig
 
   const fetchFlights = async (searchParams: BookingSearchParams) => {
     setLoading(true);
+    setFetchError(null);
     try {
       const apiResults = await searchService.search(searchParams);
       const mapped = apiResults.map((flight) => {
@@ -167,7 +188,10 @@ export default function FlightCanvas({ onClose, tripContext, onAddToPlan }: Flig
       setResults(mapped);
     } catch (err: any) {
       console.error('Error fetching flights:', err?.message || err);
+      setResults([]);
+      setFetchError(classifyFetchErrorVariant(err));
     } finally {
+      setWasLiveSearch(escalatedRef.current);
       setLoading(false);
     }
   };
@@ -235,7 +259,7 @@ export default function FlightCanvas({ onClose, tripContext, onAddToPlan }: Flig
   const searchSecondary = [params.departureDate, `${params.travellers} traveller(s)`, params.cabinClass].filter(Boolean).join(' • ');
 
   return (
-    <div className="flex h-full flex-col bg-white">
+    <div className="flex h-full flex-col bg-paper-1">
       <CanvasHeader
         icon={<Plane size={18} />}
         iconColor="bg-blue-600"
@@ -257,23 +281,23 @@ export default function FlightCanvas({ onClose, tripContext, onAddToPlan }: Flig
             <QuickFilterBar
               tags={QUICK_FILTER_TAGS}
               selected={selectedTags}
-              activeColor="border-blue-600 bg-blue-600 text-white shadow-sm"
-              hoverColor="border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:bg-blue-50"
+              activeColor="border-blue-600 bg-blue-600 text-white shadow-surface"
+              hoverColor="border-line bg-paper-2 text-ink-500 hover:border-blue-300 hover:bg-blue-50"
               onToggle={tag => setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}
             />
           </SearchSummaryBar>
         )}
 
         {isSearchExpanded && (
-          <div className="border-b border-slate-200 bg-white p-4">
+          <div className="border-b border-line bg-paper-2 p-4">
             <form onSubmit={handleSearch} className="space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-800">Edit Search</h3>
-                <button type="button" onClick={() => setIsSearchExpanded(false)} className="text-xs font-semibold text-slate-500 hover:text-slate-700">Cancel</button>
+                <h3 className="text-title">Edit Search</h3>
+                <button type="button" onClick={() => setIsSearchExpanded(false)} className="text-caption font-semibold text-ink-500 hover:text-ink-700">Cancel</button>
               </div>
               <FlightSearchForm params={params} onUpdateParam={(field, value) => updateParam(setParams, field, value)} />
-              {formError && <div className="flex items-center gap-2 rounded-lg bg-red-50 p-2 text-xs font-semibold text-red-600"><div className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" />{formError}</div>}
-              <button type="submit" disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white transition-all hover:bg-blue-700 disabled:opacity-50">
+              {formError && <div className="flex items-center gap-2 rounded-lg bg-red-50 p-2 text-caption font-semibold text-red-600"><div className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" />{formError}</div>}
+              <button type="submit" disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-body font-semibold text-white transition-all duration-[var(--motion-hover)] ease-[var(--ease-out)] hover:bg-blue-700 disabled:opacity-50">
                 {loading ? <><div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />Searching...</> : <><Search size={16} />Update Search</>}
               </button>
             </form>
@@ -281,18 +305,26 @@ export default function FlightCanvas({ onClose, tripContext, onAddToPlan }: Flig
         )}
 
         <div className="p-4">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-8">
-              <div className="mb-3 h-10 w-10 animate-spin rounded-full border-3 border-slate-200 border-t-blue-600" />
-              <p className="text-sm font-semibold text-slate-600">Searching flights...</p>
+          {loading && !escalated ? (
+            <div className="space-y-3">
+              {Array.from({ length: Math.min(results.length || 3, 6) }).map((_, i) => (
+                <FlightCardSkeleton key={i} />
+              ))}
             </div>
+          ) : loading && escalated ? (
+            <LiveSearchProgress phases={FLIGHT_SEARCH_PHASES} activeIndex={activeIndex} elapsedMs={elapsedMs} />
+          ) : fetchError ? (
+            <CanvasErrorCard variant={fetchError} onRetry={() => fetchFlights(params)} />
           ) : filteredResults.length > 0 ? (
             <div className="space-y-3">
-              <p className="text-xs font-semibold text-slate-500">{filteredResults.length} flights found</p>
+              <p className="flex items-center gap-2 text-caption font-semibold">
+                {filteredResults.length} flights found
+                {wasLiveSearch && <LiveResultsBadge />}
+              </p>
               {filteredResults.map((flight) => (
                 <div
                   key={flight.id}
-                  className={`group overflow-hidden rounded-2xl border bg-paper-2 transition-all hover:shadow-md ${pendingItem?.id === flight.id ? 'border-blue-400 ring-2 ring-blue-100' : 'border-line hover:border-blue-300'}`}
+                  className={`group overflow-hidden rounded-2xl border bg-paper-2 shadow-surface transition-all duration-[var(--motion-card)] ease-[var(--ease-out)] hover:shadow-hover ${pendingItem?.id === flight.id ? 'border-blue-400 ring-2 ring-blue-100' : 'border-line hover:border-blue-300'}`}
                 >
                   <div className="p-4 pb-3">
                     {/* Airline identity + price */}
@@ -301,23 +333,23 @@ export default function FlightCanvas({ onClose, tripContext, onAddToPlan }: Flig
                         {flight.logo ? (
                           <img src={flight.logo} alt={flight.airline} className="h-8 w-8 shrink-0 rounded-lg border border-line object-contain p-0.5" />
                         ) : (
-                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-[11px] font-black text-blue-700">
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-caption font-bold !text-blue-700">
                             {String(flight.airline || '?').slice(0, 2).toUpperCase()}
                           </div>
                         )}
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-ink-900">{flight.airline}</p>
-                          <p className="text-[11px] font-medium text-ink-500">
+                          <p className="truncate text-body font-semibold !text-ink-900">{flight.airline}</p>
+                          <p className="text-caption font-medium">
                             {flight.flightNumber}
                             {flight.class && <span className="ml-1.5 rounded-sm bg-paper-0 px-1 py-px text-[9px] font-bold uppercase tracking-wide text-ink-500">{flight.class}</span>}
                           </p>
                         </div>
                       </div>
                       <div className="shrink-0 text-right">
-                        <p className="text-lg font-black tabular-nums text-ink-900">
+                        <p className="text-lg font-bold tabular-nums text-ink-900">
                           {flight.price != null ? `₹${flight.price.toLocaleString()}` : 'Price on request'}
                         </p>
-                        <p className="-mt-0.5 text-[10px] text-ink-400">{flight.price != null ? 'per person' : ''}</p>
+                        <p className="-mt-0.5 text-caption !text-ink-400">{flight.price != null ? 'per person' : ''}</p>
                       </div>
                     </div>
 
@@ -325,32 +357,32 @@ export default function FlightCanvas({ onClose, tripContext, onAddToPlan }: Flig
                     <div className="flex items-center gap-3">
                       <div className="shrink-0">
                         <p className="text-base font-bold tabular-nums text-ink-900">{flight.departure.time || '--:--'}</p>
-                        <p className="text-[11px] font-semibold text-ink-500">{flight.departure.airport || flight.departure.city}</p>
+                        <p className="text-caption font-semibold">{flight.departure.airport || flight.departure.city}</p>
                       </div>
                       <div className="flex min-w-0 flex-1 flex-col items-center">
-                        <p className="text-[10px] font-bold text-ink-400">{flight.duration || 'Duration TBD'}</p>
+                        <p className="text-caption font-bold !text-ink-400">{flight.duration || 'Duration TBD'}</p>
                         <div className="relative my-1 h-px w-full bg-line-strong">
                           <span className="absolute left-0 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full border border-line-strong bg-paper-2" />
                           <span className="absolute right-0 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-blue-600" />
                         </div>
-                        <p className={`text-[10px] font-bold ${flight.stops === 'Non-stop' ? 'text-trust-verified' : 'text-ink-400'}`}>{flight.stops}</p>
+                        <p className={`text-caption font-bold ${flight.stops === 'Non-stop' ? '!text-trust-verified' : '!text-ink-400'}`}>{flight.stops}</p>
                       </div>
                       <div className="shrink-0 text-right">
                         <p className="text-base font-bold tabular-nums text-ink-900">{flight.arrival.time || '--:--'}</p>
-                        <p className="text-[11px] font-semibold text-ink-500">{flight.arrival.airport || flight.arrival.city}</p>
+                        <p className="text-caption font-semibold">{flight.arrival.airport || flight.arrival.city}</p>
                       </div>
                     </div>
 
                     {/* Fact chips — a missing fact simply doesn't render a chip */}
                     <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
                       {flight.baggage && (
-                        <span className="rounded-full border border-line bg-paper-1 px-2 py-0.5 text-[10px] font-bold text-ink-500">🧳 {flight.baggage}</span>
+                        <span className="rounded-full border border-line bg-paper-1 px-2 py-0.5 text-caption font-bold">🧳 {flight.baggage}</span>
                       )}
                       {flight.seats && (
-                        <span className="rounded-full border border-line bg-paper-1 px-2 py-0.5 text-[10px] font-bold text-ink-500">{flight.seats}</span>
+                        <span className="rounded-full border border-line bg-paper-1 px-2 py-0.5 text-caption font-bold">{flight.seats}</span>
                       )}
                       {flight.meal?.length > 0 && (
-                        <span className="rounded-full border border-line bg-paper-1 px-2 py-0.5 text-[10px] font-bold text-ink-500">🍽 Meal</span>
+                        <span className="rounded-full border border-line bg-paper-1 px-2 py-0.5 text-caption font-bold">🍽 Meal</span>
                       )}
                       <span className="ml-auto"><ProvenanceBadge provenance={flight.provenance} /></span>
                     </div>
@@ -360,7 +392,7 @@ export default function FlightCanvas({ onClose, tripContext, onAddToPlan }: Flig
                   <div className="flex border-t border-line">
                     <button
                       onClick={() => handleSelect(flight, 'trip')}
-                      className={`flex-1 cursor-pointer py-2 text-xs font-bold transition-colors ${
+                      className={`flex-1 cursor-pointer py-2 text-xs font-bold transition-colors duration-[var(--motion-hover)] ease-[var(--ease-out)] ${
                         pendingItem?.id === flight.id && pendingAction === 'trip'
                           ? 'bg-blue-50 text-blue-700'
                           : 'text-ink-700 hover:bg-paper-1'
@@ -371,7 +403,7 @@ export default function FlightCanvas({ onClose, tripContext, onAddToPlan }: Flig
                     <div className="w-px bg-line" />
                     <button
                       onClick={() => handleSelect(flight, 'booking')}
-                      className={`flex-1 cursor-pointer py-2 text-xs font-bold transition-colors ${
+                      className={`flex-1 cursor-pointer py-2 text-xs font-bold transition-colors duration-[var(--motion-hover)] ease-[var(--ease-out)] ${
                         pendingItem?.id === flight.id && pendingAction === 'booking'
                           ? 'bg-blue-700 text-white'
                           : 'bg-blue-600 text-white hover:bg-blue-700'
@@ -384,10 +416,10 @@ export default function FlightCanvas({ onClose, tripContext, onAddToPlan }: Flig
               ))}
             </div>
           ) : (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-8 text-center">
-              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-200"><Plane size={24} className="text-slate-400" /></div>
-              <p className="text-sm font-semibold text-slate-600">No flights found</p>
-              <p className="mt-1 text-xs text-slate-500">Try adjusting your search or check the backend inventory</p>
+            <div className="rounded-xl border border-line bg-paper-1 p-8 text-center">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-line"><Plane size={24} className="text-ink-400" /></div>
+              <p className="text-body font-semibold text-ink-700">No flights found</p>
+              <p className="mt-1 text-caption">Try adjusting your search or check the backend inventory</p>
             </div>
           )}
         </div>

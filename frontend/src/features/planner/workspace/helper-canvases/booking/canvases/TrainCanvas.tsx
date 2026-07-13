@@ -13,6 +13,15 @@ import ReplaceConfirmBar from '../../shared/ReplaceConfirmBar';
 import { ItineraryItem, CostProvenance } from '../../../plan-canvas/types';
 import { ProvenanceBadge } from '../../../../components/ProvenanceBadge';
 import CurrentlyBookedCard from '../../shared/CurrentlyBookedCard';
+import { CanvasErrorCard, classifyFetchErrorVariant, type CanvasErrorVariant } from '../../shared/CanvasErrorCard';
+import { LiveSearchProgress, useLiveSearchPhases, useTierEscalation } from '../../shared/LiveSearchProgress';
+import TransportCardSkeleton from './TransportCardSkeleton';
+
+const TRAIN_SEARCH_PHASES = [
+  { key: 'search', label: 'Searching train inventory' },
+  { key: 'seats', label: 'Checking class & seat availability' },
+  { key: 'finalize', label: 'Finalizing results' },
+];
 
 interface TrainCanvasProps {
   onClose?: () => void;
@@ -86,13 +95,18 @@ export default function TrainCanvas({ onClose, tripContext, onAddToPlan }: Train
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<any[]>([]);
+  const [fetchError, setFetchError] = useState<CanvasErrorVariant | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>(['AC Class', 'Available']);
   const [pendingItem, setPendingItem] = useState<any | null>(null);
+
+  const escalated = useTierEscalation(loading);
+  const { activeIndex, elapsedMs } = useLiveSearchPhases(loading && escalated, TRAIN_SEARCH_PHASES.length);
 
   useEffect(() => { setParams(buildInitialParams(tripContext)); }, [tripContext.tripId]);
 
   const fetchTrains = async (searchParams: BookingSearchParams) => {
     setLoading(true);
+    setFetchError(null);
     try {
       const apiResults = await searchService.search(searchParams);
       const mapped = apiResults.map((train: any) => {
@@ -115,8 +129,10 @@ export default function TrainCanvas({ onClose, tripContext, onAddToPlan }: Train
         };
       });
       setResults(mapped);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching trains:', err);
+      setResults([]);
+      setFetchError(classifyFetchErrorVariant(err));
     } finally {
       setLoading(false);
     }
@@ -165,7 +181,7 @@ export default function TrainCanvas({ onClose, tripContext, onAddToPlan }: Train
   const searchSummary = `${params.origin} → ${params.destination}`;
 
   return (
-    <div className="flex h-full flex-col bg-white">
+    <div className="flex h-full flex-col bg-paper-1">
       <CanvasHeader icon={<TrainFront size={18} />} iconColor="bg-blue-700" label="Trains" title={searchSummary} tripContext={tripContext} onClose={onClose} />
       <CurrentlyBookedCard tripContext={tripContext} nodeType="train" />
       <div className="custom-scrollbar flex-1 overflow-y-auto">
@@ -173,17 +189,17 @@ export default function TrainCanvas({ onClose, tripContext, onAddToPlan }: Train
           <SearchSummaryBar primary={searchSummary} secondary={[params.departureDate, `${params.travellers} passenger(s)`, params.trainClass].filter(Boolean).join(' • ')}
             accentColor="group-hover:text-blue-700" onClick={() => setIsSearchExpanded(true)}>
             <QuickFilterBar tags={QUICK_FILTER_TAGS} selected={selectedTags}
-              activeColor="border-blue-700 bg-blue-700 text-white shadow-sm"
-              hoverColor="border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:bg-blue-50"
+              activeColor="border-blue-700 bg-blue-700 text-white shadow-surface"
+              hoverColor="border-line bg-paper-2 text-ink-600 hover:border-blue-300 hover:bg-blue-50"
               onToggle={tag => setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])} />
           </SearchSummaryBar>
         )}
         {isSearchExpanded && (
-          <div className="border-b border-slate-200 bg-white p-4">
+          <div className="border-b border-line bg-paper-2 p-4">
             <form onSubmit={handleSearch} className="space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-800">Edit Search</h3>
-                <button type="button" onClick={() => setIsSearchExpanded(false)} className="text-xs font-semibold text-slate-500">Cancel</button>
+                <h3 className="text-sm font-semibold text-ink-800">Edit Search</h3>
+                <button type="button" onClick={() => setIsSearchExpanded(false)} className="text-xs font-semibold text-ink-500">Cancel</button>
               </div>
               <TrainSearchForm params={params} onUpdateParam={(field, value) => updateParam(setParams, field, value)} />
               <button type="submit" disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-700 py-3 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50">
@@ -193,24 +209,29 @@ export default function TrainCanvas({ onClose, tripContext, onAddToPlan }: Train
           </div>
         )}
         <div className="p-4">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-8">
-              <div className="mb-3 h-10 w-10 animate-spin rounded-full border-3 border-slate-200 border-t-blue-700" />
-              <p className="text-sm font-semibold text-slate-600">Searching trains...</p>
+          {loading && !escalated ? (
+            <div className="space-y-3">
+              {Array.from({ length: Math.min(results.length || 3, 6) }).map((_, i) => (
+                <TransportCardSkeleton key={i} />
+              ))}
             </div>
+          ) : loading && escalated ? (
+            <LiveSearchProgress phases={TRAIN_SEARCH_PHASES} activeIndex={activeIndex} elapsedMs={elapsedMs} />
+          ) : fetchError ? (
+            <CanvasErrorCard variant={fetchError} onRetry={() => fetchTrains(params)} />
           ) : filteredResults.length > 0 ? (
             <div className="space-y-3">
-              <p className="text-xs font-semibold text-slate-500">{filteredResults.length} trains found</p>
+              <p className="text-xs font-semibold text-ink-500">{filteredResults.length} trains found</p>
               {filteredResults.map((train) => (
-                <div key={train.id} className={`rounded-xl border bg-white p-4 transition-all hover:shadow-md ${pendingItem?.id === train.id ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200 hover:border-blue-300'}`}>
+                <div key={train.id} className={`rounded-xl border bg-paper-2 p-4 transition-all hover:shadow-md ${pendingItem?.id === train.id ? 'border-blue-400 ring-2 ring-blue-100' : 'border-line hover:border-blue-300'}`}>
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <p className="text-sm font-semibold text-slate-900">{train.name}</p>
-                      <p className="text-xs text-slate-500">#{train.trainNumber}</p>
+                      <p className="text-sm font-semibold text-ink-900">{train.name}</p>
+                      <p className="text-xs text-ink-500">#{train.trainNumber}</p>
                       <div className="mt-2 flex items-center gap-3 text-xs">
-                        <div><p className="font-bold text-slate-900">{train.departure.time || '--:--'}</p><p className="text-slate-500">{train.departure.station || ''}</p></div>
-                        <div className="flex-1 text-center"><p className="text-slate-400">{train.duration || 'Duration TBD'}</p><div className="my-1 h-px w-full bg-slate-200" /></div>
-                        <div className="text-right"><p className="font-bold text-slate-900">{train.arrival.time || '--:--'}</p><p className="text-slate-500">{train.arrival.station || ''}</p></div>
+                        <div><p className="font-bold text-ink-900">{train.departure.time || '--:--'}</p><p className="text-ink-500">{train.departure.station || ''}</p></div>
+                        <div className="flex-1 text-center"><p className="text-ink-400">{train.duration || 'Duration TBD'}</p><div className="my-1 h-px w-full bg-line" /></div>
+                        <div className="text-right"><p className="font-bold text-ink-900">{train.arrival.time || '--:--'}</p><p className="text-ink-500">{train.arrival.station || ''}</p></div>
                       </div>
                       <div className="mt-2 flex flex-wrap gap-1">
                         {train.classes?.slice(0, 3).map((cls: any, cIdx: number) => (
@@ -220,7 +241,7 @@ export default function TrainCanvas({ onClose, tripContext, onAddToPlan }: Train
 
                     </div>
                     <div className="ml-4 text-right shrink-0">
-                      <p className="text-xl font-bold text-slate-900">{train.price != null ? `₹${train.price.toLocaleString()}` : 'Price on request'}</p>
+                      <p className="text-xl font-bold text-ink-900">{train.price != null ? `₹${train.price.toLocaleString()}` : 'Price on request'}</p>
                       <p className="text-xs text-green-600 font-semibold mb-1">{train.availability}</p>
                       <ProvenanceBadge provenance={RESULT_PROVENANCE} className="mb-1.5" />
                       <button onClick={() => setPendingItem(train)}
@@ -233,9 +254,9 @@ export default function TrainCanvas({ onClose, tripContext, onAddToPlan }: Train
               ))}
             </div>
           ) : (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-8 text-center">
-              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-200"><TrainFront size={24} className="text-slate-400" /></div>
-              <p className="text-sm font-semibold text-slate-600">No trains found</p>
+            <div className="rounded-xl border border-line bg-paper-0 p-8 text-center">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-line"><TrainFront size={24} className="text-ink-400" /></div>
+              <p className="text-sm font-semibold text-ink-600">No trains found</p>
             </div>
           )}
         </div>

@@ -2,6 +2,20 @@ import { apiClient } from './api';
 import { Airport, City, Country, TrainStation, PaginatedResponse } from './planner.types';
 import type { Suggestion } from '@/features/planner/workspace/plan-canvas/types';
 
+/**
+ * Which tier actually resolved an explore fetch — mirrors the `source` field
+ * apps.reference.services.places_explore.explore_places always returns.
+ * 'cache' = served from our DB; 'google_places' = a live Places API call
+ * just ran. Callers should show this, not discard it — see
+ * contract-audit.md §5 for the loading/error standard this backs.
+ */
+export type ExploreSource = 'cache' | 'google_places';
+
+export interface ExploreResult {
+  results: Suggestion[];
+  source: ExploreSource;
+}
+
 export const referenceService = {
   searchAirports: async (query: string) => {
     const res = await apiClient.get<PaginatedResponse<Airport> | Airport[]>(`/reference/airports/?search=${query}`);
@@ -51,13 +65,13 @@ export const referenceService = {
     };
   },
 
-  exploreRestaurants: async (location: string, lat?: number, lng?: number): Promise<Suggestion[]> => {
+  exploreRestaurants: async (location: string, lat?: number, lng?: number): Promise<ExploreResult> => {
     let url = `/reference/restaurants/explore/?location=${encodeURIComponent(location)}`;
     if (lat !== undefined && lng !== undefined) {
       url += `&lat=${lat}&lng=${lng}`;
     }
-    const res = await apiClient.get<{ results: Suggestion[] }>(url);
-    return res.results || [];
+    const res = await apiClient.get<{ results: Suggestion[]; source: ExploreSource }>(url);
+    return { results: res.results || [], source: res.source };
   },
 
   getRestaurantDetails: async (id: string | number): Promise<Suggestion> => {
@@ -65,13 +79,13 @@ export const referenceService = {
     return res.data;
   },
 
-  exploreAttractions: async (location: string, lat?: number, lng?: number): Promise<Suggestion[]> => {
+  exploreAttractions: async (location: string, lat?: number, lng?: number): Promise<ExploreResult> => {
     let url = `/reference/attractions/explore/?location=${encodeURIComponent(location)}`;
     if (lat !== undefined && lng !== undefined) {
       url += `&lat=${lat}&lng=${lng}`;
     }
-    const res = await apiClient.get<{ results: Suggestion[] }>(url);
-    return res.results || [];
+    const res = await apiClient.get<{ results: Suggestion[]; source: ExploreSource }>(url);
+    return { results: res.results || [], source: res.source };
   },
 
   getAttractionDetails: async (id: string | number): Promise<Suggestion> => {
@@ -79,13 +93,13 @@ export const referenceService = {
     return res.data;
   },
 
-  exploreActivities: async (location: string, lat?: number, lng?: number): Promise<Suggestion[]> => {
+  exploreActivities: async (location: string, lat?: number, lng?: number): Promise<ExploreResult> => {
     let url = `/reference/activities/explore/?location=${encodeURIComponent(location)}`;
     if (lat !== undefined && lng !== undefined) {
       url += `&lat=${lat}&lng=${lng}`;
     }
-    const res = await apiClient.get<{ results: Suggestion[] }>(url);
-    return res.results || [];
+    const res = await apiClient.get<{ results: Suggestion[]; source: ExploreSource }>(url);
+    return { results: res.results || [], source: res.source };
   },
 
   getActivityDetails: async (id: string | number): Promise<Suggestion> => {
@@ -93,13 +107,13 @@ export const referenceService = {
     return res.data;
   },
 
-  exploreHotels: async (location: string, lat?: number, lng?: number): Promise<Suggestion[]> => {
+  exploreHotels: async (location: string, lat?: number, lng?: number): Promise<ExploreResult> => {
     let url = `/reference/hotels/explore/?location=${encodeURIComponent(location)}`;
     if (lat !== undefined && lng !== undefined) {
       url += `&lat=${lat}&lng=${lng}`;
     }
-    const res = await apiClient.get<{ results: Suggestion[] }>(url);
-    return res.results || [];
+    const res = await apiClient.get<{ results: Suggestion[]; source: ExploreSource }>(url);
+    return { results: res.results || [], source: res.source };
   },
 
   getHotelDetails: async (id: string | number): Promise<Suggestion> => {

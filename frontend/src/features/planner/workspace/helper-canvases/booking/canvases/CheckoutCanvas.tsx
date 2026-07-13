@@ -118,36 +118,36 @@ export default function CheckoutCanvas({ planData, workspaceId, onClose, onConfi
   };
  
   return (
-    <div className="flex h-full w-full flex-col bg-paper-1 p-4 lg:p-6 select-none overflow-y-auto custom-scrollbar">
+    <div className="flex h-full w-full flex-col bg-paper-1 p-3.5 lg:p-4 select-none overflow-y-auto custom-scrollbar">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-line pb-3 mb-4">
+      <div className="flex items-center justify-between border-b border-line pb-2.5 mb-3">
         <div className="flex items-center gap-2">
-          <CreditCard className="text-blue-600" size={20} />
+          <CreditCard className="text-[rgb(var(--color-booking))]" size={20} />
           <h3 className="text-lg font-black uppercase tracking-wider text-ink-900">Checkout</h3>
         </div>
         <button
           onClick={onClose}
-          className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+          className="rounded-full p-1.5 text-ink-400 hover:bg-paper-0 hover:text-ink-700 transition-colors"
         >
           <X size={18} />
         </button>
       </div>
- 
+
       {step === 'summary' && (
-        <div className="flex-1 flex flex-col gap-4">
+        <div className="flex-1 flex flex-col gap-3">
           {!hasItems ? (
-            <div className="flex flex-col items-center justify-center text-center py-12 px-4 bg-white rounded-2xl border border-slate-200">
-              <ShoppingCart size={28} className="mb-3 text-slate-300" />
-              <h4 className="text-sm font-bold text-slate-800 uppercase tracking-widest">Cart is empty</h4>
-              <p className="mt-1 max-w-xs text-xs text-slate-400">
+            <div className="flex flex-col items-center justify-center text-center py-12 px-4 bg-white rounded-2xl border border-line">
+              <ShoppingCart size={28} className="mb-3 text-ink-300" />
+              <h4 className="text-sm font-bold text-ink-700 uppercase tracking-widest">Cart is empty</h4>
+              <p className="mt-1 max-w-xs text-xs text-ink-400">
                 Configure stays, flights, or transit options in your timeline first. Once selected, confirmed items will list here for single-click payment checkouts.
               </p>
             </div>
           ) : (
             <>
               {/* Item lists */}
-              <div className="flex flex-col gap-3">
-                <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block px-1">
+              <div className="flex flex-col gap-2">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-400 block px-1">
                   Booking Items — {checkedItems.length} of {allItems.length} selected
                 </span>
 
@@ -156,7 +156,7 @@ export default function CheckoutCanvas({ planData, workspaceId, onClose, onConfi
                   const priced = Boolean(h.price);
                   const checked = isChecked(h);
                   return (
-                    <div key={`hotel-${i}`} className={`flex items-center gap-3 rounded-xl border p-3 shadow-2xs transition-opacity ${priced ? 'border-slate-200 bg-white' : 'border-amber-200 bg-amber-50/40'} ${!checked && priced ? 'opacity-50' : ''}`}>
+                    <div key={`hotel-${i}`} className={`flex items-center gap-3 rounded-xl border p-2.5 shadow-2xs transition-opacity ${priced ? 'border-line bg-white' : 'border-amber-200 bg-amber-50/40'} ${!checked && priced ? 'opacity-50' : ''}`}>
                       <input
                         type="checkbox"
                         checked={checked}
@@ -170,10 +170,10 @@ export default function CheckoutCanvas({ planData, workspaceId, onClose, onConfi
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
-                          <h5 className="text-xs font-bold text-slate-900 truncate">{h.title}</h5>
-                          <span className="text-xs font-black text-slate-800 shrink-0">{h.price || 'No price yet'}</span>
+                          <h5 className="text-xs font-bold text-ink-900 truncate">{h.title}</h5>
+                          <span className="text-xs font-black text-ink-700 shrink-0">{h.price || 'No price yet'}</span>
                         </div>
-                        <p className="text-[10px] text-slate-500 truncate mt-0.5">Stay • {h.cityName} (Day {h.dayNumber})</p>
+                        <p className="text-[10px] text-ink-500 truncate mt-0.5">Stay • {h.cityName} (Day {h.dayNumber})</p>
                       </div>
                       {!priced && (
                         <button
@@ -194,7 +194,7 @@ export default function CheckoutCanvas({ planData, workspaceId, onClose, onConfi
                   const priced = Boolean(t.price);
                   const checked = isChecked(t);
                   return (
-                    <div key={`transit-${i}`} className={`flex items-center gap-3 rounded-xl border p-3 shadow-2xs transition-opacity ${priced ? 'border-slate-200 bg-white' : 'border-amber-200 bg-amber-50/40'} ${!checked && priced ? 'opacity-50' : ''}`}>
+                    <div key={`transit-${i}`} className={`flex items-center gap-3 rounded-xl border p-2.5 shadow-2xs transition-opacity ${priced ? 'border-line bg-white' : 'border-amber-200 bg-amber-50/40'} ${!checked && priced ? 'opacity-50' : ''}`}>
                       <input
                         type="checkbox"
                         checked={checked}
@@ -208,10 +208,10 @@ export default function CheckoutCanvas({ planData, workspaceId, onClose, onConfi
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
-                          <h5 className="text-xs font-bold text-slate-900 truncate">{t.title}</h5>
-                          <span className="text-xs font-black text-slate-800 shrink-0">{t.price || 'No price yet'}</span>
+                          <h5 className="text-xs font-bold text-ink-900 truncate">{t.title}</h5>
+                          <span className="text-xs font-black text-ink-700 shrink-0">{t.price || 'No price yet'}</span>
                         </div>
-                        <p className="text-[10px] text-slate-500 truncate mt-0.5">Transit • {t.subtitle || 'Transit Connection'}</p>
+                        <p className="text-[10px] text-ink-500 truncate mt-0.5">Transit • {t.subtitle || 'Transit Connection'}</p>
                       </div>
                       {!priced && (
                         <button
@@ -240,23 +240,22 @@ export default function CheckoutCanvas({ planData, workspaceId, onClose, onConfi
               />
  
               {/* Price Invoice */}
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-2xs mt-2 flex flex-col gap-2">
-                <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block border-b border-slate-100 pb-1.5 mb-1">
-                  Fare Summary
-                </span>
-                <div className="flex justify-between border-t border-slate-100 pt-2 text-sm font-black text-slate-950">
-                  <span>Total Amount:</span>
-                  <span className="text-blue-600">₹{grandTotal.toLocaleString()}</span>
+              <div className="rounded-2xl border border-line bg-white p-3 shadow-2xs flex flex-col gap-1.5">
+                <div className="flex justify-between items-baseline">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-400">Fare Summary</span>
+                  <span className="text-sm font-black text-ink-900">
+                    Total: <span style={{ color: 'rgb(var(--color-booking))' }}>₹{grandTotal.toLocaleString()}</span>
+                  </span>
                 </div>
-                <p className="text-[10px] font-medium text-slate-400 leading-relaxed">
+                <p className="text-[10px] font-medium text-ink-400 leading-relaxed">
                   Provider taxes and service fees, if any, are disclosed at the provider&apos;s own checkout — not collected here.
                 </p>
               </div>
 
               {/* Honest state: this confirms the booking commitment in your plan;
                   no payment is actually collected by this screen yet. */}
-              <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-semibold justify-center">
-                <ShieldCheck size={13} className="text-slate-400" />
+              <div className="flex items-center gap-1.5 text-[10px] text-ink-400 font-semibold justify-center">
+                <ShieldCheck size={13} className="text-ink-400" />
                 <span>No payment is collected here — confirming reserves these items in your plan</span>
               </div>
 
@@ -264,7 +263,8 @@ export default function CheckoutCanvas({ planData, workspaceId, onClose, onConfi
               <button
                 onClick={handlePay}
                 disabled={!isFormValid}
-                className="mt-auto rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 p-3.5 text-sm font-black text-white shadow-md hover:scale-[1.01] hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className="mt-auto rounded-xl p-3 text-sm font-black text-white shadow-md hover:opacity-90 hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ background: 'rgb(var(--color-booking))' }}
               >
                 <CreditCard size={16} />
                 Confirm Booking (₹{grandTotal.toLocaleString()})
@@ -277,10 +277,10 @@ export default function CheckoutCanvas({ planData, workspaceId, onClose, onConfi
       {step === 'processing' && (
         <div role="status" aria-live="polite" className="flex-1 flex flex-col items-center justify-center text-center p-8">
           <Loader2 className="h-10 w-10 animate-spin text-blue-600 mb-4" />
-          <h4 className="text-sm font-bold text-slate-800 uppercase tracking-widest motion-safe:animate-pulse">
+          <h4 className="text-sm font-bold text-ink-700 uppercase tracking-widest motion-safe:animate-pulse">
             Confirming Your Booking
           </h4>
-          <p className="mt-1 text-xs text-slate-400 font-medium">
+          <p className="mt-1 text-xs text-ink-400 font-medium">
             Reserving these items in your plan — this usually takes a few seconds.
           </p>
         </div>
@@ -292,21 +292,21 @@ export default function CheckoutCanvas({ planData, workspaceId, onClose, onConfi
             <X size={32} strokeWidth={3} />
           </div>
 
-          <h3 className="text-xl font-black text-slate-900 tracking-tight">Booking didn&apos;t go through</h3>
-          <p className="mt-1.5 max-w-xs text-xs text-slate-500 font-medium leading-relaxed">
+          <h3 className="text-xl font-black text-ink-900 tracking-tight">Booking didn&apos;t go through</h3>
+          <p className="mt-1.5 max-w-xs text-xs text-ink-500 font-medium leading-relaxed">
             {errorMessage} Nothing has been booked or charged — you can try again.
           </p>
 
           <div className="mt-6 flex w-full gap-2">
             <button
               onClick={onClose}
-              className="flex-1 rounded-xl border border-slate-300 bg-white p-3 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+              className="flex-1 rounded-xl border border-line-strong bg-white p-3 text-xs font-bold text-ink-700 hover:bg-paper-0 transition-colors cursor-pointer"
             >
               Go Back
             </button>
             <button
               onClick={handlePay}
-              className="flex-1 rounded-xl bg-slate-900 p-3 text-xs font-bold text-white shadow-md hover:bg-slate-800 transition-colors cursor-pointer"
+              className="flex-1 rounded-xl bg-ink-900 p-3 text-xs font-bold text-white shadow-md hover:opacity-90 transition-colors cursor-pointer"
             >
               Try Again
             </button>

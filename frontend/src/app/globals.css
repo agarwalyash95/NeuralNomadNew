@@ -79,12 +79,16 @@
     --trust-estimated: 217 119 6;
     --trust-suggested: 124 58 237;
 
-    /* Block category accents */
+    /* Block category accents — matches categoryStyle.ts (the canonical
+       category → color map used by the main planner canvas: GenericNode,
+       AIInsightsPanel, PlannerMap, SuggestionCard) so a hotel/food/activity/
+       attraction reads as the same color everywhere in the app, Helper
+       Canvases included. */
     --cat-transport: 2 132 199;
-    --cat-stay:      79 70 229;
-    --cat-food:      234 88 12;
-    --cat-activity:  5 150 105;
-    --cat-attraction: 124 58 237;
+    --cat-stay:      79 70 229;   /* indigo-600, matches categoryStyle.ts hotel */
+    --cat-food:      234 88 12;   /* orange-600, matches categoryStyle.ts food */
+    --cat-activity:  225 29 72;   /* rose-600, matches categoryStyle.ts activity */
+    --cat-attraction: 5 150 105;  /* emerald-600, matches categoryStyle.ts attraction */
 
     /* ── Shadow system — soft daylight, three levels only ─────────────────
        Surface: resting cards — barely visible
@@ -286,6 +290,18 @@
     50%       { opacity: 0.5; }
   }
 
+  /* "There it is" — brief ring pulse when scrollToNode lands on an item,
+     e.g. clicking an insight/booking rollup in the Trip Status Spine. */
+  @keyframes highlight-pulse {
+    0%   { box-shadow: 0 0 0 0 rgb(var(--color-journey) / 0.55); }
+    70%  { box-shadow: 0 0 0 8px rgb(var(--color-journey) / 0); }
+    100% { box-shadow: 0 0 0 0 rgb(var(--color-journey) / 0); }
+  }
+  .highlight-pulse {
+    animation: highlight-pulse 1.4s var(--ease-out);
+    border-radius: 1rem;
+  }
+
   /* Existing */
   @keyframes fadeIn {
     from { opacity: 0; }
@@ -335,4 +351,23 @@
 /* ── PDF Export ───────────────────────────────────────────────────────────── */
 .is-exporting-pdf .export-hidden {
   display: none !important;
+}
+
+/* ── Premium Helper Canvas Theme overrides ────────────────────────────────── */
+.helper-canvas-premium {
+  --paper-0: 248 250 252;     /* slate-50  #f8fafc */
+  --paper-1: 255 255 255;     /* white     #ffffff */
+  --paper-2: 255 255 255;     /* white     #ffffff */
+  --line: 241 245 249;        /* slate-100 #f1f5f9 */
+  --line-strong: 226 232 240; /* slate-200 #e2e8f0 */
+  --ink-900: 15 23 42;        /* slate-900 #0f172a */
+  --ink-700: 51 65 85;        /* slate-700 #334155 */
+  --ink-500: 100 116 139;     /* slate-500 #64748b */
+  --ink-400: 148 163 184;     /* slate-400 #94a3b8 */
+
+  /* Vibrant premium category colors */
+  --cat-stay: 99 102 241;       /* indigo-500 */
+  --cat-food: 249 115 22;       /* orange-500 */
+  --cat-activity: 244 63 94;    /* rose-500 */
+  --cat-attraction: 16 185 129; /* emerald-500 */
 }

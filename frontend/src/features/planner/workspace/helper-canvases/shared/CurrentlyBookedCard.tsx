@@ -23,17 +23,17 @@ export default function CurrentlyBookedCard({ tripContext, nodeType }: Currently
   if (!matches || !tripContext.activeNodeTitle) return null;
 
   return (
-    <div className="mx-4 mt-3 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+    <div className="mx-4 mt-3 flex items-center justify-between gap-3 rounded-xl border border-line bg-paper-1 p-3">
       <div className="min-w-0">
-        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Currently on your plan</p>
-        <p className="truncate text-sm font-semibold text-slate-800">{tripContext.activeNodeTitle}</p>
+        <p className="text-[10px] font-bold uppercase tracking-wider text-ink-400">Currently on your plan</p>
+        <p className="truncate text-sm font-semibold text-ink-800">{tripContext.activeNodeTitle}</p>
       </div>
       <div className="flex shrink-0 flex-col items-end gap-1">
         {tripContext.activeNodeCost?.provenance && (
           <ProvenanceBadge provenance={tripContext.activeNodeCost.provenance} />
         )}
         {tripContext.activeNodePrice && (
-          <span className="text-sm font-bold text-slate-900">{tripContext.activeNodePrice}</span>
+          <span className="text-sm font-bold text-ink-900">{tripContext.activeNodePrice}</span>
         )}
       </div>
     </div>

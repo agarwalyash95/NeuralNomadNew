@@ -53,7 +53,8 @@ def _gemini_json(prompt, response_schema, *, model="gemini-2.5-flash", temperatu
         logger.warning("google-genai not installed; enrichment skipped")
         return None
     try:
-        client = genai.Client()
+        from apps.common.ai import get_genai_client
+        client = get_genai_client()
         response = client.models.generate_content(
             model=model,
             contents=prompt,

@@ -44,8 +44,8 @@ export function ChatInput({
               className={cn(
                 'mb-2.5 flex items-center gap-2 rounded-xl transition-all duration-300 mr-4',
                 isHighlighted
-                  ? 'bg-gradient-to-r from-indigo-500 to-purple-500 px-5 py-2.5 text-sm font-semibold text-white shadow-md hover:scale-[1.03] hover:shadow-lg'
-                  : 'border border-indigo-300 bg-white/90 px-4 py-2 text-sm font-medium text-indigo-600 shadow-sm backdrop-blur-sm hover:bg-indigo-50 hover:border-indigo-400',
+                  ? 'bg-gradient-to-r from-[rgb(var(--color-ai))] to-violet-700 px-5 py-2.5 text-sm font-semibold text-white shadow-hover hover:scale-[1.03]'
+                  : 'border border-[rgb(var(--color-ai)/0.3)] bg-paper-2/90 px-4 py-2 text-sm font-medium text-[rgb(var(--color-ai))] shadow-surface backdrop-blur-sm hover:bg-[rgb(var(--color-ai)/0.08)] hover:border-[rgb(var(--color-ai))]',
                 isCreatingPlan && 'cursor-wait opacity-75'
               )}
             >
@@ -73,7 +73,7 @@ export function ChatInput({
             }
           }}
           placeholder="Ask NeuralNomad — flights, hotels, trains, activities, or a full trip…"
-          className="custom-scrollbar min-h-[72px] max-h-[200px] w-full resize-none rounded-[28px] border border-line-strong bg-white py-5 pl-6 pr-16 text-base text-slate-900 shadow-[0_16px_36px_-28px_rgba(15,23,42,0.35)] transition-all placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15"
+          className="custom-scrollbar min-h-[72px] max-h-[200px] w-full resize-none rounded-[28px] border border-line-strong bg-paper-2 py-5 pl-6 pr-16 text-base text-ink-900 shadow-modal transition-all placeholder:text-ink-400 focus:border-[rgb(var(--color-ai))] focus:bg-paper-2 focus:outline-none focus:ring-2 focus:ring-[rgb(var(--color-ai)/0.15)]"
           rows={1}
           onInput={(e) => {
             const target = e.target as HTMLTextAreaElement;
@@ -86,8 +86,8 @@ export function ChatInput({
           className={cn(
             'absolute bottom-4 right-4 rounded-2xl p-2.5 transition-all',
             query.trim().length > 0 && !isSending
-              ? 'bg-slate-900 text-white shadow-md hover:bg-slate-800'
-              : 'cursor-not-allowed bg-slate-200 text-slate-400'
+              ? 'bg-[rgb(var(--color-ai))] text-white shadow-surface hover:bg-violet-700'
+              : 'cursor-not-allowed bg-paper-1 text-ink-400'
           )}
           disabled={query.trim().length === 0 || isSending}
         >

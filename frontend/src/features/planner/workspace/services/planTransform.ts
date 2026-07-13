@@ -9,7 +9,7 @@
  *    is the authority on where facts came from.
  */
 
-import type { PlannerTrip } from '@/services/planner.types';
+import type { PlannerTrip, TripActivity } from '@/services/planner.types';
 import type {
   BlockCost,
   ItineraryCity,
@@ -53,7 +53,7 @@ const formatWeatherNormal = (normal: any, dateStr?: string | null): string | und
   return parts.length ? parts.join(' · ') : undefined;
 };
 
-function activityToItem(a: any, trip: PlannerTrip, fallbackCity: string): ItineraryItem {
+function activityToItem(a: TripActivity, trip: PlannerTrip, fallbackCity: string): ItineraryItem {
   const metadata = a.metadata || {};
   const isInactive = a.is_active === false || a.status === 'inactive';
   const cost: BlockCost | undefined = a.cost && typeof a.cost === 'object' ? a.cost : undefined;
@@ -71,21 +71,21 @@ function activityToItem(a: any, trip: PlannerTrip, fallbackCity: string): Itiner
     cost,
     blockStatus: a.block_status,
     status: isInactive ? 'inactive' : a.status === 'booked' ? 'Confirmed' : 'Pending',
-    details: a.notes,
+    details: a.notes ?? undefined,
     latitude: a.latitude ?? (metadata.latitude as number | undefined),
     longitude: a.longitude ?? (metadata.longitude as number | undefined),
-    aiTip: a.aiTip || a.ai_tip || (metadata.aiTip as string) || (metadata.ai_tip as string),
-    rating: a.rating || (metadata.rating as number | undefined),
-    image: a.image || a.image_url || (metadata.image as string | undefined),
-    geoTag: a.geoTag || a.geo_tag || (metadata.geoTag as string) || fallbackCity,
-    place_id: a.place_id || (metadata.place_id as string | undefined) || undefined,
+    aiTip: a.ai_tip ?? undefined,
+    rating: a.rating ?? undefined,
+    image: a.image_url ?? undefined,
+    geoTag: fallbackCity,
+    place_id: (metadata.place_id as string | undefined) ?? undefined,
     masterRef: (metadata.master_ref as ItineraryItem['masterRef']) || undefined,
     originCode: (metadata.origin_code as string | undefined) || undefined,
     destinationCode: (metadata.destination_code as string | undefined) || undefined,
     stayNights: (metadata.stay_nights as number | undefined) || undefined,
     checkIn: (metadata.check_in as string | undefined) || undefined,
     checkOut: (metadata.check_out as string | undefined) || undefined,
-    _aiInsights: a._aiInsights || metadata._aiInsights,
+    _aiInsights: a._aiInsights,
     isInactive,
     _rawActivity: a,
   } as ItineraryItem;
@@ -102,7 +102,7 @@ export function transformTripData(trip: PlannerTrip): TripViewModel {
   );
 
   sortedDays.forEach((day) => {
-    let targetCityName = (day as any).city || (day as any).cityName;
+    let targetCityName = day.city;
 
     if (!targetCityName) {
       let nightSum = 0;
@@ -118,7 +118,7 @@ export function transformTripData(trip: PlannerTrip): TripViewModel {
     }
 
     const items: ItineraryItem[] =
-      day.activities?.map((a: any, actIdx: number) => {
+      day.activities?.map((a, actIdx) => {
         const item = activityToItem(a, trip, targetCityName);
         if (!item.id) item.id = `activity-${day.day_number}-${actIdx}`;
         return item;
@@ -130,9 +130,9 @@ export function transformTripData(trip: PlannerTrip): TripViewModel {
       dateStr: day.date || `Day ${day.day_number}`,
       title: day.title || `Exploring ${targetCityName}`,
       items,
-      transitHints: (day as any).transit_hints || undefined,
+      transitHints: day.transit_hints || undefined,
       // Real month normals from reference data; absent otherwise
-      weather: formatWeatherNormal((day as any).weather_normal, day.date),
+      weather: formatWeatherNormal(day.weather_normal, day.date),
     };
 
     const lastSegment = sequentialCities[sequentialCities.length - 1];
@@ -144,15 +144,15 @@ export function transformTripData(trip: PlannerTrip): TripViewModel {
       );
       const baseCityIndex = baseCity ? trip.cities.indexOf(baseCity) : sequentialCities.length;
 
-      const transit = (baseCity as any)?.transitToNext;
+      const transit = baseCity?.transitToNext;
       let mappedTransit: ItineraryItem | undefined;
       if (transit) {
         const isTransitInactive = transit.is_active === false || transit.status === 'inactive';
         const transitCost: BlockCost | undefined =
           transit.cost && typeof transit.cost === 'object' ? transit.cost : undefined;
         mappedTransit = {
-          id: transit.id || `transit-${(baseCity as any).id}`,
-          type: transit.type || 'taxi',
+          id: transit.id || `transit-${baseCity?.id}`,
+          type: (transit.type || 'taxi') as ItineraryItem['type'],
           title: transit.title,
           subtitle: transit.subtitle || '',
           details: transit.details,
@@ -165,8 +165,8 @@ export function transformTripData(trip: PlannerTrip): TripViewModel {
               ? 'Confirmed'
               : 'Pending',
           image: transit.image,
-          originCode: (transit.metadata?.origin_code as string | undefined) || undefined,
-          destinationCode: (transit.metadata?.destination_code as string | undefined) || undefined,
+          originCode: transit.metadata?.origin_code || undefined,
+          destinationCode: transit.metadata?.destination_code || undefined,
           isInactive: isTransitInactive,
           _rawActivity: transit,
         } as ItineraryItem;
@@ -193,7 +193,7 @@ export function transformTripData(trip: PlannerTrip): TripViewModel {
   let hasConfirmedTransport = false;
 
   trip.days.forEach((day) => {
-    day.activities?.forEach((a: any) => {
+    day.activities?.forEach((a) => {
       const isBooked = a.status === 'booked';
       const cat = (a.category || '').toLowerCase();
       if (cat === 'hotel' && isBooked) hasConfirmedHotel = true;
@@ -203,7 +203,7 @@ export function transformTripData(trip: PlannerTrip): TripViewModel {
     });
   });
 
-  trip.cities.forEach((city: any) => {
+  trip.cities.forEach((city) => {
     if (city.transitToNext && city.transitToNext.status === 'booked') {
       hasConfirmedTransport = true;
     }
@@ -225,8 +225,8 @@ export function transformTripData(trip: PlannerTrip): TripViewModel {
     }
   });
 
-  const firstBackendCity: any = trip.cities[0];
-  const lastBackendCity: any = trip.cities[trip.cities.length - 1];
+  const firstBackendCity = trip.cities[0];
+  const lastBackendCity = trip.cities[trip.cities.length - 1];
 
   return {
     title: trip.title || 'Your Generated Trip',

@@ -22,13 +22,13 @@ export default function QuickFilterBar({
   tags,
   selected,
   activeColor = 'border-blue-600 bg-blue-600 text-white shadow-sm',
-  hoverColor = 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50',
+  hoverColor = 'border-line bg-paper-2 text-ink-600 hover:border-line-strong hover:bg-paper-1',
   onToggle,
 }: QuickFilterBarProps) {
   return (
     <div className="mt-3">
       {label && (
-        <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">{label}</p>
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-ink-500">{label}</p>
       )}
       <div className="flex flex-wrap gap-2">
         {tags.map((tag) => (

@@ -27,8 +27,8 @@ export default function DeletingNode({ item, onUndo, onExpire }: DeletingNodePro
   return (
     <div className="relative my-2 pl-[70px] pr-4">
       {/* Connector lines to keep timeline flow */}
-      <div className="absolute left-[38px] top-0 h-1/2 w-1 bg-slate-200/50" />
-      <div className="absolute bottom-0 left-[38px] h-1/2 w-1 bg-slate-200/50" />
+      <div className="absolute left-[38px] top-0 h-1/2 w-1 bg-line/50" />
+      <div className="absolute bottom-0 left-[38px] h-1/2 w-1 bg-line/50" />
       <div className="absolute left-[32px] top-1/2 h-4 w-4 -translate-y-1/2 rounded-full border border-rose-300 bg-white shadow-xs flex items-center justify-center">
         <div className="h-1.5 w-1.5 rounded-full bg-rose-500" />
       </div>
@@ -39,8 +39,8 @@ export default function DeletingNode({ item, onUndo, onExpire }: DeletingNodePro
             <RotateCcw size={14} className="animate-spin" style={{ animationDuration: '4s' }} />
           </div>
           <div className="min-w-0">
-            <h5 className="text-sm font-bold text-slate-800 truncate">Removed &quot;{item.title}&quot;</h5>
-            <p className="text-[11px] font-medium text-slate-500 mt-0.5">Disappearing in {secondsLeft}s...</p>
+            <h5 className="text-sm font-bold text-ink-900 truncate">Removed &quot;{item.title}&quot;</h5>
+            <p className="text-[11px] font-medium text-ink-500 mt-0.5">Disappearing in {secondsLeft}s...</p>
           </div>
         </div>
 

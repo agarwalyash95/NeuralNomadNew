@@ -1,20 +1,21 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { BedDouble, Calendar, Users, Info, SlidersHorizontal } from 'lucide-react';
-import { referenceService } from '@/services/reference.service';
+import { BedDouble, Calendar, Users, Info, Check } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { referenceService, type ExploreSource } from '@/services/reference.service';
 import { TripContext } from '../../../types';
-import CanvasHeader from '../../shared/CanvasHeader';
-import SearchSummaryBar from '../../shared/SearchSummaryBar';
-import QuickFilterBar from '../../shared/QuickFilterBar';
+import CanvasSearchToolbar from '../../shared/CanvasSearchToolbar';
+import SortFilterPopover from '../../shared/SortFilterPopover';
+import { TierBadge } from '../../shared/ExploreStatusUI';
+import { CanvasErrorCard, classifyFetchErrorVariant, type CanvasErrorVariant } from '../../shared/CanvasErrorCard';
 import { ItineraryItem, Suggestion } from '../../../plan-canvas/types';
 import HotelCard from './hotel/HotelCard';
+import HotelDetailSections from './hotel/HotelDetailSections';
 import HotelCardSkeleton from './hotel/HotelCardSkeleton';
-import HotelCompareTray from './hotel/HotelCompareTray';
-import HotelConfirmBar from './hotel/HotelConfirmBar';
-import HotelFilterSheet, { DEFAULT_HOTEL_FILTERS, isFiltersDefault, type HotelFilters } from './hotel/HotelFilterSheet';
-import { computeItineraryImpact, minutesSavedVsCurrent, type ItineraryImpact } from './hotel/itineraryImpact';
+import { DEFAULT_HOTEL_FILTERS, isFiltersDefault, type HotelFilters } from './hotel/HotelFilterSheet';
+import { computeItineraryImpact, type ItineraryImpact } from './hotel/itineraryImpact';
 import { computeTripFit } from './hotel/tripFit';
 
 interface HotelCanvasProps {
@@ -25,24 +26,30 @@ interface HotelCanvasProps {
 
 const QUICK_FILTER_TAGS = ['All', '4+ Stars', 'Budget', 'Premium'];
 const PRICE_TIER_RANK: Record<string, number> = { $: 1, $$: 2, $$$: 3, $$$$: 4 };
+const TIER_LABELS = ['$', '$$', '$$$', '$$$$'];
 
 export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: HotelCanvasProps) {
   const defaultLocation = tripContext.activeNodeCityName || tripContext.destination;
   const [searchQuery, setSearchQuery] = useState(defaultLocation ? `${defaultLocation}, India` : '');
-  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
-  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
   const [filters, setFilters] = useState<HotelFilters>(DEFAULT_HOTEL_FILTERS);
   const [loading, setLoading] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>(['All']);
-  const [pendingItem, setPendingItem] = useState<Suggestion | null>(null);
   const [pinnedIds, setPinnedIds] = useState<number[]>([]);
 
-  // Accordion state
-  const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [expandedData, setExpandedData] = useState<Suggestion | null>(null);
+  const [canvasMode, setCanvasMode] = useState<'compare' | 'decide'>('compare');
+  const [listScrollTop, setListScrollTop] = useState(0);
+  const listScrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedData, setSelectedData] = useState<Suggestion | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
 
   const [results, setResults] = useState<Suggestion[]>([]);
+  const [source, setSource] = useState<ExploreSource | null>(null);
+  const [fetchError, setFetchError] = useState<CanvasErrorVariant | null>(null);
+  const [isCommitSuccess, setIsCommitSuccess] = useState(false);
 
   const queryClient = useQueryClient();
 
@@ -54,21 +61,27 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
   const fetchHotels = async (query: string) => {
     if (!query.trim()) {
       setResults([]);
+      setSource(null);
+      setFetchError(null);
       return;
     }
     setLoading(true);
+    setFetchError(null);
     try {
       const loc = tripContext.activeNodeCityName || tripContext.destination;
       const useCoords = loc && query.toLowerCase().includes(loc.toLowerCase());
-      const data = await referenceService.exploreHotels(
+      const { results: data, source: src } = await referenceService.exploreHotels(
         query,
         useCoords ? tripContext.activeNodeLatitude : undefined,
         useCoords ? tripContext.activeNodeLongitude : undefined
       );
-      setResults(Array.isArray(data) ? data : []);
+      setResults(data);
+      setSource(src);
     } catch (err: any) {
       console.error('Error fetching hotels:', err?.message || err);
       setResults([]);
+      setSource(null);
+      setFetchError(classifyFetchErrorVariant(err));
     } finally {
       setLoading(false);
     }
@@ -76,11 +89,6 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
 
   useEffect(() => { fetchHotels(searchQuery); }, [searchQuery]);
 
-  // Stay-context: the decision facts a hotel card alone can't carry — real
-  // dates/nights/guests derived from the trip's own city segment, never a
-  // guess. HotelMaster has no live nightly rate yet (see suggestions.py
-  // _hotel_fields) — that's stated honestly below rather than simulating a
-  // "checking rates..." step with a foregone unavailable result.
   const stayContext = useMemo(() => {
     const range = tripContext.activeNodeCityDateRange;
     const [checkIn, checkOut] = range ? range.split(' to ') : [tripContext.activeNodeDateStr || tripContext.startDate, undefined];
@@ -92,23 +100,16 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
     };
   }, [tripContext.activeNodeCityDateRange, tripContext.activeNodeDateStr, tripContext.startDate, tripContext.activeNodeCityNights, tripContext.travellers]);
 
-  // Don't recommend what's already planned for the day in view
   const plannedTitles = useMemo(
     () => new Set((tripContext.activeDayItemTitles || []).map(t => t.trim().toLowerCase())),
     [tripContext.activeDayItemTitles]
   );
 
-  const hasItineraryData = (tripContext.activeCityItems?.length ?? 0) > 0;
-
-  // Real coordinates only — the currently-booked hotel's impact, used both
-  // for the comparison anchor and every card's "saves N min vs. current".
   const currentHotelImpact: ItineraryImpact | null = useMemo(() => {
     if (tripContext.activeNodeType !== 'hotel') return null;
     return computeItineraryImpact(tripContext.activeNodeLatitude, tripContext.activeNodeLongitude, tripContext.activeCityItems);
   }, [tripContext.activeNodeType, tripContext.activeNodeLatitude, tripContext.activeNodeLongitude, tripContext.activeCityItems]);
 
-  // Per-hotel itinerary impact, computed once against the full raw result
-  // set so Trip Fit percentiles stay stable regardless of active filters.
   const impactsById = useMemo(() => {
     const map = new Map<number, ItineraryImpact | null>();
     results.forEach((h) => map.set(h.id, computeItineraryImpact(h.latitude, h.longitude, tripContext.activeCityItems)));
@@ -147,7 +148,6 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
     });
   }, [tagFiltered, filters, fitsById]);
 
-  // Best-for-your-trip is the default sort — Trip Fit leads, not rating or price.
   const visibleResults = useMemo(
     () =>
       sheetFiltered
@@ -157,203 +157,308 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
     [sheetFiltered, plannedTitles, fitsById]
   );
 
-  const toggleExpand = async (suggestion: Suggestion) => {
-    if (expandedId === suggestion.id) {
-      setExpandedId(null);
-      return;
+  useEffect(() => {
+    if (selectedId != null && !visibleResults.some(h => h.id === selectedId)) {
+      setSelectedId(null);
+      setCanvasMode('compare');
     }
-    setExpandedId(suggestion.id);
-    setExpandedData(null);
+  }, [visibleResults, selectedId]);
+
+  useEffect(() => {
+    if (selectedId == null) return;
+    let cancelled = false;
     setDetailsLoading(true);
-    try {
-      const resp = await queryClient.fetchQuery({
-        queryKey: ['place-details', 'hotel', suggestion.id],
-        queryFn: () => referenceService.getHotelDetails(suggestion.id),
-        staleTime: 30 * 60_000,
-      });
-      setExpandedData(resp);
-    } catch (err) {
-      console.error('Error fetching hotel details:', err);
-    } finally {
-      setDetailsLoading(false);
-    }
-  };
+    (async () => {
+      try {
+        const resp = await queryClient.fetchQuery({
+          queryKey: ['place-details', 'hotel', selectedId],
+          queryFn: () => referenceService.getHotelDetails(selectedId),
+          staleTime: 30 * 60_000,
+        });
+        if (!cancelled) setSelectedData(resp);
+      } catch (err) {
+        console.error('Error fetching hotel details:', err);
+      } finally {
+        if (!cancelled) setDetailsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedId, queryClient]);
 
   const togglePin = (id: number) => {
     setPinnedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : prev.length < 3 ? [...prev, id] : prev));
   };
 
-  const isReplacing = tripContext.activeNodeType === 'hotel' && !!tripContext.activeNodeTitle;
+  const handleSelectRecommendation = (id: number) => {
+    const el = listScrollContainerRef.current;
+    if (el) {
+      setListScrollTop(el.scrollTop);
+    }
+    setSelectedId(id);
+    setCanvasMode('decide');
+  };
 
-  const handleConfirmReplace = () => {
-    if (!pendingItem || !onAddToPlan) return;
+  // Restore scroll height on returning to recommendations list view
+  useEffect(() => {
+    if (canvasMode === 'compare') {
+      const el = listScrollContainerRef.current;
+      if (el && listScrollTop > 0) {
+        requestAnimationFrame(() => {
+          el.scrollTop = listScrollTop;
+        });
+      }
+    }
+  }, [canvasMode, listScrollTop]);
+
+  const handleSelectHotel = (hotel: Suggestion) => {
+    if (!onAddToPlan) return;
     const newItem: ItineraryItem = {
-      id: `hotel-${pendingItem.id}-${Date.now()}`,
+      id: `hotel-${hotel.id}-${Date.now()}`,
       type: 'hotel',
       startTime: '14:00',
-      title: pendingItem.name,
-      subtitle: pendingItem.address || '',
-      details: pendingItem.subtitle,
+      title: hotel.name,
+      subtitle: hotel.address || '',
+      details: hotel.subtitle,
       status: 'Pending',
-      rating: pendingItem.rating != null ? Math.round(pendingItem.rating * 10) / 10 : undefined,
-      // A short location tag, not a repeat of `subtitle` (the full address) —
-      // GenericNode renders both side by side, so duplicating the address
-      // here showed the same string twice.
+      rating: hotel.rating != null ? Math.round(hotel.rating * 10) / 10 : undefined,
       geoTag: tripContext.activeNodeCityName || tripContext.destination || '',
-      image: pendingItem.image_url || undefined,
-      latitude: pendingItem.latitude ?? undefined,
-      longitude: pendingItem.longitude ?? undefined,
-      place_id: pendingItem.place_id ?? undefined,
-      cost: pendingItem.cost,
-      // Stay-span: how many of the city segment's days this booking covers,
-      // from the real city nights count — not a guess. A single night or
-      // unknown span (stayNights <= 1) renders no continuation ribbon.
+      image: hotel.image_url || undefined,
+      latitude: hotel.latitude ?? undefined,
+      longitude: hotel.longitude ?? undefined,
+      place_id: hotel.place_id ?? undefined,
+      cost: hotel.cost,
       stayNights: stayContext.nights,
       checkIn: stayContext.checkIn,
       checkOut: stayContext.checkOut,
     };
     onAddToPlan(newItem);
-    setPendingItem(null);
-    setExpandedId(null);
+    
+    // Trigger commitment success reward
+    setIsCommitSuccess(true);
+    setTimeout(() => {
+      setIsCommitSuccess(false);
+      if (onClose) onClose();
+    }, 1200);
   };
 
-  const searchSummary = tripContext.destination ? `Hotels in ${tripContext.destination}` : 'Hotels';
-  const activeFilterCount = (filters.propertyTypes.length > 0 ? 1 : 0) + [filters.maxPriceTier < 4, filters.minRating > 0, filters.minTripFit > 0, filters.familyFriendly].filter(Boolean).length;
+  const activeFilterCount = (filters.propertyTypes.length > 0 ? 1 : 0) + [filters.maxPriceTier < 4, filters.minRating > 0, filters.minTripFit > 0, filters.familyFriendly].filter(Boolean).length + (selectedTags.length === 1 && selectedTags[0] === 'All' ? 0 : 1);
 
-  const pinnedHotels = pinnedIds
-    .map((id) => results.find((h) => h.id === id))
-    .filter((h): h is Suggestion => !!h)
-    .map((hotel) => ({ hotel, impact: impactsById.get(hotel.id) ?? null, fit: fitsById.get(hotel.id)! }));
+  const addedMessage = tripContext.activeNodeDayLabel
+    ? `Added to ${tripContext.activeNodeDayLabel}`
+    : 'Added to your plan';
+
+
+  const propertyTypes = Array.from(new Set(results.map((h) => h.subtitle).filter(Boolean))) as string[];
+  const setFilter = <K extends keyof HotelFilters>(key: K, value: HotelFilters[K]) => setFilters({ ...filters, [key]: value });
+
+  const selectedHotel = visibleResults.find((h) => h.id === selectedId) ?? null;
+  const selectedHotelMerged = selectedHotel && selectedData?.id === selectedId
+    ? { ...selectedHotel, details: { ...selectedHotel.details, ...selectedData.details } }
+    : selectedHotel;
 
   return (
-    <div className="flex h-full flex-col bg-paper-0">
-      <CanvasHeader
-        icon={<BedDouble size={18} />}
-        iconColor="bg-cat-stay"
-        label="Hotels"
-        title={searchSummary}
-        tripContext={tripContext}
-        onClose={onClose}
-      />
-      {/* Stay-context bar — real dates/nights/guests from the trip itself,
-          so a hotel card doesn't have to guess what it's being booked for. */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-line bg-cat-stay/5 px-4 py-2.5 text-caption font-semibold">
-        {stayContext.checkIn && (
-          <span className="flex items-center gap-1.5 text-ink-700">
-            <Calendar size={12} className="text-cat-stay" />
-            {stayContext.checkIn}{stayContext.checkOut && stayContext.checkOut !== stayContext.checkIn ? ` → ${stayContext.checkOut}` : ''}
-            {stayContext.nights ? ` · ${stayContext.nights} night${stayContext.nights === 1 ? '' : 's'}` : ''}
-          </span>
+    <div className="helper-canvas-premium flex h-full flex-col bg-paper-0 relative overflow-hidden select-none">
+      
+      {/* Commitment Success Overlay */}
+      <AnimatePresence>
+        {isCommitSuccess && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.98 }}
+            className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-paper-1/95 p-6 text-center select-none"
+          >
+            <div className="h-12 w-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 mb-4 animate-bounce">
+              <Check size={24} strokeWidth={3} />
+            </div>
+            <h3 className="text-lg font-bold text-ink-900">{addedMessage}</h3>
+          </motion.div>
         )}
-        <span className="flex items-center gap-1.5 text-ink-700">
-          <Users size={12} className="text-cat-stay" />
-          {stayContext.guests} guest{stayContext.guests === 1 ? '' : 's'}
-        </span>
-        <span className="ml-auto flex items-center gap-1 text-ink-400" title="HotelMaster listings don't carry a live nightly rate yet — prices need checking with the property directly.">
-          <Info size={11} />
-          No live rate yet
-        </span>
-      </div>
+      </AnimatePresence>
 
-      <div className="custom-scrollbar flex-1 overflow-y-auto">
-        {!isSearchExpanded && (
-          <SearchSummaryBar primary={searchSummary} secondary="Stays near your itinerary" accentColor="group-hover:text-cat-stay" onClick={() => setIsSearchExpanded(true)}>
-            <div className="flex items-center justify-between gap-2">
-              <QuickFilterBar
-                tags={QUICK_FILTER_TAGS}
-                selected={selectedTags}
-                activeColor="border-cat-stay bg-cat-stay text-white shadow-sm"
-                hoverColor="border-line bg-paper-2 text-ink-600 hover:border-cat-stay/40 hover:bg-cat-stay/5"
-                onToggle={tag => setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}
+      <AnimatePresence mode="wait">
+        {canvasMode === 'compare' ? (
+          <motion.div
+            key="compare-list"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="flex flex-col h-full"
+          >
+            <div className="relative shrink-0">
+              <CanvasSearchToolbar
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+                isSearchFocused={isSearchFocused}
+                onFocusChange={setIsSearchFocused}
+                activeFilterCount={activeFilterCount}
+                onOpenFilter={() => setFilterOpen(true)}
+                onClose={onClose}
+                accentClassName="focus:border-cat-stay focus:ring-cat-stay/15"
               />
-              <button
-                type="button"
-                onClick={() => setFilterSheetOpen((o) => !o)}
-                className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
-                  filterSheetOpen || activeFilterCount > 0 ? 'border-cat-stay bg-cat-stay text-white' : 'border-line bg-paper-2 text-ink-600 hover:border-cat-stay/40'
-                }`}
+              <SortFilterPopover
+                open={filterOpen}
+                onClose={() => setFilterOpen(false)}
+                showReset={activeFilterCount > 0}
+                onReset={() => { setFilters(DEFAULT_HOTEL_FILTERS); setSelectedTags(['All']); }}
               >
-                <SlidersHorizontal size={12} /> Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
-              </button>
-            </div>
-          </SearchSummaryBar>
-        )}
-
-        {isSearchExpanded && (
-          <div className="border-b border-line bg-paper-2 p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-ink-900">Search Hotels</h3>
-              <button onClick={() => setIsSearchExpanded(false)} className="text-xs font-semibold text-ink-500">Cancel</button>
-            </div>
-            <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-              placeholder="e.g. Manali, India"
-              className="w-full rounded-xl border border-line p-3 text-sm text-ink-900 outline-none focus:border-cat-stay focus:ring-2 focus:ring-cat-stay/15" />
-          </div>
-        )}
-
-        {filterSheetOpen && (
-          <HotelFilterSheet results={results} filters={filters} onChange={setFilters} onClose={() => setFilterSheetOpen(false)} />
-        )}
-
-        <div className="space-y-3 p-4">
-          {loading ? (
-            <>
-              <HotelCardSkeleton />
-              <HotelCardSkeleton />
-              <HotelCardSkeleton />
-            </>
-          ) : visibleResults.length > 0 ? (
-            <>
-              <p className="text-xs font-semibold text-ink-500">{visibleResults.length} hotel{visibleResults.length === 1 ? '' : 's'} · best fit for your trip first</p>
-              <div role="list" aria-label="Hotel results" className="space-y-3">
-                {visibleResults.map((hotel, i) => (
-                  <div key={hotel.id} role="listitem" aria-setsize={visibleResults.length} aria-posinset={i + 1}>
-                    <HotelCard
-                      hotel={hotel}
-                      fit={fitsById.get(hotel.id)!}
-                      impact={impactsById.get(hotel.id) ?? null}
-                      hasItineraryData={hasItineraryData}
-                      minutesSaved={minutesSavedVsCurrent(impactsById.get(hotel.id) ?? null, currentHotelImpact)}
-                      isExpanded={expandedId === hotel.id}
-                      isPending={pendingItem?.id === hotel.id}
-                      isPinned={pinnedIds.includes(hotel.id)}
-                      canPin={pinnedIds.length < 3}
-                      detailsLoading={detailsLoading && expandedId === hotel.id && !expandedData}
-                      expandedDetails={expandedId === hotel.id ? expandedData : null}
-                      onToggleExpand={() => toggleExpand(hotel)}
-                      onSelect={() => setPendingItem(expandedId === hotel.id ? (expandedData || hotel) : hotel)}
-                      onTogglePin={() => togglePin(hotel.id)}
-                    />
+                <div className="mb-4">
+                  <p className="text-micro mb-2">Quick filters</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {QUICK_FILTER_TAGS.map(tag => {
+                      const isActive = selectedTags.includes(tag);
+                      return (
+                        <button
+                          key={tag}
+                          onClick={() => setSelectedTags(prev => tag === 'All' ? ['All'] : prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev.filter(t => t !== 'All'), tag])}
+                          className={`rounded-full border px-2.5 py-1 text-[10.5px] font-bold cursor-pointer ${
+                            isActive ? 'border-cat-stay bg-cat-stay text-white' : 'border-line bg-paper-1 text-ink-600 hover:border-cat-stay/40'
+                          }`}
+                        >
+                          {tag}
+                        </button>
+                      );
+                    })}
                   </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="rounded-xl border border-line bg-paper-1 p-8 text-center">
-              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-cat-stay/10"><BedDouble size={24} className="text-cat-stay" /></div>
-              <p className="text-sm font-semibold text-ink-700">No hotels found{tripContext.destination ? ` near ${tripContext.destination}` : ''}</p>
-              {!isFiltersDefault(filters) && (
-                <button type="button" onClick={() => setFilters(DEFAULT_HOTEL_FILTERS)} className="mt-2 text-xs font-semibold text-cat-stay hover:underline">
-                  Clear filters
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
+                </div>
 
-      {pendingItem && onAddToPlan ? (
-        <HotelConfirmBar
-          newItemTitle={pendingItem.name}
-          newItemPrice={pendingItem.price_label || undefined}
-          tripContext={tripContext}
-          isReplacing={isReplacing}
-          onCancel={() => setPendingItem(null)}
-          onConfirm={handleConfirmReplace}
-        />
-      ) : (
-        <HotelCompareTray pinned={pinnedHotels} onUnpin={togglePin} onSelect={setPendingItem} />
-      )}
+                <div className="space-y-4">
+                  <div>
+                    <div className="mb-1.5 flex items-center justify-between text-[11px] font-semibold text-ink-600">
+                      <span>Budget tier</span>
+                      <span className="tabular-nums text-ink-900">up to {TIER_LABELS[filters.maxPriceTier - 1]}</span>
+                    </div>
+                    <input type="range" min={1} max={4} step={1} value={filters.maxPriceTier} onChange={(e) => setFilter('maxPriceTier', Number(e.target.value))} className="h-8 w-full accent-cat-stay" aria-label="Maximum budget tier" />
+                  </div>
+
+                  <div>
+                    <div className="mb-1.5 flex items-center justify-between text-[11px] font-semibold text-ink-600">
+                      <span>Minimum rating</span>
+                      <span className="tabular-nums text-ink-900">{filters.minRating === 0 ? 'Any' : `${filters.minRating}★+`}</span>
+                    </div>
+                    <input type="range" min={0} max={4.5} step={0.5} value={filters.minRating} onChange={(e) => setFilter('minRating', Number(e.target.value))} className="h-8 w-full accent-cat-stay" aria-label="Minimum rating" />
+                  </div>
+
+                  <div>
+                    <div className="mb-1.5 flex items-center justify-between text-[11px] font-semibold text-ink-600">
+                      <span>Minimum Trip Fit</span>
+                      <span className="tabular-nums text-ink-900">{filters.minTripFit === 0 ? 'Any' : `${filters.minTripFit}%+`}</span>
+                    </div>
+                    <input type="range" min={0} max={90} step={10} value={filters.minTripFit} onChange={(e) => setFilter('minTripFit', Number(e.target.value))} className="h-8 w-full accent-cat-stay" aria-label="Minimum Trip Fit score" />
+                  </div>
+
+                  <label className="flex min-h-[36px] cursor-pointer items-center gap-2 text-xs font-semibold text-ink-700">
+                    <input type="checkbox" checked={filters.familyFriendly} onChange={(e) => setFilter('familyFriendly', e.target.checked)} className="h-4 w-4 accent-cat-stay" />
+                    Family-friendly
+                  </label>
+
+                  {propertyTypes.length > 1 && (
+                    <div>
+                      <p className="mb-1.5 text-[11px] font-semibold text-ink-600">Property type</p>
+                      <div className="flex flex-wrap gap-2">
+                        {propertyTypes.map((t) => (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => setFilter('propertyTypes', filters.propertyTypes.includes(t) ? filters.propertyTypes.filter((x) => x !== t) : [...filters.propertyTypes, t])}
+                            className={`min-h-[32px] rounded-full border px-3 text-xs font-medium capitalize cursor-pointer ${
+                              filters.propertyTypes.includes(t) ? 'border-cat-stay bg-cat-stay text-white' : 'border-line bg-paper-2 text-ink-600 hover:border-cat-stay/40'
+                            }`}
+                          >
+                            {t.replace(/_/g, ' ')}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </SortFilterPopover>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-line bg-cat-stay/5 px-4 py-2 text-caption font-semibold shrink-0">
+              {stayContext.checkIn && (
+                <span className="flex items-center gap-1.5 text-ink-700">
+                  <Calendar size={12} className="text-cat-stay" />
+                  {stayContext.checkIn}{stayContext.checkOut && stayContext.checkOut !== stayContext.checkIn ? ` → ${stayContext.checkOut}` : ''}
+                  {stayContext.nights ? ` · ${stayContext.nights} night${stayContext.nights === 1 ? '' : 's'}` : ''}
+                </span>
+              )}
+              <span className="flex items-center gap-1.5 text-ink-700">
+                <Users size={12} className="text-cat-stay" />
+                {stayContext.guests} guest{stayContext.guests === 1 ? '' : 's'}
+              </span>
+              <span className="ml-auto flex items-center gap-1 text-ink-400" title="HotelMaster listings don't carry a live nightly rate yet.">
+                <Info size={11} /> No live rate yet
+              </span>
+            </div>
+
+            {loading ? (
+              <div className="flex-1 space-y-3 overflow-y-auto p-4">
+                <HotelCardSkeleton />
+                <HotelCardSkeleton />
+                <HotelCardSkeleton />
+              </div>
+            ) : fetchError ? (
+              <CanvasErrorCard variant={fetchError} onRetry={() => fetchHotels(searchQuery)} />
+            ) : visibleResults.length > 0 ? (
+              <div ref={listScrollContainerRef} className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4">
+                <p className="mb-3 flex items-center gap-2 text-xs font-semibold text-ink-500">
+                  {visibleResults.length} hotel{visibleResults.length === 1 ? '' : 's'} — best fit for your trip first
+                  {source && <TierBadge source={source} />}
+                </p>
+                <div role="list" aria-label="Hotel results" className="flex flex-col gap-3">
+                  {visibleResults.map((hotel, i) => (
+                    <div key={hotel.id} role="listitem" aria-setsize={visibleResults.length} aria-posinset={i + 1}>
+                      <HotelCard
+                        hotel={hotel}
+                        fit={fitsById.get(hotel.id)!}
+                        impact={impactsById.get(hotel.id) ?? null}
+                        isPending={false}
+                        onSelect={() => handleSelectRecommendation(hotel.id)}
+                        onAdd={() => handleSelectHotel(hotel)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="m-4 rounded-xl border border-line bg-paper-1 p-8 text-center">
+                <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-cat-stay/10"><BedDouble size={24} className="text-cat-stay" /></div>
+                <p className="text-sm font-semibold text-ink-700">No hotels found{tripContext.destination ? ` near ${tripContext.destination}` : ''}</p>
+                {!isFiltersDefault(filters) && (
+                  <button type="button" onClick={() => setFilters(DEFAULT_HOTEL_FILTERS)} className="mt-2 text-xs font-semibold text-cat-stay hover:underline">
+                    Clear filters
+                  </button>
+                )}
+              </div>
+            )}
+
+          </motion.div>
+        ) : (
+          <motion.div
+            key="decide-detail"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="h-full"
+          >
+            {selectedHotelMerged && (
+              <HotelDetailSections
+                hotel={selectedHotelMerged}
+                expandedDetails={selectedData?.id === selectedHotelMerged.id ? selectedData : null}
+                detailsLoading={detailsLoading}
+                fit={fitsById.get(selectedHotelMerged.id)!}
+                isPending={false}
+                isCompared={pinnedIds.includes(selectedHotelMerged.id)}
+                onSelect={() => handleSelectHotel(selectedHotelMerged)}
+                onCompareToggle={() => togglePin(selectedHotelMerged.id)}
+                onBack={() => { setCanvasMode('compare'); setSelectedId(null); }}
+                tripContext={tripContext}
+              />
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

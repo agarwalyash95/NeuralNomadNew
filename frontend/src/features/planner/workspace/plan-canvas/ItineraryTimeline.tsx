@@ -339,33 +339,38 @@ export default function ItineraryTimeline({
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
     >
-      <div className="pb-10">
+      {/* pt-2 is deliberate, not decorative: without a nonzero padding-top
+          here, CityHeaderNode's mt-10 margin-collapses through this block
+          parent, so the "Collapse All" button (absolute, top-0, below)
+          visually overlaps the first city's own Collapse button instead of
+          sitting above it. */}
+      <div className="relative pt-2 pb-10">
         {crossCityHint && (
-          <div className="sticky top-0 z-30 mx-4 mb-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800 shadow-sm">
+          <div className="sticky top-0 z-30 mx-4 mb-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-caption font-semibold !text-amber-800 shadow-surface">
             Can&apos;t drag items between cities — use the &quot;Move to…&quot; picker on the item instead.
           </div>
         )}
-        <div className="mb-2 flex justify-end px-4">
-          <button
-            type="button"
-            onClick={() => {
-              const allDayIds = localData.cities.flatMap(c => c.days).map(d => d.id);
-              const anyCollapsed = allDayIds.some(id => collapsedDays[id]);
-              const next: Record<string, boolean> = {};
-              if (!anyCollapsed) {
-                allDayIds.forEach(id => {
-                  next[id] = true;
-                });
-              }
-              setCollapsedDays(next);
-            }}
-          className="flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1 text-[10px] font-semibold text-ink-500 hover:border-[rgb(var(--color-journey)/0.5)] hover:bg-paper-0 hover:text-ink-700 transition-all cursor-pointer shadow-surface export-hidden"
-          >
-            {localData.cities.flatMap(c => c.days).some(d => collapsedDays[d.id])
-              ? <><FolderOpen size={12} /> Expand All Days</>
-              : <><FolderClosed size={12} /> Collapse All Days</>}
-          </button>
-        </div>
+        {/* Bulk expand/collapse — pinned to the corner instead of reserving
+            its own full-width row above the itinerary content. */}
+        <button
+          type="button"
+          onClick={() => {
+            const allDayIds = localData.cities.flatMap(c => c.days).map(d => d.id);
+            const anyCollapsed = allDayIds.some(id => collapsedDays[id]);
+            const next: Record<string, boolean> = {};
+            if (!anyCollapsed) {
+              allDayIds.forEach(id => {
+                next[id] = true;
+              });
+            }
+            setCollapsedDays(next);
+          }}
+          className="absolute right-4 top-0 z-20 flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1 text-caption font-semibold hover:border-[rgb(var(--color-journey)/0.5)] hover:bg-paper-0 hover:!text-ink-700 transition-all cursor-pointer shadow-surface export-hidden"
+        >
+          {localData.cities.flatMap(c => c.days).some(d => collapsedDays[d.id])
+            ? <><FolderOpen size={12} /> Expand All</>
+            : <><FolderClosed size={12} /> Collapse All</>}
+        </button>
 
         {localData.cities.map((city, cityIndex) => {
           const isCityCollapsed = !!collapsedCities[city.id];
@@ -446,7 +451,7 @@ export default function ItineraryTimeline({
                   <div className="relative py-1.5 pl-[54px] pr-4">
                     {/* spine */}
                     <div className="absolute bottom-0 left-[20px] top-0 w-px bg-line/60" />
-                    <div className="flex items-center gap-1.5 rounded-full border border-indigo-100 bg-indigo-50/60 px-3 py-1.5 text-[10px] font-semibold text-indigo-700 w-fit">
+                    <div className="flex items-center gap-1.5 rounded-full border border-indigo-100 bg-indigo-50/60 px-3 py-1.5 text-caption font-semibold !text-indigo-700 w-fit">
                       <span>🏨</span>
                       <span>Staying at {hotelCoverage[dayIndex]!.title}</span>
                     </div>
@@ -487,7 +492,7 @@ export default function ItineraryTimeline({
                           subtitle: `${lastPrev.title} to ${firstCurr.title}`,
                           startTime: firstCurr.startTime || '',
                         })}
-                        className="flex w-full items-center gap-2 rounded-xl border border-dashed border-amber-300 bg-amber-50/60 px-3 py-2 text-left text-[11px] font-bold text-amber-700 transition-all cursor-pointer hover:border-amber-400 hover:bg-amber-100 export-hidden"
+                        className="flex w-full items-center gap-2 rounded-xl border border-dashed border-amber-300 bg-amber-50/60 px-3 py-2 text-left text-caption font-bold !text-amber-700 transition-all cursor-pointer hover:border-amber-400 hover:bg-amber-100 export-hidden"
                         title="No transfer is planned for this gap yet — click to book a cab"
                       >
                         <Car size={12} className="shrink-0" />
@@ -516,7 +521,7 @@ export default function ItineraryTimeline({
                         const isDetour = dist > detourThresholdKm;
                         const showDistance = dist > 0.3;
                         distPill = (
-                          <div key={`dist-${item.id}-${nextItem.id}`} className="relative flex items-center gap-1.5 py-2 pl-[104px]">
+                          <div key={`dist-${item.id}-${nextItem.id}`} className="relative flex items-center gap-1.5 py-1 pl-[104px]">
                             {/* main spine */}
                             <div className="absolute bottom-0 left-[20px] top-0 w-px bg-line/60" />
                             {/* sub-spine — dashed, softer */}
@@ -543,17 +548,17 @@ export default function ItineraryTimeline({
                                   });
                                 }}
                                 className={cn(
-                                  "flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-semibold transition-all cursor-pointer shadow-surface",
+                                  "flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-caption font-semibold transition-all cursor-pointer shadow-surface",
                                   isDetour
-                                    ? "bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100 hover:border-amber-400"
+                                    ? "bg-amber-50 border-amber-300 !text-amber-700 hover:bg-amber-100 hover:border-amber-400"
                                     // C3: neutral hover — NOT blue. Info pill hover = amber (caution), not booking
-                                    : "bg-white border-line text-ink-600 hover:bg-amber-50/60 hover:border-amber-200/80 hover:text-amber-700"
+                                    : "bg-white border-line !text-ink-600 hover:bg-amber-50/60 hover:border-amber-200/80 hover:!text-amber-700"
                                 )}
                                 title={isDetour ? "Noticeably farther than this day's other legs. Click to book transport." : "Click to book a taxi/cab for this transit"}
                               >
                                 {isDetour ? <AlertTriangle size={10} className="shrink-0" /> : <Car size={10} className="shrink-0" />}
                                 <span>{isDetour ? `Detour: ${dist} km` : `${dist} km`}</span>
-                                <span className="text-slate-400">•</span>
+                                <span className="text-ink-400">•</span>
                                 <span>~{mins} mins transit</span>
                               </button>
                             )}
@@ -662,7 +667,7 @@ export default function ItineraryTimeline({
                         {/* horizontal connector line connecting spine to the empty menu */}
                         <div className="absolute left-[20px] top-1/2 -translate-y-1/2 w-[34px] h-px bg-line/60" />
                         <div className="flex flex-col items-start gap-1.5 ml-2.5">
-                          <p className="text-[11px] font-medium text-ink-400 italic">No activities planned</p>
+                          <p className="text-caption font-medium !text-ink-400 italic">No activities planned</p>
                           <AddTypeMenu
                             variant="block"
                             label="Add stop"

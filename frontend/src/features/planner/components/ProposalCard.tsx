@@ -58,20 +58,20 @@ export function ProposalCard({ proposal, onAccept, onReject }: ProposalCardProps
       initial={{ opacity: 0, y: 12, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -8, scale: 0.97 }}
-      className="w-[340px] rounded-2xl border border-indigo-200/70 bg-white p-4 shadow-[0_16px_40px_-20px_rgba(79,70,229,0.35)]"
+      className="w-[340px] rounded-2xl border border-[rgb(var(--color-ai)/0.25)] bg-paper-2 p-4 shadow-modal"
     >
-      <div className="flex items-center gap-2 text-indigo-700">
-        <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-indigo-50">
+      <div className="flex items-center gap-2 text-[rgb(var(--color-ai))]">
+        <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-[rgb(var(--color-ai)/0.08)]">
           {KIND_ICON[proposal.kind] ?? KIND_ICON.plan_edit}
         </span>
-        <h4 className="flex-1 text-xs font-bold text-slate-900">{proposal.title}</h4>
-        <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-indigo-600">
+        <h4 className="flex-1 text-xs font-bold text-ink-900">{proposal.title}</h4>
+        <span className="rounded-full bg-[rgb(var(--color-ai)/0.08)] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[rgb(var(--color-ai))]">
           Proposal
         </span>
       </div>
 
       {proposal.rationale && (
-        <p className="mt-2 text-[11px] font-medium leading-relaxed text-slate-600">
+        <p className="mt-2 text-[11px] font-medium leading-relaxed text-ink-600">
           {proposal.rationale}
         </p>
       )}
@@ -109,7 +109,7 @@ export function ProposalCard({ proposal, onAccept, onReject }: ProposalCardProps
         </p>
       ) : isRejecting ? (
         <div className="mt-3">
-          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-400">
             Why not? (helps me stop suggesting this)
           </p>
           <div className="flex flex-wrap gap-1.5">
@@ -118,7 +118,7 @@ export function ProposalCard({ proposal, onAccept, onReject }: ProposalCardProps
                 key={reason}
                 disabled={isBusy}
                 onClick={() => handleReject(reason === 'Other' ? undefined : reason)}
-                className="cursor-pointer rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-semibold text-slate-600 transition-colors hover:border-slate-400 hover:bg-slate-50"
+                className="cursor-pointer rounded-full border border-line bg-paper-2 px-2.5 py-1 text-[10px] font-semibold text-ink-600 transition-colors hover:border-line-strong hover:bg-paper-1"
               >
                 {reason}
               </button>
@@ -130,7 +130,7 @@ export function ProposalCard({ proposal, onAccept, onReject }: ProposalCardProps
           <button
             disabled={isBusy}
             onClick={() => setIsRejecting(true)}
-            className="flex cursor-pointer items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-600 transition-colors hover:bg-slate-50"
+            className="flex cursor-pointer items-center gap-1 rounded-xl border border-line bg-paper-2 px-3 py-1.5 text-[11px] font-bold text-ink-600 transition-colors hover:bg-paper-1"
           >
             <X size={12} />
             Reject
@@ -138,7 +138,7 @@ export function ProposalCard({ proposal, onAccept, onReject }: ProposalCardProps
           <button
             disabled={isBusy}
             onClick={handleAccept}
-            className="flex cursor-pointer items-center gap-1 rounded-xl bg-indigo-600 px-3.5 py-1.5 text-[11px] font-bold text-white shadow-sm transition-colors hover:bg-indigo-700"
+            className="flex cursor-pointer items-center gap-1 rounded-xl bg-[rgb(var(--color-ai))] px-3.5 py-1.5 text-[11px] font-bold text-white shadow-surface transition-colors hover:bg-violet-700"
           >
             {isBusy ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
             Accept

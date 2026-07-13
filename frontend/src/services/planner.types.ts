@@ -10,8 +10,11 @@ export type WorkspaceMode = 'planning' | 'exploring' | 'booking' | 'review' | 't
 export type ChatRole = 'user' | 'assistant' | 'system';
 export type CanvasType = 'plan' | 'flight' | 'hotel' | 'train' | 'bus' | 'cab' | 'attraction' | 'activity' | 'restaurant' | 'visa' | 'forex' | 'booking';
 export type CanvasLifecycleState = 'preview' | 'expanded' | 'focused';
-export type DayType = 'preparation' | 'travel' | 'exploration' | 'return' | 'rest';
-export type ActivityStatus = 'planned' | 'booked' | 'completed' | 'cancelled';
+/** Matches DayTheme.day_type from the plan generation skeleton (plan_generation.py) */
+export type DayType = 'exploration' | 'transit' | 'relaxation' | 'arrival' | 'departure';
+/** Raw lifecycle flag on a stored block — 'inactive' means soft-removed, not "cancelled".
+ *  See _LEGACY_STATUS_MAP in apps.planner.services.block_schema. */
+export type ActivityStatus = 'pending' | 'booked' | 'inactive';
 
 // ─── Workspace ─────────────────────────────────────
 
@@ -73,7 +76,7 @@ export interface TripDraftState {
   children: number;
   infants: number;
   budget_tier: string;
-  budget_amount: string | null;
+  budget_amount: number | null;
   budget_currency: string;
   interests: string[];
   metadata: Record<string, unknown>;
@@ -120,27 +123,94 @@ export interface ChatResponse {
 
 // ─── Trip / Plan ───────────────────────────────────
 
+/**
+ * A single itinerary block, as generated (plan_generation.py `_candidate_block`
+ * / `_transport_block`) or as rewritten by a helper-canvas edit (blockMerge.ts
+ * `toRawActivity` — the only other place this shape is constructed, and it
+ * deliberately mirrors this one).
+ */
 export interface TripActivity {
   id: string;
   title: string;
+  /** Block kind: attraction | activity | food | hotel | flight | train | bus | cab */
   category: string;
   location_name: string;
   latitude: number | null;
   longitude: number | null;
   start_time: string | null;
   end_time: string | null;
-  duration_minutes: number;
-  distance_km: number | null;
-  travel_time_minutes: number | null;
-  transport_mode: string;
-  estimated_cost: number;
+  estimated_cost: number | null;
   currency_code: string;
   status: ActivityStatus;
-  order: number;
-  notes: string;
-  weather_info: Record<string, unknown>;
+  /** Soft-delete flag, independent of `status` */
+  is_active?: boolean;
+  notes: string | null;
+  rating: number | null;
+  image_url: string | null;
+  ai_tip: string | null;
   metadata: Record<string, unknown>;
-  /** Block schema v2 — structured cost with provenance (trust grammar) */
+  /** Block schema v2 — structured cost with provenance (trust grammar).
+   *  Always present on reads: PlannerTripSerializer.to_representation upcasts
+   *  every activity (apps.planner.services.block_schema.upcast_activity). */
+  cost: {
+    amount: number | null;
+    currency: string;
+    provenance: {
+      tier: 'verified' | 'estimated' | 'suggested';
+      source?: string;
+      basis?: string;
+      verified_at?: string;
+    };
+  };
+  /** Block schema v2 — commitment ladder. Always present on reads (see `cost`). */
+  block_status: 'idea' | 'planned' | 'priced' | 'booked';
+  /** Alternate candidates from the same composition pass — real cached
+   *  places only, absent when none were generated for this slot. */
+  _aiInsights?: {
+    candidates: {
+      id: string;
+      title: string;
+      subtitle: string;
+      rating: number | null;
+      aiTip: string | null;
+      place_id: string | null;
+    }[];
+  } | null;
+}
+
+export interface TripDay {
+  id: string;
+  day_number: number;
+  date: string | null;
+  title: string;
+  day_type: DayType;
+  /** City name this day belongs to */
+  city: string;
+  activities: TripActivity[];
+  /** Precomputed leg distances between consecutive geo-tagged blocks,
+   *  keyed `${fromBlockId}:${toBlockId}` */
+  transit_hints?: Record<string, { distance_km: number; duration_mins: number; source?: string }>;
+  /** Real month climate normals stamped at generation — never a live forecast */
+  weather_normal?: { month: number; avg_temp_c: number | null; precipitation_mm: number | null };
+}
+
+/**
+ * Legacy transit-leg shape stored on TripCity.transitToNext — pre-dates
+ * block schema v2's activity shape and was never migrated onto it (`type`
+ * instead of `category`, `details` instead of `notes`, no `location_name`/
+ * `ai_tip`/`rating`/`image_url`). apps.planner.services.block_schema /
+ * commitments / insight_engine read it generically via dict .get(), so the
+ * mismatch is backend-tolerated but real — see planTransform.ts's inline
+ * mapping (the one place this shape is read) and serializePlanUpdate (the
+ * one place it's written).
+ */
+export interface TripCityTransit {
+  id: string;
+  type: string;
+  title: string;
+  subtitle?: string;
+  details?: string;
+  price?: string;
   cost?: {
     amount: number | null;
     currency: string;
@@ -151,29 +221,26 @@ export interface TripActivity {
       verified_at?: string;
     };
   };
-  /** Block schema v2 — commitment ladder */
   block_status?: 'idea' | 'planned' | 'priced' | 'booked';
-}
-
-export interface TripDay {
-  id: string;
-  day_number: number;
-  date: string | null;
-  title: string;
-  day_type: DayType;
-  activities: TripActivity[];
+  status?: ActivityStatus;
+  is_active?: boolean;
+  image?: string;
+  metadata?: { origin_code?: string; destination_code?: string; [key: string]: unknown };
 }
 
 export interface TripCity {
-  id: string;
+  /** Not stamped by plan generation — only present once the frontend
+   *  round-trips a saved edit through serializePlanUpdate */
+  id?: string;
   name: string;
   country: string;
-  latitude: number;
-  longitude: number;
   order: number;
   nights: number;
   arrival_date: string | null;
   departure_date: string | null;
+  /** Transport leg into the NEXT city. Legacy/frontend-authored field, not
+   *  written by plan_generation.py — absent on the trip's last city. */
+  transitToNext?: TripCityTransit | null;
 }
 
 export interface PlannerTrip {

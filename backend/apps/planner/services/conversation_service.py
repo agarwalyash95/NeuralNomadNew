@@ -336,7 +336,8 @@ class ConversationService:
             cities: List[CityVisit] = Field(description="List of all cities visited in chronological order with nights spent in each")
             days: List[Day]
 
-        client = genai.Client()
+        from apps.common.ai import get_genai_client
+        client = get_genai_client()
         
         intent_instructions = ""
         if draft.intent == "hotel_only":
@@ -1167,7 +1168,8 @@ Instructions:
             local_tip: str = Field(description="A localized secret tip or recommendation (e.g. best time/spot)")
             logistics: str = Field(description="Logistical details like access mode, opening hours, or check-in rules")
             
-        client = genai.Client()
+        from apps.common.ai import get_genai_client
+        client = get_genai_client()
         prompt = f"""Search and provide details for '{name}' located in '{city_name}'.
         Be highly precise on estimated geographical coordinates (latitude and longitude) based on the location.
         """
@@ -1208,7 +1210,8 @@ Instructions:
             latitude: float
             longitude: float
             
-        client = genai.Client()
+        from apps.common.ai import get_genai_client
+        client = get_genai_client()
         prompt = f"Provide exact latitude and longitude for city: '{city_name}'"
         try:
             response = client.models.generate_content(

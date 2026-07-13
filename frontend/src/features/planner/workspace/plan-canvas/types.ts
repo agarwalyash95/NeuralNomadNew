@@ -19,7 +19,7 @@ export type BlockStatus = 'idea' | 'planned' | 'priced' | 'booked';
 
 export interface ItineraryItem {
   id: string;
-  type: 'flight' | 'taxi' | 'hotel' | 'food' | 'activity' | 'attraction' | 'train' | 'bus';
+  type: 'flight' | 'taxi' | 'cab' | 'hotel' | 'food' | 'activity' | 'attraction' | 'train' | 'bus';
   startTime?: string;
   endTime?: string;
   title: string;
@@ -34,7 +34,6 @@ export interface ItineraryItem {
   image?: string;
   rating?: number;
   geoTag?: string;
-  distanceToNext?: string;
   latitude?: number;
   longitude?: number;
   /** Google Places id — identity link to reference data (rich hover, re-verify) */
