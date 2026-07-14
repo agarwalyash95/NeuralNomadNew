@@ -22,6 +22,9 @@ interface TransportNodeProps {
   moveDayOptions?: DayOption[];
   currentDayId?: string;
   onMoveToDay?: (dayId: string) => void;
+  distanceKm?: number;
+  fallbackOriginCity?: string;
+  fallbackDestCity?: string;
 }
 
 /**
@@ -31,7 +34,9 @@ interface TransportNodeProps {
  */
 function TransportNode({
   item, isLast, onClick, onRemove, onHover, onVerifyLivePrice,
-  onWatchPrice, onTimeChange, moveDayOptions, currentDayId, onMoveToDay
+  onWatchPrice, onTimeChange, moveDayOptions, currentDayId, onMoveToDay,
+  computedOrigin, computedDestination, distanceKm,
+  fallbackOriginCity, fallbackDestCity
 }: TransportNodeProps) {
   const {
     attributes,
@@ -100,11 +105,37 @@ function TransportNode({
   const hasRealCodes =
     (item.type === 'flight' || item.type === 'train') &&
     Boolean(item.originCode && item.destinationCode);
-  const titleParts = (item.subtitle || item.title || '').split(' to ');
-  const originCity = titleParts[0]?.trim() || 'Origin';
-  const destCity = titleParts[1]?.trim() || 'Destination';
-  const origin = hasRealCodes ? item.originCode! : originCity;
-  const dest = hasRealCodes ? item.destinationCode! : destCity;
+
+  const isCab = item.type === 'cab' || item.type === 'taxi';
+  
+  // Use resolved hub names from metadata if available (backend backfill)
+  const transportMeta = item._rawActivity?.metadata?.transport || {};
+  const metaSource = transportMeta.resolved_source;
+  const metaDest = transportMeta.resolved_destination;
+
+  // Fallback title parsing
+  const rawTitle = (item.subtitle || item.title || '').replace('â†’', 'to').replace('→', 'to');
+  const titleParts = rawTitle.includes(' to ') 
+    ? rawTitle.split(' to ') 
+    : [rawTitle];
+
+  // If title was "Flight: Kolkata to Delhi", titleParts[0] is "Flight: Kolkata"
+  let parsedOrigin = titleParts.length > 1 ? titleParts[0]?.replace(/^.*:\s*/, '').trim() : undefined;
+  let parsedDest = titleParts.length > 1 ? titleParts[1]?.trim() : undefined;
+
+  const originCity = metaSource || parsedOrigin || (isCab && computedOrigin ? computedOrigin : (fallbackOriginCity || 'Origin'));
+  const destCity = metaDest || parsedDest || (isCab && computedDestination ? computedDestination : (fallbackDestCity || 'Destination'));
+  
+  const extractCode = (name: string) => {
+    const match = name.match(/\(([^)]+)\)$/);
+    return match ? match[1] : name;
+  };
+  
+  const origin = hasRealCodes ? item.originCode! : extractCode(originCity);
+  const dest = hasRealCodes ? item.destinationCode! : extractCode(destCity);
+  
+  // Clean up title display to remove encoding glitches
+  const displayTitle = (item.title || '').replace('â†’', 'to').replace('→', 'to');
 
   return (
     <div ref={setNodeRef} style={style} className="relative">
@@ -188,7 +219,7 @@ function TransportNode({
                       {config.label}
                     </p>
                     <h4 className="text-[13px] font-semibold text-ink-900 tracking-tight leading-snug mt-0.5">
-                      {item.title}
+                      {displayTitle}
                     </h4>
                   </div>
                 </div>
@@ -216,7 +247,7 @@ function TransportNode({
                 {/* Animated route connector — the visual journey */}
                 <div className="flex flex-1 flex-col items-center px-3 gap-1">
                   <p className="text-[9px] font-semibold uppercase tracking-wider text-ink-400">
-                    {legDuration ? `Direct · ${legDuration}` : 'Direct'}
+                    {distanceKm ? `${distanceKm.toFixed(1)} km · ` : ''}{legDuration ? `${legDuration}` : 'Direct'}
                   </p>
                   <div
                     className="relative w-full flex items-center justify-center"

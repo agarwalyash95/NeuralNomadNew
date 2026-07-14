@@ -293,7 +293,7 @@ export default function AttractionsCanvas({ onClose, tripContext, onAddToPlan }:
   };
 
   const escalated = useTierEscalation(loading);
-  const { activeIndex, elapsedMs } = useLiveSearchPhases(loading && escalated, EXPLORE_PHASES.length);
+  const { elapsedMs } = useLiveSearchPhases(loading && escalated);
 
   const activeFilterCount = activeAIAction ? 1 : 0;
 
@@ -424,7 +424,7 @@ export default function AttractionsCanvas({ onClose, tripContext, onAddToPlan }:
               </div>
             ) : loading && escalated ? (
               <div className="flex-1 overflow-y-auto p-4">
-                <LiveSearchProgress phases={EXPLORE_PHASES} activeIndex={activeIndex} elapsedMs={elapsedMs} />
+                <LiveSearchProgress phases={EXPLORE_PHASES} elapsedMs={elapsedMs} />
               </div>
             ) : (activeTab === 'attractions' ? attractionsError : activitiesError) ? (
               <CanvasErrorCard

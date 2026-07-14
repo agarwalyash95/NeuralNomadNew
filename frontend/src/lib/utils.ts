@@ -41,6 +41,21 @@ export function formatDate(date: string | Date): string {
   });
 }
 
+/**
+ * Adds `days` to an ISO 'YYYY-MM-DD' date string, returning another ISO
+ * date string. Returns null for anything that isn't a real ISO date (e.g.
+ * the 'Day N' fallback label used when a trip has no dates yet) — callers
+ * should fall back to whatever original value they had rather than show a
+ * fabricated date.
+ */
+export function addDaysToISO(isoDate: string | undefined, days: number): string | null {
+  if (!isoDate || !/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return null;
+  const d = new Date(`${isoDate}T00:00:00`);
+  if (isNaN(d.getTime())) return null;
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 export function formatCurrency(amount: number, currency: string = 'INR'): string {
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',

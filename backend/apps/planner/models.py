@@ -450,6 +450,11 @@ class PlanProposal(BaseModel):
     title = models.CharField(max_length=200)
     rationale = models.TextField(blank=True)
     diff = models.JSONField(default=dict, blank=True)
+    # T5.2: diff_explanation (what_changed/why/what_improved/what_got_worse/
+    # confidence/can_undo) and any other non-diff explanation data live here,
+    # separate from `diff` which is the literal before/after/deltas payload
+    # accept_proposal applies.
+    metadata = models.JSONField(default=dict, blank=True)
     status = models.CharField(max_length=20, default=STATUS_OPEN, choices=STATUS_CHOICES, db_index=True)
     # Rejections carry the reason so the agent never re-proposes rejected ideas
     rejection_reason = models.CharField(max_length=300, blank=True)

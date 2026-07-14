@@ -113,7 +113,7 @@ export default function CabCanvas({ onClose, tripContext, onAddToPlan }: CabCanv
   const [routeInfo, setRouteInfo] = useState<{ km: number; mins: number } | null>(null);
 
   const escalated = useTierEscalation(loading);
-  const { activeIndex, elapsedMs } = useLiveSearchPhases(loading && escalated, CAB_SEARCH_PHASES.length);
+  const { elapsedMs } = useLiveSearchPhases(loading && escalated);
 
   useEffect(() => { setParams(buildInitialParams(tripContext)); }, [tripContext.tripId]);
 
@@ -260,7 +260,7 @@ export default function CabCanvas({ onClose, tripContext, onAddToPlan }: CabCanv
               ))}
             </div>
           ) : loading && escalated ? (
-            <LiveSearchProgress phases={CAB_SEARCH_PHASES} activeIndex={activeIndex} elapsedMs={elapsedMs} />
+            <LiveSearchProgress phases={CAB_SEARCH_PHASES} elapsedMs={elapsedMs} />
           ) : fetchError ? (
             <CanvasErrorCard variant={fetchError} onRetry={() => fetchCabs(params)} />
           ) : filteredResults.length > 0 ? (

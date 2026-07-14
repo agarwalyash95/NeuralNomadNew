@@ -28,10 +28,8 @@ K5 data (crowd telemetry, golden-hour computation, TravelerProfile
 injection, Event/HolidayCalendar wiring) and are added there.
 """
 
-import re
-from datetime import date as date_cls
-
 from apps.planner.services.distance_service import haversine_distance_km
+from apps.planner.services.opening_hours import is_open_at
 
 
 def _to_minutes(time_str):
@@ -280,39 +278,6 @@ _MASTER_MODEL_NAMES = {
 }
 
 
-def _parse_hours_line(line):
-    """
-    'Monday: 9:00 AM – 6:00 PM' -> (540, 1080). None if closed/unparseable
-    — an hours line the parser doesn't understand is a gap, not a guess.
-    """
-    if not line:
-        return None
-    text = re.sub(r"^[A-Za-z]+:\s*", "", str(line)).strip()
-    if not text or "closed" in text.lower():
-        return None
-    parts = re.split(r"[–—-]", text)
-    if len(parts) != 2:
-        return None
-
-    def _clock(token):
-        m = re.match(r"(\d{1,2}):(\d{2})\s*([AaPp][Mm])?", token.strip())
-        if not m:
-            return None
-        hour, minute, ampm = int(m.group(1)), int(m.group(2)), m.group(3)
-        if ampm:
-            ampm = ampm.upper()
-            if ampm == "PM" and hour != 12:
-                hour += 12
-            if ampm == "AM" and hour == 12:
-                hour = 0
-        return hour * 60 + minute
-
-    open_mins, close_mins = _clock(parts[0]), _clock(parts[1])
-    if open_mins is None or close_mins is None:
-        return None
-    return open_mins, close_mins
-
-
 class OpeningHoursConflictWarning(InsightRule):
     key = "opening_hours_conflict"
 
@@ -349,23 +314,9 @@ class OpeningHoursConflictWarning(InsightRule):
             opening_hours = instance.opening_hours or []
 
             for day, block in entries:
-                start_mins = _to_minutes(block.get("start_time"))
-                if start_mins is None:
-                    continue
-                try:
-                    weekday = date_cls.fromisoformat(day.get("date")).weekday()
-                except (ValueError, TypeError):
-                    continue
-                if weekday >= len(opening_hours):
-                    continue
-                parsed = _parse_hours_line(opening_hours[weekday])
-                if parsed is None:
-                    continue
-                open_mins, close_mins = parsed
-                if open_mins > close_mins:
-                    continue  # overnight hours — outside the common case, skip rather than guess
-                if open_mins <= start_mins <= close_mins:
-                    continue
+                open_status = is_open_at(opening_hours, day.get("date"), block.get("start_time"))
+                if open_status is not False:
+                    continue  # True (open) or None (unknown) — only flag demonstrable conflicts
                 insights.append({
                     "rule": self.key,
                     "day_number": day.get("day_number"),
@@ -381,6 +332,141 @@ class OpeningHoursConflictWarning(InsightRule):
         return insights
 
 
+class OverloadedDayWarning(InsightRule):
+    """
+    T7.1 — flags any day with 5+ sightseeing/activity blocks. Computed live
+    against the current trip state (same pattern as every rule here), so it
+    naturally re-evaluates after any edit — no separate event/persistence
+    mechanism needed.
+    """
+    key = "overloaded_day"
+    THRESHOLD = 5
+
+    def evaluate(self, trip):
+        insights = []
+        for day in trip.days or []:
+            movable = [
+                a for a in (day.get("activities") or [])
+                if _is_active(a) and (a.get("category") or "").lower() in {"attraction", "activity"}
+            ]
+            if len(movable) < self.THRESHOLD:
+                continue
+            insights.append({
+                "rule": self.key,
+                "day_number": day.get("day_number"),
+                "severity": "warning",
+                "message": (
+                    f"Day {day.get('day_number')} has {len(movable)} sightseeing stops — "
+                    "that's a full day. Consider moving one to a lighter day."
+                ),
+                "related_block_ids": [a.get("id") for a in movable],
+                "action": None,
+            })
+        return insights
+
+
+class LocalHolidayInsight(InsightRule):
+    """
+    T8.1 — surprise & delight: real public holidays (HolidayCalendar) that
+    fall within the trip's date range for a city the trip actually visits.
+    Honest provenance — only fires on real DB rows, never invented.
+    """
+    key = "local_holiday"
+
+    def evaluate(self, trip):
+        insights = []
+        dated_days = [d for d in (trip.days or []) if d.get("date") and d.get("city")]
+        if not dated_days:
+            return insights
+
+        try:
+            from datetime import date as date_cls
+            from apps.reference.models import City, HolidayCalendar
+        except Exception:
+            return insights
+
+        city_names = {d["city"].strip().lower() for d in dated_days}
+        try:
+            start_d = date_cls.fromisoformat(min(d["date"] for d in dated_days))
+            end_d = date_cls.fromisoformat(max(d["date"] for d in dated_days))
+        except (ValueError, TypeError):
+            return insights
+
+        seen_countries = set()
+        for city_name in city_names:
+            for city_obj in City.objects.filter(name__iexact=city_name).select_related("country"):
+                if city_obj.country_id in seen_countries:
+                    continue
+                seen_countries.add(city_obj.country_id)
+                for hol in HolidayCalendar.objects.filter(
+                    country=city_obj.country, date__gte=start_d, date__lte=end_d
+                ):
+                    insights.append({
+                        "rule": self.key,
+                        "day_number": None,
+                        "severity": "info",
+                        "message": (
+                            f"Public holiday in {city_obj.country.name} on "
+                            f"{hol.date.strftime('%b %d')}: {hol.name}. Some places may be closed — check hours ahead."
+                        ),
+                        "related_block_ids": [],
+                        "action": None,
+                    })
+        return insights
+
+
+class NaturalPhenomenonInsight(InsightRule):
+    """
+    T8.1 — surprise & delight: seasonal natural phenomena (TravelSeason.natural_phenomena,
+    e.g. cherry blossom windows) that overlap the trip's months for a visited city.
+    Always carries the DB's own variability window — never a single confident date.
+    """
+    key = "natural_phenomenon"
+
+    def evaluate(self, trip):
+        insights = []
+        dated_days = [d for d in (trip.days or []) if d.get("date") and d.get("city")]
+        if not dated_days:
+            return insights
+
+        try:
+            from datetime import date as date_cls
+            from apps.reference.models import City, TravelSeason
+        except Exception:
+            return insights
+
+        city_names = {d["city"].strip().lower() for d in dated_days}
+        months = set()
+        for d in dated_days:
+            try:
+                months.add(date_cls.fromisoformat(d["date"]).month)
+            except (ValueError, TypeError):
+                continue
+        if not months:
+            return insights
+
+        for city_name in city_names:
+            for city_obj in City.objects.filter(name__iexact=city_name):
+                for season in TravelSeason.objects.filter(city=city_obj, month__in=list(months)):
+                    for phenom in (season.natural_phenomena or []):
+                        name = phenom.get("name", "")
+                        if not name:
+                            continue
+                        window = phenom.get("typical_window", [])
+                        msg = f"Natural phenomenon in {city_obj.name}: {name} is typically active during your travel window."
+                        if window:
+                            msg += f" Expected: {window[0]} – {window[-1]}."
+                        insights.append({
+                            "rule": self.key,
+                            "day_number": None,
+                            "severity": "info",
+                            "message": msg,
+                            "related_block_ids": [],
+                            "action": None,
+                        })
+        return insights
+
+
 RULES = [
     DailyWalkLoadWarning(),
     HeatExposureWarning(),
@@ -388,6 +474,9 @@ RULES = [
     CheckInMismatchWarning(),
     LateArrivalWarning(),
     OpeningHoursConflictWarning(),
+    OverloadedDayWarning(),
+    LocalHolidayInsight(),
+    NaturalPhenomenonInsight(),
 ]
 
 

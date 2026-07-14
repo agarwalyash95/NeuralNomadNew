@@ -17,6 +17,7 @@ import HotelCardSkeleton from './hotel/HotelCardSkeleton';
 import { DEFAULT_HOTEL_FILTERS, isFiltersDefault, type HotelFilters } from './hotel/HotelFilterSheet';
 import { computeItineraryImpact, type ItineraryImpact } from './hotel/itineraryImpact';
 import { computeTripFit } from './hotel/tripFit';
+import { addDaysToISO } from '@/lib/utils';
 
 interface HotelCanvasProps {
   onClose?: () => void;
@@ -89,16 +90,32 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
 
   useEffect(() => { fetchHotels(searchQuery); }, [searchQuery]);
 
+  // Stay length defaults to how many nights the itinerary already spends in
+  // this city (auto), but the traveler can override it — e.g. arriving a day
+  // early or extending a stay beyond the rest of the plan. Resets back to
+  // auto whenever the active city context changes underneath the canvas.
+  const [nightsOverride, setNightsOverride] = useState<number | null>(null);
+  useEffect(() => {
+    setNightsOverride(null);
+  }, [tripContext.activeNodeCityId, tripContext.activeNodeCityName]);
+
   const stayContext = useMemo(() => {
     const range = tripContext.activeNodeCityDateRange;
-    const [checkIn, checkOut] = range ? range.split(' to ') : [tripContext.activeNodeDateStr || tripContext.startDate, undefined];
+    const [checkIn, autoCheckOut] = range ? range.split(' to ') : [tripContext.activeNodeDateStr || tripContext.startDate, undefined];
+    const autoNights = tripContext.activeNodeCityNights;
+    const nights = nightsOverride ?? autoNights;
+    const checkOut = nightsOverride != null
+      ? addDaysToISO(checkIn, nightsOverride) ?? autoCheckOut ?? checkIn
+      : (autoCheckOut || checkIn);
     return {
       checkIn: checkIn || undefined,
-      checkOut: checkOut || checkIn || undefined,
-      nights: tripContext.activeNodeCityNights,
+      checkOut: checkOut || undefined,
+      nights,
+      autoNights,
+      isOverridden: nightsOverride != null && nightsOverride !== autoNights,
       guests: tripContext.travellers || 1,
     };
-  }, [tripContext.activeNodeCityDateRange, tripContext.activeNodeDateStr, tripContext.startDate, tripContext.activeNodeCityNights, tripContext.travellers]);
+  }, [tripContext.activeNodeCityDateRange, tripContext.activeNodeDateStr, tripContext.startDate, tripContext.activeNodeCityNights, tripContext.travellers, nightsOverride]);
 
   const plannedTitles = useMemo(
     () => new Set((tripContext.activeDayItemTitles || []).map(t => t.trim().toLowerCase())),
@@ -375,21 +392,72 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
               </SortFilterPopover>
             </div>
 
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-line bg-cat-stay/5 px-4 py-2 text-caption font-semibold shrink-0">
-              {stayContext.checkIn && (
-                <span className="flex items-center gap-1.5 text-ink-700">
-                  <Calendar size={12} className="text-cat-stay" />
-                  {stayContext.checkIn}{stayContext.checkOut && stayContext.checkOut !== stayContext.checkIn ? ` → ${stayContext.checkOut}` : ''}
-                  {stayContext.nights ? ` · ${stayContext.nights} night${stayContext.nights === 1 ? '' : 's'}` : ''}
-                </span>
-              )}
-              <span className="flex items-center gap-1.5 text-ink-700">
-                <Users size={12} className="text-cat-stay" />
-                {stayContext.guests} guest{stayContext.guests === 1 ? '' : 's'}
-              </span>
-              <span className="ml-auto flex items-center gap-1 text-ink-400" title="HotelMaster listings don't carry a live nightly rate yet.">
-                <Info size={11} /> No live rate yet
-              </span>
+            {/* Your Stay — a distinct section so check-in/check-out reads as
+                a decision, not a caption. Nights defaults to how long the
+                itinerary already spends in this city; the stepper lets the
+                traveler book fewer/more nights than the plan currently has. */}
+            <div className="border-b border-line bg-cat-stay/5 px-4 py-2.5 shrink-0">
+              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5">
+                <div className="flex items-center gap-3">
+                  {stayContext.checkIn && (
+                    <div className="flex items-center gap-1.5 text-caption font-semibold text-ink-700">
+                      <Calendar size={12} className="text-cat-stay shrink-0" />
+                      <span>
+                        <span className="text-ink-400">Check-in</span> {stayContext.checkIn}
+                      </span>
+                      {stayContext.checkOut && stayContext.checkOut !== stayContext.checkIn && (
+                        <>
+                          <span className="text-ink-300">→</span>
+                          <span>
+                            <span className="text-ink-400">Check-out</span> {stayContext.checkOut}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  <span className="flex items-center gap-1.5 text-caption font-semibold text-ink-700">
+                    <Users size={12} className="text-cat-stay shrink-0" />
+                    {stayContext.guests} guest{stayContext.guests === 1 ? '' : 's'}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {stayContext.isOverridden && (
+                    <button
+                      type="button"
+                      onClick={() => setNightsOverride(null)}
+                      className="text-[10px] font-semibold text-cat-stay hover:underline cursor-pointer"
+                    >
+                      Reset to {stayContext.autoNights} night{stayContext.autoNights === 1 ? '' : 's'}
+                    </button>
+                  )}
+                  <div className="flex items-center rounded-full border border-line bg-paper-1 shadow-xs">
+                    <button
+                      type="button"
+                      aria-label="One fewer night"
+                      disabled={(stayContext.nights ?? 1) <= 1}
+                      onClick={() => setNightsOverride(Math.max(1, (stayContext.nights ?? stayContext.autoNights ?? 1) - 1))}
+                      className="flex h-7 w-7 items-center justify-center rounded-full text-ink-500 hover:bg-paper-2 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                      −
+                    </button>
+                    <span className="min-w-[64px] text-center text-caption font-bold tabular-nums text-ink-900">
+                      {stayContext.nights ?? '—'} night{stayContext.nights === 1 ? '' : 's'}
+                    </span>
+                    <button
+                      type="button"
+                      aria-label="One more night"
+                      onClick={() => setNightsOverride(Math.min(30, (stayContext.nights ?? stayContext.autoNights ?? 1) + 1))}
+                      className="flex h-7 w-7 items-center justify-center rounded-full text-ink-500 hover:bg-paper-2 cursor-pointer"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-1.5 flex items-center gap-1 text-[10px] text-ink-400" title="HotelMaster listings don't carry a live nightly rate yet.">
+                <Info size={10} /> No live rate yet
+              </div>
             </div>
 
             {loading ? (
@@ -454,6 +522,9 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
                 onCompareToggle={() => togglePin(selectedHotelMerged.id)}
                 onBack={() => { setCanvasMode('compare'); setSelectedId(null); }}
                 tripContext={tripContext}
+                stayContext={stayContext}
+                onNightsChange={setNightsOverride}
+                onResetNights={() => setNightsOverride(null)}
               />
             )}
           </motion.div>

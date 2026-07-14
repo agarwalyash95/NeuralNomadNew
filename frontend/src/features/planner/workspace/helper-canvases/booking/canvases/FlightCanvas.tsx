@@ -114,7 +114,7 @@ export default function FlightCanvas({ onClose, tripContext, onAddToPlan }: Flig
   const escalated = useTierEscalation(loading);
   const escalatedRef = useRef(false);
   useEffect(() => { escalatedRef.current = escalated; }, [escalated]);
-  const { activeIndex, elapsedMs } = useLiveSearchPhases(loading && escalated, FLIGHT_SEARCH_PHASES.length);
+  const { elapsedMs } = useLiveSearchPhases(loading && escalated);
 
   // Re-prefill if trip context changes
   useEffect(() => {
@@ -312,7 +312,7 @@ export default function FlightCanvas({ onClose, tripContext, onAddToPlan }: Flig
               ))}
             </div>
           ) : loading && escalated ? (
-            <LiveSearchProgress phases={FLIGHT_SEARCH_PHASES} activeIndex={activeIndex} elapsedMs={elapsedMs} />
+            <LiveSearchProgress phases={FLIGHT_SEARCH_PHASES} elapsedMs={elapsedMs} />
           ) : fetchError ? (
             <CanvasErrorCard variant={fetchError} onRetry={() => fetchFlights(params)} />
           ) : filteredResults.length > 0 ? (

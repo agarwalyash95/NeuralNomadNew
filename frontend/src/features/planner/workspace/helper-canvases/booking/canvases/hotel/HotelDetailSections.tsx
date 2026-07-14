@@ -1,5 +1,5 @@
 import React, { useRef, useMemo } from 'react';
-import { BedDouble, ArrowLeft, Wallet, Building2, MapPinned } from 'lucide-react';
+import { BedDouble, ArrowLeft, Wallet, Building2, MapPinned, Calendar } from 'lucide-react';
 import type { Suggestion } from '@/features/planner/workspace/plan-canvas/types';
 import type { TripFitResult } from './tripFit';
 import HotelReviewSummary from './HotelReviewSummary';
@@ -13,6 +13,15 @@ import CommentSection from '@/features/planner/workspace/helper-canvases/shared/
 import DetailCTAFooter from '@/features/planner/workspace/helper-canvases/shared/detail-panel/DetailCTAFooter';
 import { TripContext } from '@/features/planner/workspace/types';
 
+export interface HotelStayContext {
+  checkIn?: string;
+  checkOut?: string;
+  nights?: number;
+  autoNights?: number;
+  isOverridden: boolean;
+  guests: number;
+}
+
 interface HotelDetailSectionsProps {
   hotel: Suggestion;
   expandedDetails: Suggestion | null;
@@ -24,6 +33,10 @@ interface HotelDetailSectionsProps {
   onCompareToggle: () => void;
   onBack?: () => void;
   tripContext: TripContext;
+  /** Check-in/check-out + editable nights — the traveler's stay decision for this hotel. */
+  stayContext: HotelStayContext;
+  onNightsChange: (nights: number) => void;
+  onResetNights: () => void;
 }
 
 /**
@@ -37,6 +50,7 @@ interface HotelDetailSectionsProps {
  */
 export default function HotelDetailSections({
   hotel, expandedDetails, detailsLoading, fit, onSelect, onBack, tripContext, isCompared: _isCompared, onCompareToggle: _onCompareToggle,
+  stayContext, onNightsChange, onResetNights,
 }: HotelDetailSectionsProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -111,6 +125,63 @@ export default function HotelDetailSections({
               accentTextClassName: 'text-cat-stay',
             }}
           />
+
+          {/* Your Stay — a distinct, editable section: defaults to how many
+              nights the itinerary already spends in this city, but the
+              traveler can book fewer/more nights than the plan currently has. */}
+          <div className="mt-3 rounded-xl border border-line/70 bg-paper-1 p-3">
+            <p className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-ink-400">
+              <Calendar size={11} className="text-cat-stay" /> Your Stay
+            </p>
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-[12px] font-semibold text-ink-700">
+                {stayContext.checkIn ? (
+                  <>
+                    <span className="text-ink-400">Check-in</span> {stayContext.checkIn}
+                    {stayContext.checkOut && stayContext.checkOut !== stayContext.checkIn && (
+                      <>
+                        <span className="mx-1 text-ink-300">→</span>
+                        <span className="text-ink-400">Check-out</span> {stayContext.checkOut}
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-ink-400">Dates not set yet</span>
+                )}
+              </div>
+              <div className="flex shrink-0 items-center rounded-full border border-line bg-paper-2 shadow-xs">
+                <button
+                  type="button"
+                  aria-label="One fewer night"
+                  disabled={(stayContext.nights ?? 1) <= 1}
+                  onClick={() => onNightsChange(Math.max(1, (stayContext.nights ?? stayContext.autoNights ?? 1) - 1))}
+                  className="flex h-6 w-6 items-center justify-center rounded-full text-ink-500 hover:bg-paper-1 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  −
+                </button>
+                <span className="min-w-[58px] text-center text-[11px] font-bold tabular-nums text-ink-900">
+                  {stayContext.nights ?? '—'} night{stayContext.nights === 1 ? '' : 's'}
+                </span>
+                <button
+                  type="button"
+                  aria-label="One more night"
+                  onClick={() => onNightsChange(Math.min(30, (stayContext.nights ?? stayContext.autoNights ?? 1) + 1))}
+                  className="flex h-6 w-6 items-center justify-center rounded-full text-ink-500 hover:bg-paper-1 cursor-pointer"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+            {stayContext.isOverridden && (
+              <button
+                type="button"
+                onClick={onResetNights}
+                className="mt-1.5 text-[10px] font-semibold text-cat-stay hover:underline cursor-pointer"
+              >
+                Reset to {stayContext.autoNights} night{stayContext.autoNights === 1 ? '' : 's'} (matches your itinerary)
+              </button>
+            )}
+          </div>
 
           {positiveChecks.length > 0 && (
             <div className="mt-3">

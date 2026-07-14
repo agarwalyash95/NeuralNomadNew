@@ -39,11 +39,24 @@ def _trigger_enrichment_for_trip_blocks(trip):
     def _maybe_trigger(activity):
         if not activity:
             return
+            
+        if not activity.get("ai_tip"):
+            from apps.planner.services.tip_sync import mark_pending_tip
+            from apps.planner.tasks import generate_block_tip_task
+            from django.db import transaction as db_transaction
+            
+            mark_pending_tip(trip, activity.get("id"))
+            title = activity.get("title") or activity.get("location_name") or "this place"
+            
+            db_transaction.on_commit(lambda aid=activity.get("id"), t=title: 
+                generate_block_tip_task.delay(str(trip.workspace.id), str(aid), t))
+
         master_ref = (activity.get("metadata") or {}).get("master_ref")
         if not master_ref:
             return
         category = master_ref.get("table")
         object_id = master_ref.get("id")
+        
         model = models_by_category.get(category)
         if model is None or object_id is None or (category, object_id) in seen:
             return
@@ -73,6 +86,22 @@ def _maybe_propose_day_retitle(workspace, old_days):
         propose_day_retitle(workspace, old_days, workspace.trip.days)
     except Exception as exc:
         print(f"propose_day_retitle failed (non-fatal): {exc}")
+
+
+def _maybe_propagate_plan_changes(workspace, old_days):
+    """
+    T7.1: after a plan PATCH saves, diff old_days against the new trip.days
+    and run any detected time-shift through the app-layer planning graph's
+    propagate() so downstream overlap bumps get filed as a proposal.
+    Best-effort — a failure here must never break the actual save that
+    already succeeded.
+    """
+    try:
+        from apps.planner.services.planning_graph import detect_and_propagate_changes
+
+        detect_and_propagate_changes(workspace, old_days)
+    except Exception as exc:
+        print(f"detect_and_propagate_changes failed (non-fatal): {exc}")
 
 
 def get_planner_user(request):
@@ -174,9 +203,18 @@ class PlannerWorkspaceViewSet(viewsets.ModelViewSet):
 
             job, created = start_generation_job(workspace)
             if created:
-                # ATOMIC_REQUESTS wraps this view — the thread must not start
-                # before the job row is committed and visible to it.
-                db_transaction.on_commit(lambda: spawn_generation_thread(job.id))
+                # T3.3: prefer Celery (survives worker restarts, observable
+                # via Flower); fall back to the bare thread if Celery/the
+                # broker isn't available (e.g. dev without a worker running).
+                # ATOMIC_REQUESTS wraps this view — dispatch only after the
+                # job row is committed and visible to the task/thread.
+                def _dispatch():
+                    try:
+                        from apps.planner.tasks import run_generation_job_task
+                        run_generation_job_task.delay(job.id)
+                    except Exception:
+                        spawn_generation_thread(job.id)
+                db_transaction.on_commit(_dispatch)
             return Response(serialize_job(job), status=status.HTTP_202_ACCEPTED)
 
         if not hasattr(workspace, "trip"):
@@ -191,6 +229,7 @@ class PlannerWorkspaceViewSet(viewsets.ModelViewSet):
             workspace.save(update_fields=["is_modified", "updated_at"])
             _trigger_enrichment_for_trip_blocks(workspace.trip)
             _maybe_propose_day_retitle(workspace, old_days)
+            _maybe_propagate_plan_changes(workspace, old_days)
             return Response(serializer.data)
 
         return Response(PlannerTripSerializer(workspace.trip).data)
@@ -206,6 +245,24 @@ class PlannerWorkspaceViewSet(viewsets.ModelViewSet):
         if job is None:
             return Response({"detail": "No generation job for this workspace."}, status=status.HTTP_404_NOT_FOUND)
         return Response(serialize_job(job))
+
+    @action(detail=True, methods=["get"], url_path="plan/tips")
+    def plan_tips(self, request, pk=None):
+        """Lightweight endpoint to poll for tip readiness without pulling the whole plan."""
+        workspace = self.get_object()
+        if not hasattr(workspace, "trip"):
+            return Response({})
+            
+        from apps.planner.services.commitments import _iter_active_blocks
+        
+        tips = {}
+        for block in _iter_active_blocks(workspace.trip):
+            block_id = str(block.get("id"))
+            tips[block_id] = {
+                "ai_tip": block.get("ai_tip"),
+                "ai_tip_status": (block.get("metadata") or {}).get("ai_tip_status")
+            }
+        return Response(tips)
 
     # ── Plan lifecycle: Recent → Saved → Booked ──────────────────────────────
 
@@ -412,9 +469,15 @@ class PlannerWorkspaceViewSet(viewsets.ModelViewSet):
         if not hasattr(workspace, "trip"):
             return Response({"detail": "Plan has not been created yet."}, status=status.HTTP_404_NOT_FOUND)
 
-        from apps.planner.services.route_optimizer import propose_route_optimization
+        from apps.planner.services.route_optimizer import (
+            propose_route_optimization,
+            propose_whole_trip_optimization,
+        )
 
+        # T6.2: per-day TSP first; whole-trip load balancing as a fallback.
         proposal = propose_route_optimization(workspace)
+        if proposal is None:
+            proposal = propose_whole_trip_optimization(workspace)
         if proposal is None:
             return Response({
                 "detail": "Your routes are already efficient — reordering would not save meaningful travel time.",
@@ -498,6 +561,12 @@ class PlannerWorkspaceViewSet(viewsets.ModelViewSet):
         proposal.status = PlanProposal.STATUS_ACCEPTED
         proposal.resolved_at = timezone.now()
         proposal.save(update_fields=["status", "resolved_at", "updated_at"])
+
+        try:
+            from apps.planner.tasks import _publish_workspace_updated
+            _publish_workspace_updated(str(workspace.id))
+        except Exception:
+            pass
 
         return Response({
             "status": "accepted",
@@ -620,6 +689,63 @@ class PlannerWorkspaceViewSet(viewsets.ModelViewSet):
 
         PlanInsightDismissal.objects.get_or_create(workspace=workspace, context_hash=context_hash)
         return Response({"dismissed": True})
+
+    @action(detail=True, methods=["get"], url_path="live")
+    def live(self, request, pk=None):
+        """
+        SSE endpoint for real-time workspace updates (T3.2).
+        Uses Redis Pub/Sub when available (near-zero-latency push); falls
+        back to a 30s DB-poll heartbeat so the channel stays open through a
+        Redis outage instead of erroring out.
+        """
+        workspace = self.get_object()  # enforces auth + ownership before streaming starts
+        workspace_id = str(workspace.id)
+
+        def event_stream():
+            yield _sse("connected", {"type": "connected"})
+            try:
+                import redis
+                from django.conf import settings
+
+                r = redis.from_url(settings.CELERY_BROKER_URL)
+                pubsub = r.pubsub()
+                pubsub.subscribe(f"workspace:{workspace_id}:updated")
+
+                elapsed = 0
+                for message in pubsub.listen():
+                    if message.get("type") == "message":
+                        yield _sse("update", {"type": "workspace_updated"})
+                    # Periodic ping keeps the connection alive through proxies
+                    # that time out idle streams — get_message with a timeout
+                    # lets us interleave pings without blocking forever on listen().
+                    elapsed += 1
+                    if elapsed % 30 == 0:
+                        yield _sse("ping", {"type": "ping"})
+            except Exception:
+                # Redis unavailable — fall back to a slow DB-poll heartbeat
+                # so the stream degrades honestly instead of dying silently.
+                import time
+
+                from apps.planner.models import PlannerWorkspace as _PW
+
+                last_seen = None
+                while True:
+                    time.sleep(30)
+                    updated_at = (
+                        _PW.objects.filter(id=workspace_id).values_list("updated_at", flat=True).first()
+                    )
+                    if updated_at and updated_at != last_seen:
+                        last_seen = updated_at
+                        yield _sse("update", {"type": "workspace_updated"})
+                    else:
+                        yield _sse("ping", {"type": "ping"})
+
+        from django.http import StreamingHttpResponse
+
+        response = StreamingHttpResponse(event_stream(), content_type="text/event-stream")
+        response["Cache-Control"] = "no-cache"
+        response["X-Accel-Buffering"] = "no"
+        return response
 
 
 # ── SSE chat streaming ───────────────────────────────────────────────────
@@ -794,6 +920,81 @@ def traveler_profile(request):
         profile.save(update_fields=["facts", "updated_at"])
 
     return Response({"facts": profile.facts or []})
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def explain_recommendation(request):
+    """
+    POST /api/v1/planner/recommendations/explain/
+    Body: {"block": {"title", "category", "city", "note"}, "context": "..."}
+
+    Wires the (previously dormant) RecommendationEngine into every card's
+    "Explain" action (T2.1/T5.1). Caches by content hash so re-opening the
+    same explanation doesn't re-call Gemini.
+    """
+    import hashlib
+    from dataclasses import asdict
+
+    from django.core.cache import cache
+
+    get_planner_user(request)  # auth-enforced, result unused — matches traveler_profile's pattern
+
+    block = request.data.get("block") or {}
+    context_text = (request.data.get("context") or "").strip()
+    title = (block.get("title") or "").strip()
+    if not title:
+        return Response({"detail": "block.title is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    prompt_lines = [f"Explain why this recommendation makes sense for the traveler: {title}."]
+    if block.get("category"):
+        prompt_lines.append(f"Category: {block['category']}.")
+    if block.get("city"):
+        prompt_lines.append(f"City: {block['city']}.")
+    if block.get("note"):
+        prompt_lines.append(f"Known detail: {block['note']}.")
+    if context_text:
+        prompt_lines.append(f"Trip context: {context_text}.")
+    prompt = " ".join(prompt_lines)
+
+    cache_key = "rec_explain:" + hashlib.sha256(prompt.encode()).hexdigest()[:20]
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return Response(cached)
+
+    from apps.planner.services.recommendation_engine import RecommendationEngine
+
+    rec = RecommendationEngine().generate_recommendation(prompt)
+    if rec is None:
+        return Response({"detail": "Could not generate an explanation right now."}, status=status.HTTP_502_BAD_GATEWAY)
+
+    result = asdict(rec)
+    cache.set(cache_key, result, 1800)  # 30 min
+    return Response(result)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def trip_prep_status(request, workspace_id=None):
+    """
+    GET /api/v1/planner/workspaces/<id>/trip-prep/
+
+    Real weather + packing guidance (T2.3) and the trip health index (T1.1)
+    for the header/prep surfaces. Every field carries honest provenance.
+    """
+    workspace = PlannerWorkspace.objects.filter(
+        id=workspace_id, user=get_planner_user(request), is_deleted=False
+    ).first()
+    if workspace is None:
+        return Response({"detail": "Workspace not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    from apps.planner.services.live_status import get_trip_prep_status
+    from apps.planner.services.trip_health import evaluate_trip_health
+
+    prep = get_trip_prep_status(workspace)
+    trip = getattr(workspace, "trip", None)
+    prep["health"] = evaluate_trip_health(trip) if trip else {"score": 0, "metrics": {}}
+    return Response(prep)
 
 
 @api_view(["POST"])

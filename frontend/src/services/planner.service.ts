@@ -18,6 +18,7 @@ import type {
   TransportLegComparison,
   GenerationJobStatus,
   RecommendedTrip,
+  StructuredRecommendation,
 } from './planner.types';
 
 const BASE = '/planner/workspaces';
@@ -186,6 +187,21 @@ export const plannerService = {
 
   dismissInsight: (workspaceId: string, contextHash: string) =>
     apiClient.post<{ dismissed: boolean }>(`${BASE}/${workspaceId}/insights/${contextHash}/dismiss/`),
+
+  // ─── Explainability — "why this?" on any recommendation card ───
+
+  explainBlock: (block: { title: string; category?: string; city?: string; note?: string }, context?: string) =>
+    apiClient.post<StructuredRecommendation>('/planner/recommendations/explain/', {
+      block,
+      context: context ?? '',
+    }),
+
+  getTripPrep: (workspaceId: string) =>
+    apiClient.get<{
+      weather: { avg_temp_c: number | null; precipitation_mm: number | null; provenance: string; note: string };
+      packing: string[];
+      health: { score: number; metrics: Record<string, { status: string; penalty: number }> };
+    }>(`${BASE}/${workspaceId}/trip-prep/`),
 
   // ─── Transport mode comparison for one inter-city leg ────
 

@@ -45,6 +45,7 @@ export function toRawActivity(
   if (item.stayNights) metadata.stay_nights = item.stayNights;
   if (item.checkIn) metadata.check_in = item.checkIn;
   if (item.checkOut) metadata.check_out = item.checkOut;
+  if (item.aiTipStatus) metadata.ai_tip_status = item.aiTipStatus;
 
   const raw: Record<string, any> = {
     ...base,
@@ -101,6 +102,7 @@ export function mergeReplacementItem(
     // Slot alternatives were computed for the slot (category + city), not the
     // occupant — they remain real, still-valid swap options.
     _aiInsights: newItem._aiInsights ?? oldItem._aiInsights,
+    aiTipStatus: !newItem.aiTip ? 'pending' : newItem.aiTipStatus,
   };
 
   merged._rawActivity = toRawActivity(merged, oldItem._rawActivity || {});

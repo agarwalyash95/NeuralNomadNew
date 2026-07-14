@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Star, MapPin, Trash2, GripVertical } from 'lucide-react';
+import { Star, MapPin, Trash2, GripVertical, Sparkles, AlertTriangle, LogIn, LogOut } from 'lucide-react';
 import { ItineraryItem } from '../types';
 import { getCategoryStyle } from '../utils/categoryStyle';
 import NodeWrapper from './NodeWrapper';
@@ -11,6 +11,8 @@ import { ProvenanceBadge } from '@/features/planner/components/ProvenanceBadge';
 import { BookingStateChip, bookedAccentClass } from '@/features/planner/components/BookingStateChip';
 import MoveToDaySelect, { DayOption } from './MoveToDaySelect';
 import { clickableDivProps, FOCUS_RING_CLASS } from '@/lib/utils';
+import { plannerService } from '@/services/planner.service';
+import type { StructuredRecommendation } from '@/services/planner.types';
 
 interface GenericNodeProps {
   item: ItineraryItem;
@@ -38,7 +40,32 @@ function getImagePanelWidth(type: string): string {
 
 function GenericNode({ item, isLast, onClick, onRemove, onHover, onVerifyLivePrice, onTimeChange, moveDayOptions, currentDayId, onMoveToDay }: GenericNodeProps) {
   const [isHovered, setIsHovered] = useState(false);
+  const [explainOpen, setExplainOpen] = useState(false);
+  const [explainData, setExplainData] = useState<StructuredRecommendation | null>(null);
+  const [explainLoading, setExplainLoading] = useState(false);
   const imgWidth = getImagePanelWidth(item.type);
+  const hoursConflict = item._aiInsights?.hours_conflict === true;
+
+  const handleExplain = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (explainOpen) { setExplainOpen(false); return; }
+    if (explainData) { setExplainOpen(true); return; }
+    setExplainLoading(true);
+    setExplainOpen(true);
+    try {
+      const result = await plannerService.explainBlock({
+        title: item.title,
+        category: item.type,
+        city: item.geoTag,
+        note: item.subtitle,
+      });
+      setExplainData(result);
+    } catch {
+      setExplainData(null);
+    } finally {
+      setExplainLoading(false);
+    }
+  };
 
   const {
     attributes,
@@ -84,6 +111,14 @@ function GenericNode({ item, isLast, onClick, onRemove, onHover, onVerifyLivePri
             {moveDayOptions && currentDayId && onMoveToDay && (
               <MoveToDaySelect options={moveDayOptions} currentDayId={currentDayId} onMove={onMoveToDay} />
             )}
+            <button
+              onClick={handleExplain}
+              className="rounded-lg p-1.5 text-ink-400 hover:bg-[rgb(var(--color-ai)/0.08)] hover:text-[rgb(var(--color-ai))] active:scale-95 cursor-pointer flex items-center justify-center"
+              style={{ transition: `all var(--motion-hover) var(--ease-out)`, minWidth: 28, minHeight: 28 }}
+              title="Explain why this was chosen"
+            >
+              <Sparkles size={13} />
+            </button>
             <button
               onClick={(e) => { e.stopPropagation(); onRemove?.(); }}
               className="rounded-lg p-1.5 text-ink-400 hover:bg-red-50 hover:text-red-500 active:scale-95 cursor-pointer flex items-center justify-center"
@@ -195,18 +230,60 @@ function GenericNode({ item, isLast, onClick, onRemove, onHover, onVerifyLivePri
                       </p>
                     ) : null}
 
-                    {/* AI Tip — violet semantic, not blue */}
-                    {item.aiTip && (
+                    {/* Check-in / check-out — its own section, distinct from the
+                        subtitle row, so the stay dates read as a fact of the
+                        booking rather than incidental detail text. */}
+                    {item.type === 'hotel' && (item.checkIn || item.checkOut || item.stayNights) && (
+                      <div className="mt-1.5 flex items-center gap-x-3 gap-y-0.5 flex-wrap rounded-lg border border-line/60 bg-paper-0 px-2 py-1 text-[10px] font-semibold text-ink-600">
+                        {item.checkIn && (
+                          <span className="flex items-center gap-1">
+                            <LogIn size={10} className="text-cat-stay shrink-0" />
+                            <span className="text-ink-400">Check-in</span> {item.checkIn}
+                          </span>
+                        )}
+                        {item.checkOut && (
+                          <span className="flex items-center gap-1">
+                            <LogOut size={10} className="text-cat-stay shrink-0" />
+                            <span className="text-ink-400">Check-out</span> {item.checkOut}
+                          </span>
+                        )}
+                        {item.stayNights ? (
+                          <span className="ml-auto text-ink-500">
+                            {item.stayNights} night{item.stayNights === 1 ? '' : 's'}
+                          </span>
+                        ) : null}
+                      </div>
+                    )}
+
+                    {/* Hours-conflict badge — computed at generation time from real opening_hours */}
+                    {hoursConflict && (
+                      <div className="mt-1 flex items-center gap-1 text-[9px] font-semibold text-amber-600 export-hidden">
+                        <AlertTriangle size={9} />
+                        <span>May be closed at this time</span>
+                      </div>
+                    )}
+
+                    {/* AI Tip — uses --color-ai CSS variable, not hardcoded violet */}
+                    {(item.aiTip || item.aiTipStatus === 'pending') && (
                       <div
-                        className="mt-2 flex items-start gap-1.5 rounded-xl p-2 text-[10px] font-medium leading-relaxed border"
+                        className={`mt-2 flex items-start gap-1.5 rounded-xl p-2 text-[10px] font-medium leading-relaxed border ${
+                          item.aiTipStatus === 'pending' ? 'animate-pulse' : ''
+                        }`}
                         style={{
-                          background: 'rgb(139 92 246 / 0.05)',
-                          borderColor: 'rgb(139 92 246 / 0.15)',
-                          color: 'rgb(109 40 217)',
+                          background: 'rgb(var(--color-ai) / 0.05)',
+                          borderColor: 'rgb(var(--color-ai) / 0.15)',
+                          color: 'rgb(var(--color-ai))',
                         }}
                       >
                         <span className="shrink-0 mt-0.5">✦</span>
-                        <p>{item.aiTip}</p>
+                        {item.aiTipStatus === 'pending' ? (
+                          <div className="flex-1 space-y-1 py-1">
+                            <div className="h-2 w-3/4 bg-[rgb(var(--color-ai)/0.2)] rounded"></div>
+                            <div className="h-2 w-1/2 bg-[rgb(var(--color-ai)/0.2)] rounded"></div>
+                          </div>
+                        ) : (
+                          <p>{item.aiTip}</p>
+                        )}
                       </div>
                     )}
                   </div>
@@ -296,6 +373,61 @@ function GenericNode({ item, isLast, onClick, onRemove, onHover, onVerifyLivePri
           </div>
         </div>
       </NodeWrapper>
+      {explainOpen && (
+        <div className="relative -mt-1 mb-2 ml-8 mr-2 rounded-xl border border-line bg-paper-2 p-3 text-[11px] leading-relaxed export-hidden">
+          {explainLoading ? (
+            <div className="flex items-center gap-2 text-ink-400">
+              <Sparkles size={12} className="animate-pulse text-[rgb(var(--color-ai))]" />
+              <span>Thinking…</span>
+            </div>
+          ) : explainData ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wide text-[rgb(var(--color-ai))]">Why this</span>
+                <span
+                  className="rounded-full px-1.5 py-0.5 text-[9px] font-bold"
+                  style={{
+                    background: explainData.confidence_score >= 75 ? 'rgb(34 197 94 / 0.1)' : 'rgb(217 119 6 / 0.1)',
+                    color: explainData.confidence_score >= 75 ? 'rgb(22 163 74)' : 'rgb(180 83 9)',
+                  }}
+                >
+                  {explainData.confidence_score}% confidence
+                </span>
+              </div>
+              <p className="text-ink-600">{explainData.rationale}</p>
+              {explainData.why_this?.length > 0 && (
+                <ul className="space-y-0.5 pl-2">
+                  {explainData.why_this.map((r, i) => (
+                    <li key={i} className="flex items-start gap-1 text-ink-600"><span className="text-[rgb(var(--color-ai))] shrink-0">·</span>{r}</li>
+                  ))}
+                </ul>
+              )}
+              {explainData.tradeoffs?.length > 0 && (
+                <div>
+                  <span className="text-[9px] font-semibold uppercase tracking-wide text-ink-400">Trade-offs</span>
+                  <ul className="mt-0.5 space-y-0.5 pl-2">
+                    {explainData.tradeoffs.map((t, i) => (
+                      <li key={i} className="flex items-start gap-1 text-ink-500"><span className="shrink-0">—</span>{t}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {explainData.alternatives?.length > 0 && (
+                <div>
+                  <span className="text-[9px] font-semibold uppercase tracking-wide text-ink-400">Alternatives</span>
+                  <ul className="mt-0.5 space-y-0.5 pl-2">
+                    {explainData.alternatives.map((a, i) => (
+                      <li key={i} className="text-ink-500"><span className="font-medium text-ink-700">{a.title}</span> — {a.rationale}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          ) : (
+            <span className="text-ink-400">Could not generate an explanation right now.</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

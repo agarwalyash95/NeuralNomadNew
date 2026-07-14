@@ -100,7 +100,7 @@ export default function TrainCanvas({ onClose, tripContext, onAddToPlan }: Train
   const [pendingItem, setPendingItem] = useState<any | null>(null);
 
   const escalated = useTierEscalation(loading);
-  const { activeIndex, elapsedMs } = useLiveSearchPhases(loading && escalated, TRAIN_SEARCH_PHASES.length);
+  const { elapsedMs } = useLiveSearchPhases(loading && escalated);
 
   useEffect(() => { setParams(buildInitialParams(tripContext)); }, [tripContext.tripId]);
 
@@ -216,7 +216,7 @@ export default function TrainCanvas({ onClose, tripContext, onAddToPlan }: Train
               ))}
             </div>
           ) : loading && escalated ? (
-            <LiveSearchProgress phases={TRAIN_SEARCH_PHASES} activeIndex={activeIndex} elapsedMs={elapsedMs} />
+            <LiveSearchProgress phases={TRAIN_SEARCH_PHASES} elapsedMs={elapsedMs} />
           ) : fetchError ? (
             <CanvasErrorCard variant={fetchError} onRetry={() => fetchTrains(params)} />
           ) : filteredResults.length > 0 ? (

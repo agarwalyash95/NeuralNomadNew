@@ -12,6 +12,8 @@ import { NodeClickPayload } from '../types';
 import { optimizeDayRoute } from './utils/routeOptimizer';
 import { useTransitDistances } from '../hooks/useTransitDistances';
 import { cn } from '@/lib/utils';
+import { TripIntelligenceTimeline } from '../TripIntelligenceTimeline';
+import type { PlanInsight } from '@/services/planner.types';
 
 import {
   DndContext,
@@ -51,6 +53,8 @@ interface ItineraryTimelineProps {
   onOptimizeRoutes?: () => void;
   /** Opens the mode-comparison canvas for an inter-city transit block */
   onCompareTransit?: (payload: NodeClickPayload) => void;
+  /** T7.2: live intelligence strip per day — passed from the workspace's useInsights hook */
+  insights?: PlanInsight[];
 }
 
 /** Transport types — use TransportNode (departure/arrival layout) */
@@ -64,7 +68,8 @@ export default function ItineraryTimeline({
   onVerifyLivePrice,
   onWatchPrice,
   onOptimizeRoutes,
-  onCompareTransit
+  onCompareTransit,
+  insights = [],
 }: ItineraryTimelineProps) {
   const [localData, setLocalData] = useState<MockTripData>(data);
   const [collapsedCities, setCollapsedCities] = useState<Record<string, boolean>>({});
@@ -443,6 +448,9 @@ export default function ItineraryTimeline({
                         timeSavedText={timeSavedText}
                         onOptimizeRoute={canOptimize ? onOptimizeRoutes : undefined}
                       />
+                      {!isDayCollapsed && (
+                        <TripIntelligenceTimeline day={day} insights={insights} className="mt-1 mb-0.5" />
+                      )}
                     </div>
                   );
                 })()}
@@ -620,11 +628,90 @@ export default function ItineraryTimeline({
 
                       // Transport types get the specialized departure/arrival node
                       if (TRANSPORT_TYPES.has(item.type)) {
+                        let computedOrigin: string | undefined;
+                        let computedDestination: string | undefined;
+                        let distanceKm: number | undefined;
+
+                        const hasCoords = (i: ItineraryItem) => typeof i.latitude === 'number' && typeof i.longitude === 'number';
+                        
+                        let prevWithCoords: ItineraryItem | undefined;
+                        for (let i = itemIndex - 1; i >= 0; i--) {
+                          if (hasCoords(activeItems[i])) { prevWithCoords = activeItems[i]; break; }
+                        }
+                        if (!prevWithCoords) {
+                          for (let d = dayIndex - 1; d >= 0; d--) {
+                            const dItems = city.days[d].items.filter(i => !i.isInactive);
+                            for (let i = dItems.length - 1; i >= 0; i--) {
+                              if (hasCoords(dItems[i])) { prevWithCoords = dItems[i]; break; }
+                            }
+                            if (prevWithCoords) break;
+                          }
+                        }
+                        if (!prevWithCoords) {
+                          for (let c = cityIndex - 1; c >= 0; c--) {
+                            const cDays = localData.cities[c].days;
+                            for (let d = cDays.length - 1; d >= 0; d--) {
+                              const dItems = cDays[d].items.filter(i => !i.isInactive);
+                              for (let i = dItems.length - 1; i >= 0; i--) {
+                                if (hasCoords(dItems[i])) { prevWithCoords = dItems[i]; break; }
+                              }
+                              if (prevWithCoords) break;
+                            }
+                            if (prevWithCoords) break;
+                          }
+                        }
+                        
+                        let nextWithCoords: ItineraryItem | undefined;
+                        for (let i = itemIndex + 1; i < activeItems.length; i++) {
+                          if (hasCoords(activeItems[i])) { nextWithCoords = activeItems[i]; break; }
+                        }
+                        if (!nextWithCoords) {
+                          for (let d = dayIndex + 1; d < city.days.length; d++) {
+                            const dItems = city.days[d].items.filter(i => !i.isInactive);
+                            for (let i = 0; i < dItems.length; i++) {
+                              if (hasCoords(dItems[i])) { nextWithCoords = dItems[i]; break; }
+                            }
+                            if (nextWithCoords) break;
+                          }
+                        }
+                        if (!nextWithCoords) {
+                          for (let c = cityIndex + 1; c < localData.cities.length; c++) {
+                            const cDays = localData.cities[c].days;
+                            for (let d = 0; d < cDays.length; d++) {
+                              const dItems = cDays[d].items.filter(i => !i.isInactive);
+                              for (let i = 0; i < dItems.length; i++) {
+                                if (hasCoords(dItems[i])) { nextWithCoords = dItems[i]; break; }
+                              }
+                              if (nextWithCoords) break;
+                            }
+                            if (nextWithCoords) break;
+                          }
+                        }
+
+                        if (prevWithCoords) computedOrigin = prevWithCoords.title;
+                        if (nextWithCoords) computedDestination = nextWithCoords.title;
+
+                        if (prevWithCoords && nextWithCoords) {
+                          const transit = getTransit(prevWithCoords, nextWithCoords, day.transitHints);
+                          distanceKm = transit.distanceKm;
+                        }
+
+                        let fallbackOriginCity = city.cityName;
+                        let fallbackDestCity = city.cityName;
+                        if (isVeryLastItem && localData.cities[cityIndex + 1]) {
+                          fallbackDestCity = localData.cities[cityIndex + 1]!.cityName;
+                        }
+
                         return (
                           <React.Fragment key={item.id}>
                             <TransportNode
                               item={item}
                               isLast={isVeryLastItem}
+                              computedOrigin={computedOrigin}
+                              computedDestination={computedDestination}
+                              distanceKm={distanceKm}
+                              fallbackOriginCity={fallbackOriginCity}
+                              fallbackDestCity={fallbackDestCity}
                               onClick={() => onItemClick?.(clickPayload)}
                               onRemove={() => handleRemove(item.id)}
                               onHover={(hovered) => onItemHover?.(hovered ? item : null)}

@@ -216,11 +216,24 @@ def run_pipeline(draft, reporter):
     city_objs = _resolve_cities(skeleton["cities"], draft)
     reporter.done("selecting_cities", " → ".join(c.name for c in city_objs.values()))
 
-    # Phase 3: real candidate pools per city
+    # Phase 3: real candidate pools per city — filtered by hard constraints
+    # from TravelerProfile facts (wheelchair, stroller, no-red-eye) so a
+    # constrained traveler is never offered an inaccessible venue in the
+    # first place (T2.2).
+    constraint_engine = None
+    try:
+        from apps.planner.services.constraints import ConstraintEngine
+
+        constraint_engine = ConstraintEngine(draft.workspace)
+        if constraint_engine.constraints:
+            reporter.detail("finding_places", f"Applying {len(constraint_engine.constraints)} constraint(s)")
+    except Exception:
+        constraint_engine = None
+
     reporter.start("finding_places")
     pools = {}
     for city_name, city_obj in city_objs.items():
-        pools[city_name] = _build_candidate_pool(city_obj)
+        pools[city_name] = _build_candidate_pool(city_obj, constraint_engine=constraint_engine)
         counts = {cat: len(items) for cat, items in pools[city_name].items() if items}
         summary = ", ".join(f"{n} {cat}s" for cat, n in counts.items())
         reporter.detail("finding_places", f"{city_obj.name}: {summary}")
@@ -412,12 +425,16 @@ def _geocode_city(name):
 # ── Phase 3: candidate pools ─────────────────────────────────────────────
 
 
-def _build_candidate_pool(city_obj, per_category=12):
+def _build_candidate_pool(city_obj, per_category=12, constraint_engine=None):
     """
     Real candidates per category, best-rated first. Thin pools grow through
     the same KnowledgeEngine.resolve() path the canvases use (Google Places
     -> cached into the master tables), so generation and canvases share one
     cache and one field-mask config instead of two hand-kept-in-sync copies.
+
+    constraint_engine (T2.2), when given, filters out rows that demonstrably
+    violate a hard traveler constraint (e.g. wheelchair accessibility)
+    before they're ever offered to the LLM compose step.
     """
     from apps.reference.models import ActivityMaster, AttractionMaster, HotelMaster, RestaurantMaster
 
@@ -431,6 +448,8 @@ def _build_candidate_pool(city_obj, per_category=12):
         rows = list(model.objects.filter(city=city_obj))
         if len(rows) < 5:
             rows = _grow_pool_via_places(city_obj, category) or rows
+        if constraint_engine is not None and constraint_engine.constraints:
+            rows = [r for r in rows if constraint_engine.is_valid_venue(r)]
         rows.sort(key=lambda r: float(r.user_rating or 0), reverse=True)
         pool[category] = rows[:per_category]
     return pool
@@ -475,11 +494,10 @@ def _candidate_catalog_lines(pools):
 
 def _traveler_context_summary(user):
     """
-    Known TravelerProfile facts, formatted for prompt injection — previously
-    collected (stated/inferred/confirmed) but never actually read by
-    generation, a gap the original adversarial audit flagged explicitly
-    ("engine does not yet prefill from TravelerProfile facts"). See
-    docs/travel-intelligence-implementation-roadmap.md §1.9.
+    Known TravelerProfile facts → natural-language scheduling guidance for
+    the compose prompt (T6.1). Translates each behavioral key into an
+    actionable sentence so the LLM knows what to do differently, not just
+    what the value is.
     """
     if user is None:
         return ""
@@ -492,7 +510,51 @@ def _traveler_context_summary(user):
     if not profile or not profile.facts:
         return ""
 
-    lines = [f"- {f['key']}: {f['value']}" for f in profile.facts if f.get("key") and f.get("value")]
+    facts = {f["key"]: f["value"] for f in profile.facts if f.get("key") and f.get("value")}
+    lines = []
+
+    pace = facts.get("pace_preference")
+    if pace == "packed":
+        lines.append("- Pace: packed — schedule 5+ activities per day, fill gaps with restaurants/cafés.")
+    elif pace == "slow":
+        lines.append("- Pace: slow — max 2-3 blocks per day; build in rest; don't over-schedule.")
+    elif pace == "moderate":
+        lines.append("- Pace: moderate — 3-4 blocks per day is ideal.")
+
+    budget = facts.get("budget_sensitivity")
+    if budget == "value":
+        lines.append("- Budget: value-seeker — prefer free/low-cost options; skip luxury tiers unless critical.")
+    elif budget == "premium":
+        lines.append("- Budget: premium — prioritize 4-5★ and upscale options.")
+
+    start_pref = facts.get("start_time_preference")
+    if start_pref == "early_riser":
+        lines.append("- Start time: early riser — first activity at 08:00 or earlier; avoid late starts.")
+    elif start_pref == "late_starter":
+        lines.append("- Start time: late starter — first activity at 10:00+; don't schedule anything before 09:30.")
+
+    meal_timing = facts.get("meal_timing")
+    if meal_timing == "early_diner":
+        lines.append("- Meals: tends to eat earlier — schedule lunch before 12:30.")
+    elif meal_timing == "late_diner":
+        lines.append("- Meals: tends to eat later — lunch around 14:00, dinner after 20:00 is fine.")
+
+    top_cats = facts.get("top_activity_categories")
+    if top_cats:
+        lines.append(f"- Preferred activity types: {top_cats.replace(',', ', ')} — weight toward these when choosing candidates.")
+
+    hotel_tier = facts.get("hotel_quality_tier")
+    if hotel_tier == "luxury":
+        lines.append("- Hotel: prefers 5★/luxury — prioritize the highest-rated hotel candidates.")
+    elif hotel_tier == "budget":
+        lines.append("- Hotel: budget traveler — prefer lower-cost hotel candidates.")
+
+    known_keys = {"pace_preference", "budget_sensitivity", "start_time_preference", "meal_timing", "top_activity_categories", "hotel_quality_tier"}
+    for f in profile.facts:
+        key, val = f.get("key", ""), f.get("value", "")
+        if key and val and key not in known_keys:
+            lines.append(f"- {key}: {val}")
+
     return "\n".join(lines)
 
 
@@ -590,6 +652,22 @@ RULES:
     used_ids = set()
     days_out = []
 
+    # Per-city stay span (arrival date, departure date, night count) so a
+    # hotel candidate block can be stamped with real check-in/check-out
+    # dates automatically — how many nights the itinerary already spends in
+    # that city — instead of the frontend having no idea until the traveler
+    # opens Hotel Canvas and replaces it by hand. Sourced from the skeleton's
+    # own per-city arrival/departure (the same values TripCity.arrival_date/
+    # departure_date end up as), not re-derived, so the two stay consistent.
+    city_spans = {
+        c["name"].strip().lower(): {
+            "check_in": c.get("arrival_date"),
+            "check_out": c.get("departure_date"),
+            "nights": max(c.get("nights") or 1, 1),
+        }
+        for c in skeleton["cities"]
+    }
+
     for sk_day in skeleton["days"]:
         day_city_key = sk_day["city"].strip().lower()
         city_obj = city_objs.get(day_city_key) or next(iter(city_objs.values()))
@@ -617,7 +695,11 @@ RULES:
                 category, row = replacement
                 key = f"{category}:{row.pk}"
             used_ids.add(key)
-            activities.append(_candidate_block(category, row, block, pool, used_ids))
+            activities.append(_candidate_block(
+                category, row, block, pool, used_ids,
+                day_date=sk_day.get("date"),
+                city_span=city_spans.get(day_city_key) if category == "hotel" else None,
+            ))
 
         days_out.append(
             {
@@ -645,30 +727,87 @@ def _heuristic_pick(pool, used_ids, prefer=None):
 
 
 def _transport_block(block, city_obj):
+    from apps.reference.models import Airport, RailwayStation, BusStation, City
+
     mode = (block.transport_mode or "cab").lower()
     if mode not in ("flight", "train", "bus", "cab"):
         mode = "cab"
     origin = (block.from_place or "").strip()
     dest = (block.to_place or city_obj.name).strip()
-    title = f"{mode.title()} to {dest}" if dest else f"{mode.title()} transfer"
-    if origin and dest:
-        title = f"{mode.title()}: {origin} → {dest}"
+
+    def resolve_hub(place_name, t_mode):
+        if not place_name:
+            return None, None, None
+        city = City.objects.filter(name__icontains=place_name).first()
+        if not city:
+            return place_name, None, None
+            
+        if t_mode == "flight":
+            hub = Airport.objects.filter(city=city).first()
+            if hub:
+                return f"{hub.name} ({hub.iata_code})", hub.latitude, hub.longitude
+        elif t_mode == "train":
+            hub = RailwayStation.objects.filter(city=city).first()
+            if hub:
+                return f"{hub.name} ({hub.code})", city.latitude, city.longitude
+        elif t_mode == "bus":
+            hub = BusStation.objects.filter(city=city).first()
+            if hub:
+                return hub.name, city.latitude, city.longitude
+                
+        return city.name, city.latitude, city.longitude
+
+    source_name, source_lat, source_lng = resolve_hub(origin, mode)
+    dest_name, dest_lat, dest_lng = resolve_hub(dest, mode)
+
+    source_name = source_name or origin
+    dest_name = dest_name or dest or city_obj.name
+
+    title = f"{mode.title()} to {dest_name}" if dest_name else f"{mode.title()} transfer"
+    if source_name and dest_name:
+        title = f"{mode.title()}: {source_name} → {dest_name}"
+
+    is_arrival = (dest.lower() == city_obj.name.lower() or city_obj.name.lower() in dest.lower())
+    
+    if is_arrival:
+        display_lat = dest_lat
+        display_lng = dest_lng
+        display_name = dest_name
+    else:
+        display_lat = source_lat
+        display_lng = source_lng
+        display_name = source_name
+
+    if not display_lat:
+        display_lat = city_obj.latitude
+        display_lng = city_obj.longitude
+
     return {
         "id": str(uuid.uuid4()),
         "category": mode if mode != "cab" else "cab",
         "title": title,
-        "location_name": origin or city_obj.name,
+        "location_name": display_name or city_obj.name,
         "start_time": block.start_time,
         "end_time": block.end_time,
         "estimated_cost": None,
         "currency_code": "INR",
         "status": "pending",
         "notes": block.note,
-        "metadata": {"transport": {"mode": mode, "origin": origin, "destination": dest}},
+        "latitude": float(display_lat) if display_lat is not None else None,
+        "longitude": float(display_lng) if display_lng is not None else None,
+        "metadata": {
+            "transport": {
+                "mode": mode, 
+                "origin": origin,
+                "resolved_source": source_name,
+                "destination": dest,
+                "resolved_destination": dest_name
+            }
+        },
     }
 
 
-def _candidate_block(category, row, block, pool, used_ids):
+def _candidate_block(category, row, block, pool, used_ids, day_date=None, city_span=None):
     """A block built from a real master-table row. Every displayed fact
     (rating, image, address, tip) comes from that row — nothing invented."""
     alternatives = []
@@ -689,6 +828,31 @@ def _candidate_block(category, row, block, pool, used_ids):
         if len(alternatives) == 2:
             break
 
+    # T2.4: annotate (never silently drop) a slot that's demonstrably closed
+    # at its scheduled time — same opening_hours parser insight_engine uses.
+    ai_insights = {"candidates": alternatives} if alternatives else {}
+    opening_hours_list = getattr(row, "opening_hours", None) or []
+    if opening_hours_list and day_date and block.start_time:
+        from apps.planner.services.opening_hours import is_open_at
+
+        open_status = is_open_at(opening_hours_list, day_date, block.start_time)
+        if open_status is False:
+            ai_insights["hours_conflict"] = True
+
+    metadata = {
+        "place_id": row.place_id,
+        "master_ref": {"table": category, "id": row.pk},
+    }
+    # Hotel stay span — automatic default is "how many nights the itinerary
+    # already spends in this city" (city_span, from the skeleton). The
+    # traveler can still override nights per-hotel via Hotel Canvas; this
+    # just means a freshly generated plan already shows a real check-in/
+    # check-out instead of nothing until they open it.
+    if category == "hotel" and city_span:
+        metadata["stay_nights"] = city_span["nights"]
+        metadata["check_in"] = city_span["check_in"]
+        metadata["check_out"] = city_span["check_out"]
+
     return {
         "id": str(uuid.uuid4()),
         "category": _CATEGORY_TO_BLOCK[category],
@@ -705,11 +869,8 @@ def _candidate_block(category, row, block, pool, used_ids):
         "rating": float(row.user_rating) if row.user_rating else None,
         "image_url": row.image_url,
         "ai_tip": (row.editorial_summary or "").strip() or None,
-        "metadata": {
-            "place_id": row.place_id,
-            "master_ref": {"table": category, "id": row.pk},
-        },
-        "_aiInsights": {"candidates": alternatives} if alternatives else None,
+        "metadata": metadata,
+        "_aiInsights": ai_insights or None,
     }
 
 

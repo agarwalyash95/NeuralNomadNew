@@ -75,6 +75,7 @@ function activityToItem(a: TripActivity, trip: PlannerTrip, fallbackCity: string
     latitude: a.latitude ?? (metadata.latitude as number | undefined),
     longitude: a.longitude ?? (metadata.longitude as number | undefined),
     aiTip: a.ai_tip ?? undefined,
+    aiTipStatus: (metadata.ai_tip_status as 'pending' | 'ready') || undefined,
     rating: a.rating ?? undefined,
     image: a.image_url ?? undefined,
     geoTag: fallbackCity,

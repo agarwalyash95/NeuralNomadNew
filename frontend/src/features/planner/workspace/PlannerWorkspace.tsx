@@ -9,8 +9,11 @@ import { Sparkles, RefreshCw } from 'lucide-react';
 
 // ── Plan Canvas Components & Utilities ─────────────────────────────────────
 import { parsePriceToInteger } from './plan-canvas/utils/priceParser';
+import { useProposalCount } from './hooks/useProposalCount';
+import { usePendingTips } from './hooks/usePendingTips';
 import { ProposalCard } from '../components/ProposalCard';
 import DockedChat from '../chat/DockedChat';
+import { ActivityFeed } from './ActivityFeed';
 
 
 // ── Helper Canvases — new paths ──────────────────────────────────────────────
@@ -31,6 +34,7 @@ import VisaCanvas from './helper-canvases/travel-prep/visa/VisaCanvas';
 import { TripViewModel, ItineraryItem } from './plan-canvas/types';
 import { mergeReplacementItem, toRawActivity } from './services/blockMerge';
 import { usePrefetchPlaceDetails } from './hooks/usePlaceDetails';
+import { useLiveWorkspaceEvents } from './hooks/useLiveWorkspaceEvents';
 import { transformTripData, serializePlanUpdate, getVerifyContext } from './services/planTransform';
 import PlannerMap from './plan-canvas/PlannerMap';
 import AIInsightsPanel from './plan-canvas/AIInsightsPanel';
@@ -110,8 +114,6 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
 
 
   const [isSavingCloud, setIsSavingCloud] = useState(false);
-
-
   // ── Proposals — AI proposes, the traveler decides ──────────────────────
   const queryClient = useQueryClient();
   const { data: openProposals = [] } = useProposals(workspaceId);
@@ -397,10 +399,32 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
   } = usePlan(workspaceId);
   const { data: ledger } = useLedger(workspaceId);
   const { data: insights = [] } = useInsights(workspaceId);
+  useLiveWorkspaceEvents(workspaceId ?? '');
   const savePlan = useSavePlan(workspaceId);
   const bookTrip = useBookTrip(workspaceId);
   // Warm rich place details for every identifiable block — hover is instant
   usePrefetchPlaceDetails(planData);
+
+  // ── Pending AI Tips Polling ──────────────────────────────────────────────
+  const pendingTipBlockIds = useMemo(() => {
+    if (!planData) return [];
+    const pendingIds: string[] = [];
+    for (const city of planData.cities) {
+      if (city.transitToNext?.aiTipStatus === 'pending') {
+        pendingIds.push(city.transitToNext.id);
+      }
+      for (const day of city.days) {
+        for (const item of day.items) {
+          if (item.aiTipStatus === 'pending') {
+            pendingIds.push(item.id);
+          }
+        }
+      }
+    }
+    return pendingIds;
+  }, [planData]);
+
+  usePendingTips(workspaceId, pendingTipBlockIds, refetchPlan);
 
   // The focused day's full object + its city name — feeds AIInsightsPanel's
   // calm default "Day Brief" (item count, next-up, day-scoped insight, top
@@ -490,7 +514,8 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
     setIsSavingCloud(true);
     try {
       const { days, cities } = serializePlanUpdate(newData);
-      await plannerService.updatePlan(workspaceId, { days: days as any, cities: cities as any });
+      const updatedTrip = await plannerService.updatePlan(workspaceId, { days: days as any, cities: cities as any });
+      queryClient.setQueryData(plannerKeys.plan(workspaceId), updatedTrip);
       queryClient.invalidateQueries({ queryKey: plannerKeys.ledger(workspaceId) });
       // The PATCH sets is_modified server-side — refresh workspace/bucket so a
       // saved trip visibly falls back to Recent and the Save button re-arms.
@@ -785,6 +810,7 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
         if (day) {
           // A brand-new block needs a complete backend dict too, or the next
           // PATCH would persist only the handful of fields serialize touches.
+          newItem.aiTipStatus = !newItem.aiTip ? 'pending' : newItem.aiTipStatus;
           newItem._rawActivity = toRawActivity(newItem);
           // Insert-between: land right after the anchor item instead of
           // always appending to the end of the day.
@@ -1079,6 +1105,7 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
           onOptimizeRoutes={handleProposeRouteOptimization}
         />
       )}
+      {workspaceId && <ActivityFeed workspaceId={workspaceId} />}
 
       {/* Open proposals — the universal accept/reject grammar for AI changes */}
       <div className="fixed bottom-6 left-6 z-40 flex flex-col gap-3">
@@ -1177,6 +1204,7 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
               onWatchPrice={handleWatchPrice}
               onOptimizeRoutes={handleProposeRouteOptimization}
               onCompareTransit={handleCompareClick}
+              insights={insights}
             />
           </div>
         </div>

@@ -60,7 +60,7 @@ export default function ForexCanvas({ onClose, tripContext }: ForexCanvasProps) 
   const escalated = useTierEscalation(loading);
   const escalatedRef = useRef(false);
   useEffect(() => { escalatedRef.current = escalated; }, [escalated]);
-  const { activeIndex, elapsedMs } = useLiveSearchPhases(loading && escalated, FOREX_VENDOR_PHASES.length);
+  const { elapsedMs } = useLiveSearchPhases(loading && escalated);
 
   // Detect domestic trip (all cities are India — no currency exchange needed)
   const isDomesticTrip = tripContext.currency === 'INR' && !tripContext.allCities.some(c =>
@@ -229,7 +229,7 @@ export default function ForexCanvas({ onClose, tripContext }: ForexCanvasProps) 
               ))}
             </div>
           ) : loading && escalated ? (
-            <LiveSearchProgress phases={FOREX_VENDOR_PHASES} activeIndex={activeIndex} elapsedMs={elapsedMs} />
+            <LiveSearchProgress phases={FOREX_VENDOR_PHASES} elapsedMs={elapsedMs} />
           ) : fetchError ? (
             <CanvasErrorCard variant={fetchError} onRetry={fetchVendors} />
           ) : vendors.length > 0 ? (

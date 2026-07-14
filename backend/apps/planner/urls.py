@@ -6,9 +6,11 @@ from apps.planner.views import (
     TripViewSet,
     batch_distances,
     compare_transport_legs,
+    explain_recommendation,
     lazy_chat,
     lazy_chat_stream,
     traveler_profile,
+    trip_prep_status,
     workspace_chat_stream,
 )
 
@@ -27,5 +29,11 @@ urlpatterns = [
     path("distances/", batch_distances, name="planner-batch-distances"),
     path("legs/compare/", compare_transport_legs, name="planner-compare-transport-legs"),
     path("profile/", traveler_profile, name="planner-traveler-profile"),
+    path("recommendations/explain/", explain_recommendation, name="planner-explain-recommendation"),
+    path(
+        "workspaces/<uuid:workspace_id>/trip-prep/",
+        trip_prep_status,
+        name="planner-trip-prep-status",
+    ),
     path("", include(router.urls)),
 ]

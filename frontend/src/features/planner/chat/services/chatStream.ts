@@ -10,6 +10,8 @@
  *   error   → stream failed; caller falls back to the classic POST
  */
 
+import { getAccessToken } from '@/lib/getAccessToken';
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 
 export interface ChatStreamHandlers {
@@ -29,7 +31,7 @@ export async function streamChatMessage(
     ? `${API_URL}/planner/workspaces/${workspaceId}/chat/stream/`
     : `${API_URL}/planner/chat/stream/`;
 
-  const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+  const token = getAccessToken();
   const response = await fetch(url, {
     method: 'POST',
     headers: {

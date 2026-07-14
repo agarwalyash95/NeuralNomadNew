@@ -244,6 +244,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.planner.tasks.run_price_watches",
         "schedule": 60 * 30,  # every 30 minutes
     },
+    "run-trip-watch": {
+        "task": "apps.planner.tasks.run_trip_watch",
+        "schedule": 60 * 15,  # every 15 minutes; ambient insight + route-optimization loop
+    },
     "refresh-stale-entities": {
         "task": "apps.reference.tasks.refresh_stale_entities",
         "schedule": 60 * 60 * 3,  # every 3 hours; popularity-ordered, bounded batch per category

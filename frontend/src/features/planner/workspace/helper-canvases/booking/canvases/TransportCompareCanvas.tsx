@@ -47,7 +47,7 @@ export default function TransportCompareCanvas({ onClose, tripContext, onSelectM
   const [data, setData] = useState<TransportLegComparison | null>(null);
 
   const escalated = useTierEscalation(loading);
-  const { activeIndex, elapsedMs } = useLiveSearchPhases(loading && escalated, COMPARE_PHASES.length);
+  const { elapsedMs } = useLiveSearchPhases(loading && escalated);
 
   const fetchComparison = async () => {
     if (!origin.trim() || !destination.trim()) return;
@@ -114,7 +114,7 @@ export default function TransportCompareCanvas({ onClose, tripContext, onSelectM
             ))}
           </div>
         ) : loading && escalated ? (
-          <LiveSearchProgress phases={COMPARE_PHASES} activeIndex={activeIndex} elapsedMs={elapsedMs} />
+          <LiveSearchProgress phases={COMPARE_PHASES} elapsedMs={elapsedMs} />
         ) : error ? (
           <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-center text-xs font-semibold text-red-700">{error}</div>
         ) : sortedRows.length === 0 ? (

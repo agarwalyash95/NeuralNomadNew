@@ -76,6 +76,31 @@ export function ProposalCard({ proposal, onAccept, onReject }: ProposalCardProps
         </p>
       )}
 
+      {/* T5.2: justify every change — what/why/better/worse/undo */}
+      {proposal.metadata?.diff_explanation && (
+        <div className="mt-2 rounded-xl border border-line/50 bg-paper-1 p-2.5 text-[10px] leading-relaxed space-y-1.5">
+          <p className="text-ink-700 font-medium">{proposal.metadata.diff_explanation.what_changed}</p>
+          {proposal.metadata.diff_explanation.what_improved?.length > 0 && (
+            <ul className="space-y-0.5">
+              {proposal.metadata.diff_explanation.what_improved.map((item, i) => (
+                <li key={i} className="flex items-start gap-1 text-emerald-700">
+                  <span className="shrink-0">+</span>{item}
+                </li>
+              ))}
+            </ul>
+          )}
+          {proposal.metadata.diff_explanation.what_got_worse?.length > 0 && (
+            <ul className="space-y-0.5">
+              {proposal.metadata.diff_explanation.what_got_worse.map((item, i) => (
+                <li key={i} className="flex items-start gap-1 text-amber-700">
+                  <span className="shrink-0">−</span>{item}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       {(deltas?.saved_km || deltas?.saved_mins || deltas?.cost_delta) && (
         <div className="mt-2.5 flex flex-wrap gap-1.5">
           {deltas.saved_km ? (

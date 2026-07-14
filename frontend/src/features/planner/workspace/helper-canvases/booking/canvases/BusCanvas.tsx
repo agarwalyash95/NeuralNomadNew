@@ -101,7 +101,7 @@ export default function BusCanvas({ onClose, tripContext, onAddToPlan }: BusCanv
   const [pendingItem, setPendingItem] = useState<any | null>(null);
 
   const escalated = useTierEscalation(loading);
-  const { activeIndex, elapsedMs } = useLiveSearchPhases(loading && escalated, BUS_SEARCH_PHASES.length);
+  const { elapsedMs } = useLiveSearchPhases(loading && escalated);
 
   useEffect(() => { setParams(buildInitialParams(tripContext)); }, [tripContext.tripId]);
 
@@ -229,7 +229,7 @@ export default function BusCanvas({ onClose, tripContext, onAddToPlan }: BusCanv
               ))}
             </div>
           ) : loading && escalated ? (
-            <LiveSearchProgress phases={BUS_SEARCH_PHASES} activeIndex={activeIndex} elapsedMs={elapsedMs} />
+            <LiveSearchProgress phases={BUS_SEARCH_PHASES} elapsedMs={elapsedMs} />
           ) : fetchError ? (
             <CanvasErrorCard variant={fetchError} onRetry={() => fetchBuses(params)} />
           ) : filteredResults.length > 0 ? (

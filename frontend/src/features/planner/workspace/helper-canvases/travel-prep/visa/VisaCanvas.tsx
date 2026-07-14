@@ -58,7 +58,7 @@ export default function VisaCanvas({ onClose, tripContext }: VisaCanvasProps) {
   const escalated = useTierEscalation(loading);
   const escalatedRef = useRef(false);
   useEffect(() => { escalatedRef.current = escalated; }, [escalated]);
-  const { activeIndex, elapsedMs } = useLiveSearchPhases(loading && escalated, VISA_LOOKUP_PHASES.length);
+  const { elapsedMs } = useLiveSearchPhases(loading && escalated);
 
   // Detect domestic trip (all cities are India)
   const isDomesticTrip = tripContext.allCities.length > 0 && !tripContext.allCities.some(city =>
@@ -223,7 +223,7 @@ export default function VisaCanvas({ onClose, tripContext }: VisaCanvasProps) {
           {loading && !escalated ? (
             <VisaInfoSkeleton />
           ) : loading && escalated ? (
-            <LiveSearchProgress phases={VISA_LOOKUP_PHASES} activeIndex={activeIndex} elapsedMs={elapsedMs} />
+            <LiveSearchProgress phases={VISA_LOOKUP_PHASES} elapsedMs={elapsedMs} />
           ) : error ? (
             <CanvasErrorCard variant={error} onRetry={() => fetchVisaInfo(country)} />
           ) : visaInfo ? (

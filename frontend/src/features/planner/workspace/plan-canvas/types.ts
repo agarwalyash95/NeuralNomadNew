@@ -31,6 +31,7 @@ export interface ItineraryItem {
   cost?: BlockCost;
   blockStatus?: BlockStatus;
   aiTip?: string;
+  aiTipStatus?: 'pending' | 'ready';
   image?: string;
   rating?: number;
   geoTag?: string;

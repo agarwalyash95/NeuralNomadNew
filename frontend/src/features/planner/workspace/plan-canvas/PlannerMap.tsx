@@ -299,9 +299,14 @@ export default function PlannerMap({ planData, pinnedItem, focusedDayId, onPinCl
         }
       });
     }
-  }, [isLoaded, mainCityName, mapTheme]);
+  // mapTheme intentionally excluded — this effect only creates the map once
+  // (guarded by mapInstanceRef.current above); theme changes are handled by
+  // the effect below so toggling Map/Satellite never re-fires the Geocoder.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoaded, mainCityName]);
 
-  // 4. Update Map Type
+  // 4. Update Map Type — separate from initialization so theme toggle
+  // never triggers a geocoder call.
   useEffect(() => {
     if (mapInstanceRef.current) {
       mapInstanceRef.current.setMapTypeId(mapTheme);

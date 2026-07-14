@@ -261,6 +261,15 @@ export interface PlannerTrip {
 
 export type ProposalStatus = 'open' | 'accepted' | 'rejected' | 'expired';
 
+export interface DiffExplanation {
+  what_changed: string;
+  why: string;
+  what_improved: string[];
+  what_got_worse: string[];
+  confidence: string;
+  can_undo: boolean;
+}
+
 export interface PlanProposal {
   id: string;
   kind: 'route_optimization' | 'plan_edit' | 'price_watch' | 'insight';
@@ -270,6 +279,10 @@ export interface PlanProposal {
     before?: { days: any[] };
     after?: { days: any[] };
     deltas?: { saved_km?: number; saved_mins?: number; cost_delta?: number };
+  };
+  metadata?: {
+    diff_explanation?: DiffExplanation;
+    [key: string]: any;
   };
   status: ProposalStatus;
   rejection_reason: string;
@@ -288,6 +301,35 @@ export interface PlanInsight {
   related_block_ids: string[];
   action: null; // K3's two rules are advisory-only; actionable rules land in K5
   context_hash: string;
+}
+
+// ─── Explainability (T2.1 / T5.1) ────────────────────
+
+export interface ConfidenceDimension {
+  dimension: string;
+  score: number;
+  explanation: string;
+  trust_tier: 'verified' | 'estimated' | 'suggested';
+}
+
+export interface RecommendationAlternative {
+  title: string;
+  rationale: string;
+  tradeoffs: string[];
+}
+
+export interface StructuredRecommendation {
+  title: string;
+  rationale: string;
+  why_this: string[];
+  confidence_score: number;
+  confidence_explanation: string;
+  confidence_dimensions: ConfidenceDimension[];
+  assumptions: string[];
+  tradeoffs: string[];
+  expected_impact: Record<string, string>;
+  alternatives: RecommendationAlternative[];
+  uncertainty_state: 'high_confidence' | 'medium_confidence' | 'needs_decision' | 'weather_dependent' | 'traffic_dependent';
 }
 
 // ─── Traveler memory ────────────────────────────────

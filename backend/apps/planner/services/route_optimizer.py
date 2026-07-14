@@ -125,6 +125,7 @@ def propose_route_optimization(workspace):
         return None
 
     day_list = ", ".join(str(n) for n in improved_day_numbers)
+    saved_km_r = round(total_saved_km, 2)
     return PlanProposal.objects.create(
         workspace=workspace,
         kind=PlanProposal.KIND_ROUTE_OPTIMIZATION,
@@ -136,7 +137,89 @@ def propose_route_optimization(workspace):
         diff={
             "before": {"days": before_days},
             "after": {"days": after_days},
-            "deltas": {"saved_km": round(total_saved_km, 2)},
+            "deltas": {"saved_km": saved_km_r},
+        },
+        # T5.2: every proposal justifies itself — what changed, why, what
+        # improved, what got worse, confidence, and whether it's reversible.
+        metadata={
+            "diff_explanation": {
+                "what_changed": f"Stop order resequenced on day {day_list} using a shortest-path (nearest-neighbor / brute-force) algorithm.",
+                "why": "The original order zig-zagged between stops. A shorter path visits the same places with less backtracking.",
+                "what_improved": [f"−{saved_km_r} km total transit", "Less time in vehicles"],
+                "what_got_worse": ["Schedule order differs from original — if you booked time-specific reservations, double-check them"],
+                "confidence": "high",
+                "can_undo": True,
+            },
+        },
+        created_by="agent",
+        base_trip_updated_at=trip.updated_at,
+    )
+
+
+def propose_whole_trip_optimization(workspace):
+    """
+    Multi-objective whole-trip balancer (T6.2). Looks across all days, finds
+    overloaded days (too many movable blocks), and proposes moving one block
+    to an underloaded adjacent day — filed as a single PlanProposal.
+    Returns None if no meaningful imbalance is found.
+
+    Complementary to propose_route_optimization (per-day TSP), not a
+    replacement — callers should try that first and fall back to this.
+    Threshold: a day is overloaded when it has ≥2 more movable blocks than
+    the adjacent day AND the adjacent day has ≤3 blocks total.
+    """
+    from apps.planner.models import PlanProposal
+
+    trip = getattr(workspace, "trip", None)
+    if trip is None or not trip.days or len(trip.days) < 2:
+        return None
+
+    days = trip.days
+    moved_blocks = []
+    after_days = [dict(d) for d in days]
+    for i in range(len(days) - 1):
+        acts_curr = list(days[i].get("activities") or [])
+        acts_next = list(days[i + 1].get("activities") or [])
+        movable_curr = [a for a in acts_curr if (a.get("category") or "").lower() in _OPTIMIZABLE_CATEGORIES]
+        movable_next = [a for a in acts_next if (a.get("category") or "").lower() in _OPTIMIZABLE_CATEGORIES]
+        if len(movable_curr) >= len(movable_next) + 2 and len(acts_next) <= 3:
+            block_to_move = movable_curr[-1]
+            new_curr = [a for a in acts_curr if a.get("id") != block_to_move.get("id")]
+            new_next = [block_to_move] + acts_next
+            after_days[i] = {**days[i], "activities": new_curr}
+            after_days[i + 1] = {**days[i + 1], "activities": new_next}
+            moved_blocks.append({
+                "block": block_to_move.get("title", "activity"),
+                "from_day": days[i].get("day_number"),
+                "to_day": days[i + 1].get("day_number"),
+            })
+
+    if not moved_blocks:
+        return None
+
+    moves_text = "; ".join(f"'{m['block']}' from day {m['from_day']} → day {m['to_day']}" for m in moved_blocks)
+    return PlanProposal.objects.create(
+        workspace=workspace,
+        kind=PlanProposal.KIND_ROUTE_OPTIMIZATION,
+        title="Balance activities across days",
+        rationale=(
+            f"Some days are packed while others are light. Moving {moves_text} "
+            "distributes the load more evenly."
+        ),
+        diff={
+            "before": {"days": days},
+            "after": {"days": after_days},
+            "deltas": {"moved_blocks": moved_blocks},
+        },
+        metadata={
+            "diff_explanation": {
+                "what_changed": f"Moved {len(moved_blocks)} block(s) between days to balance load.",
+                "why": "Packed days cause fatigue; empty days are wasted. Even pacing improves the experience.",
+                "what_improved": ["More even energy across the trip", "Lighter days don't feel rushed"],
+                "what_got_worse": ["Day order slightly altered"],
+                "confidence": "medium",
+                "can_undo": True,
+            },
         },
         created_by="agent",
         base_trip_updated_at=trip.updated_at,
