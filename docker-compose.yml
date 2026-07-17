@@ -1,30 +1,6 @@
 version: "3.9"
 
 services:
-  # PostgreSQL Database — pgvector-enabled image (adds the `vector` extension
-  # used by EntityEmbedding for semantic search, see
-  # docs/travel-knowledge-engine-plan.md §10). Same Postgres 16 underneath.
-  postgres:
-    image: pgvector/pgvector:pg16
-    container_name: neuralnomad_postgres
-    environment:
-      POSTGRES_DB: ${DB_NAME:-neuralnomad_db}
-      POSTGRES_USER: ${DB_USER:-neuralnomad_user}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-neuralnomad_password}
-      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./infra/postgres/init-pgvector.sql:/docker-entrypoint-initdb.d/init-pgvector.sql:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-neuralnomad_user}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - neuralnomad_network
-
   # Redis Cache & Message Broker
   redis:
     image: redis:7-alpine
@@ -51,9 +27,143 @@ services:
     networks:
       - neuralnomad_network
 
+  # Django backend, dev mode: runs `manage.py runserver` (autoreload) against
+  # the bind-mounted source below instead of the image's default daphne CMD
+  # (daphne doesn't autoreload — still used for actual prod deploys via
+  # backend/Dockerfile directly). Runs migrations + collectstatic on startup
+  # (docker-entrypoint.sh). Reads backend/.env for every secret/API key so
+  # nothing is duplicated or hardcoded here — only the container-specific
+  # connectivity vars are overridden below.
+  backend: &backend_service
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: neuralnomad_backend
+    env_file:
+      - ./backend/.env
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.development
+      # host.docker.internal reaches the NATIVE Postgres running on the
+      # Windows host (localhost:5433, db "neuralnomad") — that's where
+      # this project's real, seeded data actually lives. There is
+      # deliberately no containerized Postgres service in this file.
+      DB_HOST: host.docker.internal
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      # apps/common/ai.py's get_genai_client() calls Vertex AI
+      # (VERTEX_AI_ENABLED=True in backend/.env, no GEMINI_API_KEY set) —
+      # that needs Application Default Credentials, which the
+      # google-genai/google-auth libraries look for at this exact path by
+      # default. Pointing it at the file bind-mounted below is simpler
+      # than relying on HOME-based auto-discovery inside the container.
+      GOOGLE_APPLICATION_CREDENTIALS: /gcp/adc.json
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Bind-mount the source over the image's baked-in copy so code edits
+    # are picked up without rebuilding — only changes to
+    # requirements-docker.txt (or the Dockerfile itself) need a rebuild.
+    #
+    # The gcloud ADC mount lets Vertex AI calls (apps/common/ai.py) work
+    # the same way they did running natively: `gcloud auth application-
+    # default login` on the Windows host already wrote this file; without
+    # it, every Gemini call inside the container fails with "Your default
+    # credentials were not found." This path is Windows-specific (this repo
+    # is Windows-only dev per docs/SETUP.md) — on another OS it'd need
+    # pointing at gcloud's platform-appropriate config dir instead.
+    volumes:
+      - ./backend:/app
+      - ${APPDATA}/gcloud/application_default_credentials.json:/gcp/adc.json:ro
+    # runserver autoreloads on file changes; daphne (the image's default
+    # CMD, still used for production) does not.
+    command: python manage.py runserver 0.0.0.0:8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/docs/')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      # Cold start now runs migrate + collectstatic against the
+      # bind-mounted source (observed ~110-120s the first time) before
+      # runserver even binds the port — celery_worker/beat wait on this
+      # via `condition: service_healthy` and were getting stuck in
+      # "Created" because the old 30s+75s budget wasn't enough.
+      start_period: 60s
+    networks:
+      - neuralnomad_network
+
+  # Phase 0a (docs/planner-output-generation-architecture.md): a real Celery
+  # worker was previously entirely absent from this compose file, so
+  # background plan-generation silently fell back to a raw Python thread
+  # instead of Celery. Same image as `backend`, different process.
+  celery_worker:
+    <<: *backend_service
+    container_name: neuralnomad_celery_worker
+    command: celery -A config worker --loglevel=info
+    ports: []
+    healthcheck:
+      disable: true
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+
+  # Runs the scheduled tasks in config/settings/base.py CELERY_BEAT_SCHEDULE
+  # (price watches, trip-watch, entity refresh, enrichment passes, the
+  # worker-heartbeat that proves a worker is actually alive — Phase 0a).
+  celery_beat:
+    <<: *backend_service
+    container_name: neuralnomad_celery_beat
+    command: celery -A config beat --loglevel=info
+    ports: []
+    healthcheck:
+      disable: true
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+
+  # Next.js frontend, dev mode. frontend/Dockerfile builds a production
+  # image (npm run build + npm start against a baked .next/) and is left
+  # untouched for actual deploys — it's the wrong shape for local dev since
+  # every code change would need a full image rebuild. Here we instead run
+  # the plain node image against the bind-mounted source with `next dev`,
+  # which has its own file-watcher/HMR, same as running it outside Docker.
+  # Most NEXT_PUBLIC_* vars come from the bind-mounted frontend/.env.local,
+  # same as non-Docker dev. NEXT_PUBLIC_IMAGES_UNOPTIMIZED is the one
+  # exception, set only here: place-photo URLs point at localhost:8000,
+  # which the browser reaches fine (port-mapped to the host) but which
+  # doesn't exist from inside this container — see next.config.js.
+  frontend:
+    image: node:20-alpine
+    container_name: neuralnomad_frontend
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      # Anonymous-named volumes so the bind mount above doesn't shadow
+      # these with the host's (possibly absent/stale) copies.
+      - frontend_node_modules:/app/node_modules
+      - frontend_next:/app/.next
+    environment:
+      NEXT_PUBLIC_IMAGES_UNOPTIMIZED: "1"
+    command: sh -c "npm install && npm run dev"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - neuralnomad_network
+
 volumes:
-  postgres_data:
   redis_data:
+  frontend_node_modules:
+  frontend_next:
 
 networks:
   neuralnomad_network:

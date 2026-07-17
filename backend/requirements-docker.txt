@@ -1,0 +1,33 @@
+# Docker/production dependency list.
+#
+# requirements.txt in this directory is NOT usable for this purpose — it is
+# a stale export of the local Anaconda BASE environment (445 lines, mostly
+# unrelated "aext-*" Anaconda tooling with local `file://C:/...` paths that
+# don't exist outside this machine, and it does not even list Django,
+# Celery, or psycopg2). The actual app dependencies have only ever been
+# installed directly into that base environment. This file is the real,
+# curated list — versions pinned from `pip list` against the environment
+# that has been running/testing this project. Cross-checked against an AST
+# scan of every top-level import across apps/ + config/ (not just a guess) —
+# that scan is what caught razorpay/pydantic being missing on the first
+# build attempt. pytest is deliberately excluded: confirmed only imported
+# under tests/ and conftest.py, never needed for the app to actually run.
+Django==6.0.6
+djangorestframework==3.17.1
+djangorestframework-simplejwt==5.5.1
+django-cors-headers==4.9.0
+django-filter==25.2
+drf-spectacular==0.29.0
+django-redis==7.0.0
+celery==5.6.3
+redis==8.0.0
+psycopg2-binary==2.9.12
+pgvector==0.5.0
+google-genai==2.9.0
+pydantic==2.13.4
+razorpay==2.0.1
+whitenoise==6.12.0
+daphne==4.2.2
+python-dotenv==1.1.0
+pillow==12.0.0
+requests==2.34.2

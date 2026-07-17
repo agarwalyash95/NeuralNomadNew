@@ -1,0 +1,6 @@
+# docker-entrypoint.sh is now bind-mounted straight into the backend
+# container for dev (docker-compose.yml) instead of being normalized by
+# the Dockerfile's build-time `sed -i 's/\r$//'` step — force LF so a
+# Windows checkout can't reintroduce a CRLF shebang that breaks `sh`
+# inside the Linux container.
+*.sh text eol=lf

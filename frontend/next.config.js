@@ -15,6 +15,16 @@ const nextConfig = {
   // 'localhost' pattern below covers dev; add the real backend hostname here
   // once a production domain exists.
   images: {
+    // The Next.js image optimizer fetches `src` server-side. That's fine
+    // when this dev server runs natively (localhost:8000 reaches the
+    // backend directly) or in production (a real shared hostname), but
+    // breaks when frontend runs in its own Docker container (docker-
+    // compose.yml): "localhost" there means the frontend container
+    // itself, not the backend one, so every place photo 404s even though
+    // the browser can fetch that same URL fine directly. Set by
+    // docker-compose.yml's frontend service only — unset (client-side
+    // fetch, optimized) for native/non-Docker dev and production.
+    unoptimized: process.env.NEXT_PUBLIC_IMAGES_UNOPTIMIZED === '1',
     remotePatterns: [
       {
         protocol: 'https',
