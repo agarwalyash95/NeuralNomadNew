@@ -1,0 +1,19 @@
+{
+  "status": "pass",
+  "violations": [],
+  "allowlisted": [
+    {
+      "path": "apps/reference/services/places_explore.py",
+      "module": "apps.planner.services.geocoding",
+      "reason": "temporary single sanctioned reference City writer"
+    },
+    {
+      "path": "apps/reference/management/commands/backfill_city_coordinates.py",
+      "module": "apps.planner.services.geocoding",
+      "reason": "temporary single sanctioned reference City writer"
+    }
+  ],
+  "before_planner_import_count": 6,
+  "after_unapproved_planner_import_count": 0,
+  "after_allowlisted_planner_import_count": 2
+}

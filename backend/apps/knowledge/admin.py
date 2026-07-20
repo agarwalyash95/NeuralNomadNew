@@ -1,21 +1,6 @@
-from django.contrib import admin
-
-from .models import (
-    CrowdPattern, DistanceEdge, EmergencyContact, EntityEmbedding,
-    EntityInteractionLog, Event, LocalTip, Neighbourhood, PlaceInsight,
-    PlaceRelationship, PlanInsightDismissal, SafetyAdvisory, TransitOutcomeLog,
-)
-
-admin.site.register(Neighbourhood)
-admin.site.register(Event)
-admin.site.register(LocalTip)
-admin.site.register(EmergencyContact)
-admin.site.register(SafetyAdvisory)
-admin.site.register(PlaceRelationship)
-admin.site.register(EntityEmbedding)
-admin.site.register(PlaceInsight)
-admin.site.register(EntityInteractionLog)
-admin.site.register(CrowdPattern)
-admin.site.register(TransitOutcomeLog)
-admin.site.register(DistanceEdge)
-admin.site.register(PlanInsightDismissal)
+"""Phase 7: every model this app used to register directly has moved
+(EntityEmbedding/DistanceEdge/PlaceInsight/LocalTip are now registered in
+apps.reference.admin; PlanInsightDismissal follows apps.planner's existing
+convention of no admin registrations at all) or been deleted for real
+(confirmed-dead models — see apps/knowledge/models.py's module docstring).
+Nothing left to register here."""

@@ -10,6 +10,7 @@
  */
 
 import type { PlannerTrip, TripActivity } from '@/services/planner.types';
+import { localDateToISO, parseLocalISODate, todayLocalISO } from '@/lib/utils';
 import type {
   BlockCost,
   ItineraryCity,
@@ -75,7 +76,7 @@ function activityToItem(a: TripActivity, trip: PlannerTrip, fallbackCity: string
     latitude: a.latitude ?? (metadata.latitude as number | undefined),
     longitude: a.longitude ?? (metadata.longitude as number | undefined),
     aiTip: a.ai_tip ?? undefined,
-    aiTipStatus: (metadata.ai_tip_status as 'pending' | 'ready') || undefined,
+    aiTipStatus: (metadata.ai_tip_status as ItineraryItem['aiTipStatus']) || undefined,
     rating: a.rating ?? undefined,
     image: a.image_url ?? undefined,
     geoTag: fallbackCity,
@@ -87,6 +88,7 @@ function activityToItem(a: TripActivity, trip: PlannerTrip, fallbackCity: string
     checkIn: (metadata.check_in as string | undefined) || undefined,
     checkOut: (metadata.check_out as string | undefined) || undefined,
     _aiInsights: a._aiInsights,
+    why: a.why ?? undefined,
     isInactive,
     _rawActivity: a,
   } as ItineraryItem;
@@ -129,6 +131,7 @@ export function transformTripData(trip: PlannerTrip): TripViewModel {
       id: day.id || `day-${day.day_number}`,
       dayNumber: day.day_number,
       dateStr: day.date || `Day ${day.day_number}`,
+      isoDate: /^\d{4}-\d{2}-\d{2}$/.test(day.date || '') ? (day.date || undefined) : undefined,
       title: day.title || `Exploring ${targetCityName}`,
       items,
       transitHints: day.transit_hints || undefined,
@@ -177,7 +180,8 @@ export function transformTripData(trip: PlannerTrip): TripViewModel {
       sequentialCities.push({
         id: baseCity?.id ? `${baseCity.id}-seg-${segmentIndex}` : `city-segment-${segmentIndex}`,
         cityName: targetCityName,
-        nights: baseCity?.nights || 1,
+        country: baseCity?.country || '',
+        nights: baseCity?.nights ?? -1,
         dateRange: baseCity?.arrival_date
           ? `${baseCity.arrival_date} to ${baseCity.departure_date}`
           : '',
@@ -211,8 +215,8 @@ export function transformTripData(trip: PlannerTrip): TripViewModel {
   });
 
   // Segment metadata post-processing
-  sequentialCities.forEach((segment, idx) => {
-    segment.nights = Math.max(segment.days.length, 1);
+  sequentialCities.forEach((segment) => {
+    if (segment.nights < 0) segment.nights = Math.max(segment.days.length - 1, 0);
     const firstDay = segment.days[0];
     const lastDay = segment.days[segment.days.length - 1];
     if (firstDay && lastDay) {
@@ -220,9 +224,6 @@ export function transformTripData(trip: PlannerTrip): TripViewModel {
         firstDay.dateStr === lastDay.dateStr
           ? firstDay.dateStr
           : `${firstDay.dateStr} to ${lastDay.dateStr}`;
-    }
-    if (idx === sequentialCities.length - 1) {
-      delete segment.transitToNext;
     }
   });
 
@@ -238,6 +239,39 @@ export function transformTripData(trip: PlannerTrip): TripViewModel {
       : null,
     startDate: firstBackendCity?.arrival_date || '',
     endDate: lastBackendCity?.departure_date || '',
+    // PROV-01 (docs/planner-complete-current-audit-and-repair-plan.md §19
+    // R13): previously only visible on the ephemeral generation job during
+    // the ~1.8s loading-screen transition — see plan_generation.py
+    // _persist_trip for why trip.metadata.degraded now persists this.
+    degraded: Boolean(trip.metadata?.degraded),
+    qualityReview: {
+      flagged: Boolean(trip.scorecard?.flagged_for_review),
+      state: trip.scorecard?.quality_state,
+      gaps: [
+        ...(Array.isArray(trip.metadata?.validation_gaps)
+          ? (trip.metadata.validation_gaps as { reason?: string; category?: string; day?: number }[])
+          : []),
+        ...(Array.isArray(trip.scorecard?.reasons)
+          ? trip.scorecard.reasons.map(reason => ({ reason }))
+          : []),
+      ],
+      // M5 'expert reasoning shown' — set only when the LLM critic pass ran.
+      criticReview: trip.scorecard?.critic_review ?? null,
+    },
+    syncStatus: (() => {
+      const state = trip.metadata?.targeted_regeneration as Record<string, any> | undefined;
+      if (!state || state.status === 'complete' || !Array.isArray(state.scopes) || state.scopes.length === 0) {
+        return null;
+      }
+      return {
+        status: state.status === 'failed' ? 'failed' : 'pending',
+        scopes: state.scopes.filter((scope: unknown): scope is string => typeof scope === 'string'),
+        invalidated: Array.isArray(state.invalidated)
+          ? state.invalidated.filter((fact: unknown): fact is string => typeof fact === 'string')
+          : [],
+        requestedAt: typeof state.requested_at === 'string' ? state.requested_at : undefined,
+      };
+    })(),
     checklist: [
       { id: 'hotels', label: 'Hotel Bookings', status: hasConfirmedHotel ? 'Completed' : 'Pending', type: 'accommodation' },
       { id: 'transport', label: 'Local Transport', status: hasConfirmedTransport ? 'Completed' : 'Pending', type: 'transport' },
@@ -259,7 +293,7 @@ export function serializePlanUpdate(data: TripViewModel): {
     city.days.map((day) => ({
       id: day.id,
       day_number: day.dayNumber,
-      date: day.dateStr,
+      date: day.isoDate || day.dateStr,
       title: day.title,
       city: city.cityName,
       activities: day.items.map((item) => {
@@ -270,6 +304,14 @@ export function serializePlanUpdate(data: TripViewModel): {
           : item.status === 'Confirmed'
             ? 'booked'
             : 'pending';
+        // Phase 0d fix: this used to spread _rawActivity (the pre-edit
+        // snapshot) and override only is_active/status/cost/block_status —
+        // an inline time-picker edit (ItineraryTimeline.handleTimeChange)
+        // only ever touched item.startTime/endTime, which were never read
+        // back here, so the PATCH silently persisted the ORIGINAL time and
+        // the edit reverted on reload.
+        raw.start_time = item.startTime;
+        raw.end_time = item.endTime;
         if (item.cost) raw.cost = item.cost;
         if (item.blockStatus) raw.block_status = item.blockStatus;
         return raw;
@@ -283,9 +325,10 @@ export function serializePlanUpdate(data: TripViewModel): {
     return {
       id: city.id,
       name: city.cityName,
+      country: city.country || '',
       nights: city.nights,
-      arrival_date: firstDay?.dateStr || '',
-      departure_date: lastDay?.dateStr || '',
+      arrival_date: firstDay?.isoDate || firstDay?.dateStr || '',
+      departure_date: lastDay?.isoDate || lastDay?.dateStr || '',
       transitToNext: city.transitToNext
         ? {
             ...(city.transitToNext._rawActivity || {}),
@@ -338,15 +381,15 @@ export function getVerifyContext(
     destination = routeParts[1].trim();
   }
 
-  let date = new Date().toISOString().split('T')[0]!;
+  let date = todayLocalISO();
   if (dayDateStr) {
-    const parsed = new Date(dayDateStr);
-    if (!isNaN(parsed.getTime())) {
-      date = parsed.toISOString().split('T')[0]!;
+    const parsed = parseLocalISODate(dayDateStr);
+    if (parsed) {
+      date = dayDateStr;
     } else {
       // Legacy day labels like "12 Aug" lack a year — assume the current one
       const withYear = new Date(`${dayDateStr} ${new Date().getFullYear()}`);
-      if (!isNaN(withYear.getTime())) date = withYear.toISOString().split('T')[0]!;
+      if (!isNaN(withYear.getTime())) date = localDateToISO(withYear);
     }
   }
 

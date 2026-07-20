@@ -1,0 +1,16 @@
+{
+  "admin2_rows": 763,
+  "aliases_created": 1758,
+  "batch_id": 14,
+  "cities_backfilled_normalized_name": 0,
+  "cities_geonameid_conflict_skipped": 12,
+  "cities_matched": 4180,
+  "cities_updated_geonameid": 0,
+  "districts_created": 0,
+  "geonames_rows_seen": 659977,
+  "mode": "apply",
+  "new_cities_created": 0,
+  "new_city_candidates_staged": 16,
+  "populated_place_rows": 557995,
+  "unmatched_generic_populated_places": 553796
+}

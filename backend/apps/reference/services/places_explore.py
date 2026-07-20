@@ -7,9 +7,13 @@ serve from cache when there's enough of it, otherwise hit the Places API,
 save new rows (dedup by place_id), then distance-filter/sort by the active
 node's coordinates. Keeping one copy means the four categories can't drift
 apart in radius, cache threshold, or geo-filtering behavior.
+
+Transitional boundary note: ``resolve_city`` delegates to the single
+sanctioned planner geocoding writer. This exact import is allowlisted by
+``check_layer_boundaries`` and must not spread to other reference modules.
 """
 
-import math
+import logging
 
 import requests
 from django.conf import settings
@@ -17,40 +21,32 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.reference.models import City, Country
+from apps.reference.services.geo import haversine_km
 
 RADIUS_KM = 15.0
 MIN_CACHE_RESULTS = 5
 SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
+logger = logging.getLogger(__name__)
 
 
 def haversine(lat1, lon1, lat2, lon2):
-    R = 6371.0  # earth radius in km
-    d_lat = math.radians(lat2 - lat1)
-    d_lon = math.radians(lon2 - lon1)
-    a = (math.sin(d_lat / 2) ** 2 +
-         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(d_lon / 2) ** 2)
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    return R * c
+    """Compatibility wrapper around the reference-owned geo implementation."""
+    return haversine_km(lat1, lon1, lat2, lon2)
 
 
 def resolve_city(location):
-    city_name = location.split(',')[0].strip()
-    city_obj = City.objects.filter(name__iexact=city_name).first()
-    if not city_obj:
-        country_obj = Country.objects.first()
-        if not country_obj:
-            country_obj = Country.objects.create(name="India", code="IN")
-        city_obj = City.objects.create(name=city_name.capitalize(), country=country_obj)
-    return city_obj
+    from apps.planner.services.geocoding import resolve_or_create_city
+
+    return resolve_or_create_city(location)
 
 
-def _distance_sort(places, lat_val, lng_val):
+def _distance_sort(places, lat_val, lng_val, radius_km=RADIUS_KM):
     """Filter to RADIUS_KM and sort nearest-first, annotating .distance_km."""
     filtered = []
     for place in places:
         if place.latitude is not None and place.longitude is not None:
             dist = haversine(lat_val, lng_val, float(place.latitude), float(place.longitude))
-            if dist <= RADIUS_KM:
+            if dist <= radius_km:
                 place.distance_km = round(dist, 2)
                 filtered.append(place)
     filtered.sort(key=lambda p: p.distance_km)
@@ -90,7 +86,7 @@ def extract_editorial_summary(place_json):
 # Each maps a Places API result dict to the model-specific create() kwargs
 # (city/place_id are supplied by explore_places itself). Moved here from
 # views.py — service logic belongs in the service layer, and
-# apps.knowledge.services.engine needs to reuse these without importing
+# resolve_places() (below) needs to reuse these without importing
 # from a view module (see docs/travel-knowledge-engine-plan.md K2).
 
 def map_restaurant(p, api_key=None):
@@ -214,7 +210,7 @@ def map_hotel(p, api_key=None):
     )
 
 
-# Category config used by KnowledgeEngine.resolve() (apps.knowledge.services.engine)
+# Category config used by resolve_places() (below)
 # — centralizes what was previously duplicated inline across four explore()
 # actions in views.py.
 def _category_config():
@@ -274,7 +270,7 @@ def _category_config():
     }
 
 
-def explore_places(model, location, lat_val, lng_val, google_query, included_type, field_mask, field_mapper):
+def explore_places(model, location, lat_val, lng_val, google_query, included_type, field_mask, field_mapper, radius_km=RADIUS_KM):
     """
     model: the Django model class (RestaurantMaster, AttractionMaster, ActivityMaster, HotelMaster)
     location: raw "City[, Country]" string from the request
@@ -288,12 +284,16 @@ def explore_places(model, location, lat_val, lng_val, google_query, included_typ
     and places is a list of model instances (each annotated with .distance_km when
     coordinates were supplied).
     """
+    from apps.reference.services.provenance import publishable
+
     city_obj = resolve_city(location)
     has_coords = lat_val is not None and lng_val is not None
 
-    cached_places = list(model.objects.filter(city=city_obj))
+    # Phase 0A (audit GEN-02): rows claiming a Places origin without a
+    # place_id are legacy LLM-cache poisoning — never served from cache.
+    cached_places = list(publishable(model.objects.filter(city=city_obj)))
     if has_coords:
-        cached_places = _distance_sort(cached_places, lat_val, lng_val)
+        cached_places = _distance_sort(cached_places, lat_val, lng_val, radius_km)
     if len(cached_places) >= MIN_CACHE_RESULTS:
         return 'cache', cached_places, None
 
@@ -313,7 +313,7 @@ def explore_places(model, location, lat_val, lng_val, google_query, included_typ
         payload["includedType"] = included_type
     if has_coords:
         payload["locationBias"] = {
-            "circle": {"center": {"latitude": lat_val, "longitude": lng_val}, "radius": 15000.0}
+            "circle": {"center": {"latitude": lat_val, "longitude": lng_val}, "radius": radius_km * 1000.0}
         }
 
     try:
@@ -335,16 +335,18 @@ def explore_places(model, location, lat_val, lng_val, google_query, included_typ
                     # docs/travel-knowledge-engine-plan.md §3a/§4). The background
                     # refresh task queries against this field.
                     model.objects.create(
-                        city=city_obj, place_id=place_id,
+                        city=city_obj, place_id=place_id, external_id=place_id,
                         last_enriched_at=timezone.now(), source="google_places",
+                        verification_status="verified", verified_at=timezone.now(),
+                        is_quarantined=False,
                         **kwargs,
                     )
             except Exception as e:
-                print(f"Error saving {model.__name__} place: {e}")
+                logger.warning("Error saving %s place: %s", model.__name__, e)
 
-    final_places = list(model.objects.filter(city=city_obj))
+    final_places = list(publishable(model.objects.filter(city=city_obj)))
     if has_coords:
-        final_places = _distance_sort(final_places, lat_val, lng_val)
+        final_places = _distance_sort(final_places, lat_val, lng_val, radius_km)
     else:
         final_places.sort(key=lambda p: p.user_rating or 0, reverse=True)
 
@@ -384,3 +386,42 @@ def fetch_place_by_id(model, place_id, field_mask, field_mapper):
         last_enriched_at=timezone.now(), **kwargs
     )
     return updated > 0
+
+
+class UnknownCategoryError(ValueError):
+    pass
+
+
+def resolve_places(category, location, lat=None, lng=None, radius_km=RADIUS_KM):
+    """
+    Phase 7 (knowledge application migration, §12): folded in from
+    apps.knowledge.services.engine.KnowledgeEngine.resolve — that class was
+    already just a thin wrapper over explore_places/_category_config, both
+    defined in this same module, so the fold is direct, not a rewrite.
+    apps.knowledge.services.engine.KnowledgeEngine.resolve now delegates
+    here as a compatibility shim.
+
+    category: "hotel" | "restaurant" | "attraction" | "activity"
+    location: raw "City[, Country]" string (matches explore_places today)
+    lat/lng: optional floats for geo-bias + distance-sort
+
+    Returns (source, places, error) — same shape as explore_places.
+    """
+    config = _category_config().get(category)
+    if config is None:
+        raise UnknownCategoryError(
+            f"resolve_places has no category config for {category!r}; "
+            f"expected one of {sorted(_category_config().keys())}"
+        )
+
+    return explore_places(
+        model=config["model"],
+        location=location,
+        lat_val=lat,
+        lng_val=lng,
+        google_query=config["query_template"].format(location=location),
+        included_type=config["included_type"],
+        field_mask=config["field_mask"],
+        field_mapper=config["field_mapper"],
+        radius_km=radius_km,
+    )

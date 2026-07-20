@@ -19,7 +19,10 @@ export type BlockStatus = 'idea' | 'planned' | 'priced' | 'booked';
 
 export interface ItineraryItem {
   id: string;
-  type: 'flight' | 'taxi' | 'cab' | 'hotel' | 'food' | 'activity' | 'attraction' | 'train' | 'bus';
+  /** 'rest' (unstructured downtime) and 'hotel_return' (evening anchor back
+   *  to the day's hotel) are non-bookable — no price, provenance, or master
+   *  ref; inserted directly onto the timeline, never via a Helper Canvas. */
+  type: 'flight' | 'taxi' | 'cab' | 'hotel' | 'food' | 'activity' | 'attraction' | 'train' | 'bus' | 'rest' | 'hotel_return';
   startTime?: string;
   endTime?: string;
   title: string;
@@ -31,7 +34,7 @@ export interface ItineraryItem {
   cost?: BlockCost;
   blockStatus?: BlockStatus;
   aiTip?: string;
-  aiTipStatus?: 'pending' | 'ready';
+  aiTipStatus?: 'pending' | 'ready' | 'pending_worker_unavailable' | 'generation_failed';
   image?: string;
   rating?: number;
   geoTag?: string;
@@ -56,6 +59,9 @@ export interface ItineraryItem {
   masterRef?: { table: string; id: number | string } | null;
   isInactive?: boolean;
   isDeleting?: boolean;
+  /** M5 'expert reasoning shown' — the PreferenceScorer reason(s) this
+   *  block was ranked/chosen (backend `TripActivity.why`). */
+  why?: string;
   /** Pre-computed backend insights (real cached candidates only) */
   _aiInsights?: any;
   _rawActivity?: any;
@@ -72,6 +78,8 @@ export interface ItineraryDay {
   id: string;
   dayNumber: number;
   dateStr: string;
+  /** Canonical backend date; display formatting must never overwrite it. */
+  isoDate?: string;
   title: string;
   items: ItineraryItem[];
   weather?: string;
@@ -81,6 +89,7 @@ export interface ItineraryDay {
 export interface ItineraryCity {
   id: string;
   cityName: string;
+  country?: string;
   nights: number;
   dateRange: string;
   /** Only populated from real forecast data — never synthesized */
@@ -99,6 +108,28 @@ export interface TripViewModel {
   budget?: { amount: number; currency: string } | null;
   startDate?: string;
   endDate?: string;
+  /** True when this trip is the curated fallback plan (AI pipeline
+   *  unavailable at generation time), not the real AI-composed itinerary —
+   *  see planTransform.ts and plan_generation.py _persist_trip. */
+  degraded?: boolean;
+  qualityReview?: {
+    flagged: boolean;
+    score?: number;
+    state?: 'strong' | 'review_recommended' | 'blocked';
+    gaps: { reason?: string; category?: string; day?: number }[];
+    /** M5 'expert reasoning shown' — set only when the LLM critic pass ran
+     *  (plan_generation.py `_run_critic_review`). */
+    criticReview?: {
+      summary: string;
+      findings: { issue: string; day_number?: number | null; severity: string }[];
+    } | null;
+  };
+  syncStatus?: {
+    status: 'pending' | 'complete' | 'failed';
+    scopes: string[];
+    invalidated: string[];
+    requestedAt?: string;
+  } | null;
   checklist: {
     id: string;
     label: string;

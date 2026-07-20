@@ -1,5 +1,5 @@
 import React, { useRef, useMemo } from 'react';
-import { Zap, ArrowLeft, Hourglass, Wallet, CalendarCheck, Check } from 'lucide-react';
+import { Zap, ArrowLeft, Hourglass, Wallet, CalendarCheck, Check, GitCompareArrows } from 'lucide-react';
 import type { ActivityRecommendation } from './services/activityRecommendationEngine';
 import { getCategoryStyle } from '../../plan-canvas/utils/categoryStyle';
 import DetailHero from '../shared/detail-panel/DetailHero';
@@ -33,7 +33,7 @@ const METER_SEGMENTS = 8;
  * review, each expandable). No tabs, no big stat cards, no oversized CTA bar.
  */
 export default function ActivityDetailPanel({
-  recommendation, onSelect, onBack, tripContext, isCompared: _isCompared, onCompareToggle: _onCompareToggle,
+  recommendation, onSelect, onBack, tripContext, isCompared, onCompareToggle,
 }: ActivityDetailPanelProps) {
   const {
     suggestion, difficulty, difficultyScore, durationLabel, priceLabel,
@@ -77,6 +77,24 @@ export default function ActivityDetailPanel({
       {onBack && (
         <button type="button" onClick={onBack} className="absolute top-4 left-4 z-40 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 backdrop-blur-sm shadow-md text-ink-700 hover:bg-white cursor-pointer transition-all active:scale-95">
           <ArrowLeft size={16} />
+        </button>
+      )}
+
+      {/* Phase 2b (docs/planner-north-star-audit-and-vision.md) — was
+          destructured with underscore aliases to satisfy the unused-var
+          lint rule; nothing rendered them, so SightCompareTray pinning was
+          unreachable from this panel. */}
+      {onCompareToggle && (
+        <button
+          type="button"
+          onClick={onCompareToggle}
+          aria-pressed={isCompared}
+          title={isCompared ? 'Remove from comparison' : 'Add to comparison'}
+          className={`absolute top-4 right-4 z-40 flex h-9 w-9 items-center justify-center rounded-full shadow-md backdrop-blur-sm cursor-pointer transition-all active:scale-95 ${
+            isCompared ? 'bg-cat-activity text-white' : 'bg-white/90 text-ink-700 hover:bg-white'
+          }`}
+        >
+          <GitCompareArrows size={16} />
         </button>
       )}
 

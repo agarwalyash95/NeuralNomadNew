@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Check, Plus, Mountain } from 'lucide-react';
+import { Check, Plus, Mountain, GitCompareArrows } from 'lucide-react';
 import type { AttractionRecommendation } from './services/sightRecommendationEngine';
 import { TripContext } from '../../types';
 
@@ -10,20 +10,30 @@ interface AttractionSuggestionCardProps {
   onSelect: () => void;
   onAdd: () => void;
   tripContext: TripContext;
+  /** Phase 2b (docs/planner-north-star-audit-and-vision.md) — pin state for
+   *  SightCompareTray. Optional so this card still works anywhere pin
+   *  tracking doesn't apply. */
+  isPinned?: boolean;
+  onTogglePin?: () => void;
 }
 
 export default function AttractionSuggestionCard({
-  recommendation, isPending, onSelect, onAdd,
+  recommendation, isPending, onSelect, onAdd, isPinned, onTogglePin,
 }: AttractionSuggestionCardProps) {
   const { suggestion, entryFee, entryFeeIsReal, walkTimeMins } = recommendation;
   const photo = suggestion.image_url;
 
-  // Real fact only — no invented "saves transit time" verdict.
-  const factChip = useMemo(() => {
-    if (walkTimeMins != null) return `${walkTimeMins} min walk`;
-    if (entryFeeIsReal && entryFee.toLowerCase().includes('free')) return 'Free entry';
-    if (suggestion.rating != null) return `${suggestion.rating.toFixed(1)}★`;
-    return null;
+  // Phase 2d (docs/planner-north-star-audit-and-vision.md) — up to 2 real
+  // facts instead of 1, so choosing doesn't require opening the detail
+  // panel for every card. Also fixes a real gap in the old single-chip
+  // logic: a real, priced entry fee ("₹200") was silently dropped unless
+  // it happened to be free — only "Free entry" ever reached the card.
+  const factChips = useMemo(() => {
+    const chips: string[] = [];
+    if (walkTimeMins != null) chips.push(`${walkTimeMins} min walk`);
+    if (entryFeeIsReal) chips.push(entryFee);
+    if (suggestion.rating != null) chips.push(`${suggestion.rating.toFixed(1)}★`);
+    return chips.slice(0, 2);
   }, [walkTimeMins, entryFee, entryFeeIsReal, suggestion.rating]);
 
   return (
@@ -63,28 +73,49 @@ export default function AttractionSuggestionCard({
           )}
         </div>
 
-        {/* Fact chip and Button Row */}
-        <div className="mt-2.5 flex items-center justify-between">
-          {factChip ? (
-            <span className="inline-flex items-center text-[10px] font-bold text-cat-attraction bg-cat-attraction/10 px-2 py-0.5 rounded-md border border-cat-attraction/15">
-              {factChip}
-            </span>
+        {/* Fact chips and Button Row */}
+        <div className="mt-2.5 flex items-center justify-between gap-2">
+          {factChips.length > 0 ? (
+            <div className="flex min-w-0 flex-wrap items-center gap-1">
+              {factChips.map((chip) => (
+                <span key={chip} className="inline-flex items-center text-[10px] font-bold text-cat-attraction bg-cat-attraction/10 px-2 py-0.5 rounded-md border border-cat-attraction/15">
+                  {chip}
+                </span>
+              ))}
+            </div>
           ) : (
             <span />
           )}
 
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onAdd(); }}
-            className={`flex h-7 w-7 items-center justify-center rounded-full shadow-xs transition-all duration-200 cursor-pointer ${
-              isPending 
-                ? 'bg-cat-attraction text-white shadow-sm shadow-cat-attraction/25' 
-                : 'bg-paper-1 hover:bg-line/40 text-ink-700 border border-line hover:scale-105'
-            }`}
-            title={isPending ? 'Added' : 'Add to plan'}
-          >
-            {isPending ? <Check size={13} strokeWidth={3} /> : <Plus size={13} strokeWidth={3} />}
-          </button>
+          <div className="flex items-center gap-1.5">
+            {onTogglePin && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
+                className={`flex h-7 w-7 items-center justify-center rounded-full shadow-xs transition-all duration-200 cursor-pointer ${
+                  isPinned
+                    ? 'bg-cat-attraction/15 text-cat-attraction border border-cat-attraction/40'
+                    : 'bg-paper-1 hover:bg-line/40 text-ink-500 border border-line hover:scale-105'
+                }`}
+                title={isPinned ? 'Remove from comparison' : 'Add to comparison'}
+                aria-pressed={isPinned}
+              >
+                <GitCompareArrows size={13} strokeWidth={2.5} />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onAdd(); }}
+              className={`flex h-7 w-7 items-center justify-center rounded-full shadow-xs transition-all duration-200 cursor-pointer ${
+                isPending
+                  ? 'bg-cat-attraction text-white shadow-sm shadow-cat-attraction/25'
+                  : 'bg-paper-1 hover:bg-line/40 text-ink-700 border border-line hover:scale-105'
+              }`}
+              title={isPending ? 'Added' : 'Add to plan'}
+            >
+              {isPending ? <Check size={13} strokeWidth={3} /> : <Plus size={13} strokeWidth={3} />}
+            </button>
+          </div>
         </div>
       </div>
     </div>

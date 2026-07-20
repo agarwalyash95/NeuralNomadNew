@@ -1,0 +1,36 @@
+{
+  "captured_at": "2026-07-20T00:00:00+05:30",
+  "purpose": "Confirm every literal/private-constant the implementation report claims to have retired is actually absent from the touched files (not just claimed absent).",
+  "checks": [
+    {
+      "pattern": "_CAB_BASE_FARE|_CAB_RATE_PER_KM",
+      "file": "apps/planner/services/transport_compare.py",
+      "matches": [],
+      "result": "clean"
+    },
+    {
+      "pattern": "_RESTAURANT_PRICE_BAND =",
+      "file": "apps/reference/services/suggestions.py",
+      "matches": [],
+      "result": "clean"
+    },
+    {
+      "pattern": "DEST_TIER_RATES =",
+      "file": "apps/planner/services/intelligence/recommendations.py",
+      "matches": [],
+      "result": "clean (moved to price_estimator.py, the canonical home)"
+    },
+    {
+      "pattern": "DEST_TIER_RATES|PURPOSE_BUDGET_MULTIPLIERS|_compute_recommended_budget_inr",
+      "file": "apps/planner/services/conversation_engine.py",
+      "matches": [],
+      "result": "clean (dead NameError-prone duplicate deleted; now calls recommendations.recommended_budget_inr)"
+    },
+    {
+      "pattern": "\\b850\\b|\\b5000\\b|\\b1500\\b",
+      "file": "apps/reference/services/live_price.py",
+      "matches": [],
+      "result": "clean (C1 fabricated-literal pattern still absent, re-checked since Phase 5 depends on that honesty holding)"
+    }
+  ]
+}

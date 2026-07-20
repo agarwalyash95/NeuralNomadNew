@@ -41,7 +41,8 @@ export function useLiveWorkspaceEvents(workspaceId: string) {
       const controller = new AbortController();
       abortRef.current = controller;
 
-      const url = `/api/v1/planner/workspaces/${workspaceId}/live/`;
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+      const url = `${API_URL}/planner/workspaces/${workspaceId}/live/`;
 
       try {
         const response = await fetch(url, {

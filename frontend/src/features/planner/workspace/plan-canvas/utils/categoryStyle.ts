@@ -1,4 +1,4 @@
-import { BedDouble, Utensils, Zap, Compass, Car, type LucideIcon } from 'lucide-react';
+import { BedDouble, Utensils, Zap, Compass, Car, Coffee, Moon, type LucideIcon } from 'lucide-react';
 
 /**
  * One category → {icon, color} map, imported by every surface that renders
@@ -15,7 +15,7 @@ import { BedDouble, Utensils, Zap, Compass, Car, type LucideIcon } from 'lucide-
  * everywhere it appeared, so that agreement is preserved here as-is.
  */
 
-export type BlockCategory = 'hotel' | 'food' | 'restaurant' | 'activity' | 'attraction' | 'taxi' | 'cab';
+export type BlockCategory = 'hotel' | 'food' | 'restaurant' | 'activity' | 'attraction' | 'taxi' | 'cab' | 'rest' | 'hotel_return';
 
 interface CategoryStyleEntry {
   icon: LucideIcon;
@@ -36,6 +36,10 @@ export const CATEGORY_STYLE: Record<BlockCategory, CategoryStyleEntry> = {
   attraction: { icon: Compass, hex: '#059669', text: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200', gradient: 'from-emerald-50/20 to-emerald-100/10' },
   taxi: { icon: Car, hex: '#f59e0b', text: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200', gradient: 'from-amber-50/20 to-amber-100/10' },
   cab: { icon: Car, hex: '#f59e0b', text: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200', gradient: 'from-amber-50/20 to-amber-100/10' },
+  // Non-bookable — deliberately muted/neutral so they read as "light",
+  // never competing visually with a real bookable place.
+  rest: { icon: Coffee, hex: '#78716c', text: 'text-stone-500', bg: 'bg-stone-50', border: 'border-stone-200', gradient: 'from-stone-50/20 to-stone-100/10' },
+  hotel_return: { icon: Moon, hex: '#a5b4fc', text: 'text-indigo-400', bg: 'bg-indigo-50/60', border: 'border-indigo-100', gradient: 'from-indigo-50/10 to-indigo-100/5' },
 };
 
 export function getCategoryStyle(type: string): CategoryStyleEntry {

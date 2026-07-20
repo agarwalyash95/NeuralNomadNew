@@ -49,6 +49,12 @@ class RedbusBusProvider(BaseBusProvider):
                 if buses:
                     results = []
                     for idx, bus in enumerate(buses[:15]):
+                        fare = bus.get('fare')
+                        price_provenance = {
+                            "classification": "provider_observation" if fare is not None else "insufficient_data",
+                            "tier": "verified" if fare is not None else "estimated",
+                            "source": "live_inventory" if fare is not None else "provider_schedule_without_fare",
+                        }
                         results.append({
                             "id": f"redbus-{bus.get('id', idx)}",
                             "service_type": "bus",
@@ -67,13 +73,14 @@ class RedbusBusProvider(BaseBusProvider):
                                 "bus_type": bus.get('bus_type', 'AC Sleeper (2+1)'),
                                 "rating": bus.get('rating', 4.6),
                                 "seats": [
-                                    {"type": "Upper Sleeper", "price": bus.get('fare', 1250), "available": 14},
-                                    {"type": "Lower Sleeper", "price": bus.get('fare', 1450), "available": 8}
+                                    {"type": "Upper Sleeper", "price": fare, "available": 14},
+                                    {"type": "Lower Sleeper", "price": fare, "available": 8}
                                 ]
                             },
                             "providers": [
-                                {"provider": "Redbus Direct", "price": bus.get('fare', 1250), "deeplink": "#"}
+                                {"provider": "Redbus Direct", "price": fare, "deeplink": "#"}
                             ],
+                            "price_provenance": price_provenance,
                             "is_active": True
                         })
                     return results
@@ -181,4 +188,11 @@ class MockBusProvider(BaseBusProvider):
                 }
             ]
 
+        for item in results:
+            item["source"] = "mock_inventory"
+            item["price_provenance"] = {
+                "classification": "mock_data",
+                "tier": "estimated",
+                "source": "mock_inventory",
+            }
         return results

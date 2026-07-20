@@ -1,0 +1,49 @@
+{
+  "captured_at": "2026-07-20T00:00:00+05:30",
+  "command": "python manage.py seed_fare_rules",
+  "output_this_run": "sources: created=0 updated=0 | rules: created=0 updated=0 unchanged=3",
+  "note_train_metro": "train/metro FareRules were NOT seeded this pass — no confidently-sourced table found (see docstring + phase-05 implementation report).",
+  "interpretation": "Re-run is idempotent — the 3 FareRule rows and 1 SourceRegistry row created in the original run are still present and unchanged, confirming the seeder does not duplicate on re-run.",
+  "fare_rules_current_state": [
+    {
+      "id": 1,
+      "category": "cab",
+      "scope": "national",
+      "service_class": "",
+      "unit": "per_km",
+      "provenance_tier": "derived",
+      "confidence": 0.6,
+      "is_active": true,
+      "name": "NeuralNomad intercity cab rate card (formalized)"
+    },
+    {
+      "id": 2,
+      "category": "bus",
+      "scope": "national",
+      "service_class": "non_ac",
+      "unit": "per_km",
+      "provenance_tier": "derived",
+      "confidence": 0.35,
+      "is_active": true,
+      "name": "UPSRTC Ordinary (non-AC) bus rate, national fallback — needs periodic re-verification"
+    },
+    {
+      "id": 3,
+      "category": "bus",
+      "scope": "national",
+      "service_class": "ac",
+      "unit": "per_km",
+      "provenance_tier": "derived",
+      "confidence": 0.35,
+      "is_active": true,
+      "name": "UPSRTC AC (2x2) bus rate, national fallback — needs periodic re-verification"
+    }
+  ],
+  "source_registry_row": {
+    "id": 8,
+    "slug": "upsrtc_fare_calculation",
+    "publisher": "Uttar Pradesh State Road Transport Corporation (UPSRTC)",
+    "licence_name": "Public tariff notification (no formal open-data licence)",
+    "licence_url": "https://upsrtc.up.gov.in/en/article/fare-calculation"
+  }
+}

@@ -10,6 +10,19 @@ def mark_pending_tip(trip, block_id):
         block['metadata']['ai_tip_status'] = 'pending'
         trip.save(update_fields=['days', 'updated_at'])
 
+def set_tip_status(workspace_id, block_id, status):
+    """Persist an honest terminal/retryable worker state without inventing a tip."""
+    with transaction.atomic():
+        workspace = PlannerWorkspace.objects.select_for_update().get(id=workspace_id)
+        if not hasattr(workspace, 'trip'):
+            return
+        trip = workspace.trip
+        block, _ = find_block(trip, block_id)
+        if block:
+            block.setdefault('metadata', {})
+            block['metadata']['ai_tip_status'] = status
+            trip.save(update_fields=['days', 'updated_at'])
+
 def apply_generated_tip(workspace_id, block_id, tip_text):
     """Safely applies a generated tip to the trip block."""
     from apps.planner.services.block_enrichment import enrich_transport_block
@@ -19,7 +32,7 @@ def apply_generated_tip(workspace_id, block_id, tip_text):
             return
         trip = workspace.trip
         block, _ = find_block(trip, block_id)
-        if block:
+        if block and tip_text:
             block['ai_tip'] = tip_text
             block.setdefault('metadata', {})
             block['metadata']['ai_tip_status'] = 'ready'

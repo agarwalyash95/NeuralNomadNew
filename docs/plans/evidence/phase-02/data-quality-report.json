@@ -1,0 +1,18 @@
+{
+  "coordinate_coverage": {
+    "railway": {"complete": 8697, "total": 9011, "ratio": 0.965154, "target": 0.95, "passed": true}
+  },
+  "city_placeholder_reduction": {"before": 8634, "after": 270, "reduced_by": 8364},
+  "publishable_placeholder_cities": 0,
+  "out_of_range_coordinates": 0,
+  "non_publishable_rows": 586,
+  "non_publishable_reason_counts": {"no_coords": 316, "placeholder": 270},
+  "station_open_data_pass": {
+    "targeted": 314,
+    "datameet_matches": 0,
+    "wikidata_matches": 0,
+    "rows_unchanged": 314
+  },
+  "destructive_changes": 0,
+  "paid_api_calls": 0
+}

@@ -1,0 +1,11 @@
+{
+  "already_current": 0,
+  "batch_id": 17,
+  "created": 3485,
+  "distinct_station_pairs": 3485,
+  "features_seen": 5208,
+  "matched_pairs": 3485,
+  "mode": "apply",
+  "unmatched_station_code": 0,
+  "updated": 0
+}

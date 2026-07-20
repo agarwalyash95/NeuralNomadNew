@@ -1,0 +1,17 @@
+Initial scrub preview:
+Mode: DRY RUN
+Rows scanned: 35
+Rows requiring changes: 35
+Primary URLs changed: 35
+Secondary URLs changed: 17
+Unsafe URLs removed without recoverable photo reference: 0
+
+Reviewed result: expected scope. Every legacy attraction row used the known Google photo URL form, every affected URL retained a recoverable photo reference, and no URL would be discarded.
+
+Post-apply idempotence preview:
+Mode: DRY RUN
+Rows scanned: 35
+Rows requiring changes: 0
+Primary URLs changed: 0
+Secondary URLs changed: 0
+Unsafe URLs removed without recoverable photo reference: 0

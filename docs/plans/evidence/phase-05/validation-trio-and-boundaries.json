@@ -1,0 +1,38 @@
+{
+  "captured_at": "2026-07-20T00:00:00+05:30",
+  "note": "Re-run against the real dev DB (localhost:5433) to backfill missing phase-05 evidence; commands were already reported as clean in phase-05-verification-report.md — this file is a fresh, independently re-captured confirmation, not a copy of that report's prose.",
+  "manage_py_check": {
+    "command": "python manage.py check",
+    "output": "System check identified no issues (0 silenced).",
+    "exit_code": 0
+  },
+  "makemigrations_dry_run": {
+    "command": "python manage.py makemigrations --check --dry-run",
+    "output": "No changes detected",
+    "exit_code": 0
+  },
+  "compileall": {
+    "command": "python -m compileall apps config -q",
+    "exit_code": 0
+  },
+  "check_layer_boundaries": {
+    "command": "python manage.py check_layer_boundaries --json",
+    "output": {
+      "status": "pass",
+      "violations": [],
+      "allowlisted": [
+        {
+          "path": "apps/reference/services/places_explore.py",
+          "line": 38,
+          "module": "apps.planner.services.geocoding"
+        },
+        {
+          "path": "apps/reference/management/commands/backfill_city_coordinates.py",
+          "line": 15,
+          "module": "apps.planner.services.geocoding"
+        }
+      ],
+      "strict_knowledge": false
+    }
+  }
+}

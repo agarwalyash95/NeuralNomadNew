@@ -1,5 +1,5 @@
-import React, { useRef, useMemo } from 'react';
-import { BedDouble, ArrowLeft, Wallet, Building2, MapPinned, Calendar } from 'lucide-react';
+import React, { useRef, useMemo, useState } from 'react';
+import { BedDouble, ArrowLeft, Wallet, Building2, MapPinned, Calendar, GitCompareArrows, Loader2, AlertCircle } from 'lucide-react';
 import type { Suggestion } from '@/features/planner/workspace/plan-canvas/types';
 import type { TripFitResult } from './tripFit';
 import HotelReviewSummary from './HotelReviewSummary';
@@ -12,6 +12,8 @@ import ReferenceRows from '@/features/planner/workspace/helper-canvases/shared/d
 import CommentSection from '@/features/planner/workspace/helper-canvases/shared/detail-panel/CommentSection';
 import DetailCTAFooter from '@/features/planner/workspace/helper-canvases/shared/detail-panel/DetailCTAFooter';
 import { TripContext } from '@/features/planner/workspace/types';
+import { plannerService } from '@/services/planner.service';
+import type { PriceLookupResult } from '@/services/planner.types';
 
 export interface HotelStayContext {
   checkIn?: string;
@@ -49,16 +51,45 @@ interface HotelDetailSectionsProps {
  * fallback that previously lived here are gone.
  */
 export default function HotelDetailSections({
-  hotel, expandedDetails, detailsLoading, fit, onSelect, onBack, tripContext, isCompared: _isCompared, onCompareToggle: _onCompareToggle,
+  hotel, expandedDetails, detailsLoading, fit, onSelect, onBack, tripContext, isCompared, onCompareToggle,
   stayContext, onNightsChange, onResetNights,
 }: HotelDetailSectionsProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Phase 2e (docs/planner-north-star-audit-and-vision.md) — a manual,
+  // user-initiated check (mirrors the existing "Verify Price" pattern on
+  // placed blocks), not an automatic fetch per card: TravelPriceHistory
+  // has very sparse hotel coverage today, so most checks will honestly
+  // come back empty, and firing this for every visible list card would be
+  // an unbounded number of backend calls with no real user intent behind it.
+  const [rateState, setRateState] = useState<'idle' | 'loading' | 'found' | 'not_found' | 'error'>('idle');
+  const [rateResult, setRateResult] = useState<PriceLookupResult | null>(null);
 
   const theme = getCategoryStyle('hotel');
   const source = expandedDetails || hotel;
   const d = source.details || {};
   const photos = [source.image_url, ...(source.secondary_images || [])].filter(Boolean) as string[];
   const facts = buildHotelFacts(source);
+
+  const checkNightlyRate = async () => {
+    if (!stayContext.checkIn) return;
+    setRateState('loading');
+    try {
+      // apiClient rejects on non-2xx, so the honest "no price found" 404
+      // arrives here as a caught error, not a `found: false` response body.
+      const resp = await plannerService.lookupPrice({
+        serviceType: 'hotel',
+        date: stayContext.checkIn,
+        provider: source.name,
+        destination: tripContext.activeNodeCityName || tripContext.destination || undefined,
+      });
+      setRateResult(resp.price);
+      setRateState('found');
+    } catch (err) {
+      const apiErr = err as { status?: number };
+      setRateState(apiErr.status === 404 ? 'not_found' : 'error');
+    }
+  };
 
   const stats = useMemo(() => {
     const items: DecisionStat[] = [];
@@ -94,6 +125,25 @@ export default function HotelDetailSections({
       {onBack && (
         <button type="button" onClick={onBack} className="absolute top-4 left-4 z-40 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 backdrop-blur-sm shadow-md text-ink-700 hover:bg-white cursor-pointer transition-all active:scale-95">
           <ArrowLeft size={16} />
+        </button>
+      )}
+
+      {/* Phase 2b (docs/planner-north-star-audit-and-vision.md) — isCompared/
+          onCompareToggle were previously destructured with underscore
+          aliases specifically to satisfy the unused-var lint rule; nothing
+          in this file rendered them, so pinning for HotelCompareTray was
+          completely unreachable from the detail view. */}
+      {onCompareToggle && (
+        <button
+          type="button"
+          onClick={onCompareToggle}
+          aria-pressed={isCompared}
+          title={isCompared ? 'Remove from comparison' : 'Add to comparison'}
+          className={`absolute top-4 right-4 z-40 flex h-9 w-9 items-center justify-center rounded-full shadow-md backdrop-blur-sm cursor-pointer transition-all active:scale-95 ${
+            isCompared ? 'bg-cat-stay text-white' : 'bg-white/90 text-ink-700 hover:bg-white'
+          }`}
+        >
+          <GitCompareArrows size={16} />
         </button>
       )}
 
@@ -181,6 +231,45 @@ export default function HotelDetailSections({
                 Reset to {stayContext.autoNights} night{stayContext.autoNights === 1 ? '' : 's'} (matches your itinerary)
               </button>
             )}
+
+            {/* Nightly rate — manual, user-initiated (Phase 2e). Real
+                historical/live data only; never a fabricated number. */}
+            <div className="mt-2 border-t border-line/60 pt-2">
+              {rateState === 'found' && rateResult ? (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[13px] font-bold tabular-nums text-ink-900">
+                    {rateResult.price}
+                  </span>
+                  <span
+                    className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
+                      rateResult.provenance.tier === 'verified'
+                        ? 'border border-emerald-300 bg-emerald-50 text-emerald-700'
+                        : 'border border-dashed border-amber-300 bg-amber-50 text-amber-700'
+                    }`}
+                  >
+                    {rateResult.provenance.tier === 'verified' ? 'Verified' : 'Estimate'}
+                  </span>
+                </div>
+              ) : rateState === 'not_found' ? (
+                <div className="flex items-center gap-1.5 text-[10px] text-ink-400">
+                  <AlertCircle size={11} /> No live rate found for these dates yet
+                </div>
+              ) : rateState === 'error' ? (
+                <div className="flex items-center gap-1.5 text-[10px] text-ink-400">
+                  <AlertCircle size={11} /> Could not check the rate right now
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={checkNightlyRate}
+                  disabled={rateState === 'loading' || !stayContext.checkIn}
+                  className="flex items-center gap-1.5 text-[10px] font-semibold text-cat-stay hover:underline disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+                >
+                  {rateState === 'loading' ? <Loader2 size={11} className="animate-spin" /> : null}
+                  {rateState === 'loading' ? 'Checking…' : 'Check nightly rate'}
+                </button>
+              )}
+            </div>
           </div>
 
           {positiveChecks.length > 0 && (

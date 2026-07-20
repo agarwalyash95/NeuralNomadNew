@@ -18,13 +18,14 @@ readers keep working. Upcasting is idempotent: applying it to v2 data is a
 no-op. This module is the ONLY place that defines the mapping.
 """
 
-from datetime import datetime, timezone
+from apps.common.provenance import (
+    TIER_ESTIMATED,
+    TIER_SUGGESTED,
+    TIER_VERIFIED,
+    make_provenance,
+)
 
 SCHEMA_VERSION = 2
-
-TIER_VERIFIED = "verified"
-TIER_ESTIMATED = "estimated"
-TIER_SUGGESTED = "suggested"
 
 # Legacy activity statuses → v2 block statuses
 _LEGACY_STATUS_MAP = {
@@ -32,17 +33,6 @@ _LEGACY_STATUS_MAP = {
     "pending": "planned",
     "inactive": "planned",  # inactive is an is_active flag, not a lifecycle stage
 }
-
-
-def _now_iso():
-    return datetime.now(timezone.utc).isoformat()
-
-
-def make_provenance(tier, source="", basis="", verified_at=None):
-    prov = {"tier": tier, "source": source, "basis": basis}
-    if tier == TIER_VERIFIED:
-        prov["verified_at"] = verified_at or _now_iso()
-    return prov
 
 
 def upcast_activity(act, default_currency="INR"):

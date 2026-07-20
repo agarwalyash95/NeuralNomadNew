@@ -1,6 +1,8 @@
 import requests
+from urllib.parse import quote
 from django.conf import settings
 from django.db import transaction
+from django.http import HttpResponse
 from rest_framework import viewsets, filters, status
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.pagination import PageNumberPagination
@@ -9,6 +11,12 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 from .models import Attraction, Destination
 from .serializers import AttractionSerializer, DestinationSerializer
+
+
+def _photo_proxy_url(photo_ref):
+    if not photo_ref:
+        return None
+    return f"/api/attractions/items/photo-proxy/?ref={quote(str(photo_ref), safe='')}"
 
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 12
@@ -72,6 +80,30 @@ class AttractionViewSet(viewsets.ReadOnlyModelViewSet):
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    @action(detail=False, methods=['get'], url_path='photo-proxy')
+    def photo_proxy(self, request):
+        """Stream a legacy Places photo without exposing the API key."""
+        photo_ref = request.GET.get('ref', '')
+        api_key = getattr(settings, 'GOOGLE_PLACES_API_KEY', '')
+        if not photo_ref or not api_key:
+            return Response({'error': 'Photo service not configured'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        try:
+            upstream = requests.get(
+                "https://maps.googleapis.com/maps/api/place/photo",
+                params={"maxwidth": 800, "photoreference": photo_ref, "key": api_key},
+                timeout=6,
+            )
+        except requests.RequestException:
+            return Response({'error': 'Photo fetch failed'}, status=status.HTTP_502_BAD_GATEWAY)
+
+        if upstream.status_code != 200:
+            return Response({'error': 'Photo not found'}, status=status.HTTP_404_NOT_FOUND)
+        return HttpResponse(
+            upstream.content,
+            content_type=upstream.headers.get('Content-Type', 'image/jpeg'),
+        )
+
     @action(detail=False, methods=['get'])
     def explore(self, request):
         location = request.GET.get('location')
@@ -132,7 +164,7 @@ class AttractionViewSet(viewsets.ReadOnlyModelViewSet):
                         photos = place.get('photos', [])
                         if photos:
                             photo_ref = photos[0].get('photo_reference')
-                            image_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference={photo_ref}&key={api_key}"
+                            image_url = _photo_proxy_url(photo_ref)
                         
                         geom = place.get('geometry', {}).get('location', {})
                         
@@ -210,7 +242,7 @@ class AttractionViewSet(viewsets.ReadOnlyModelViewSet):
             for p in photos:
                 ref = p.get('photo_reference')
                 if ref:
-                    secondary_images.append(f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference={ref}&key={api_key}")
+                    secondary_images.append(_photo_proxy_url(ref))
             attraction.secondary_images = secondary_images
             
             # Additional info

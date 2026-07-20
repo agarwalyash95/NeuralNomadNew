@@ -1,0 +1,446 @@
+Repository-root pre-implementation tracked diff capture. Phase 00 product code was not changed.
+
+=== git diff --stat ===
+ README.md                                          |   21 +-
+ backend/apps/accounts/tests/test_user.py           |   16 -
+ backend/apps/bookings/providers/bus_providers.py   |    2 +
+ backend/apps/bookings/providers/cab_providers.py   |    8 +-
+ .../apps/bookings/providers/flight_providers.py    |    9 +-
+ backend/apps/bookings/providers/hotel_providers.py |   85 +-
+ backend/apps/bookings/providers/registry.py        |   43 +-
+ backend/apps/bookings/providers/train_providers.py |    2 +
+ backend/apps/common/ai.py                          |   49 +
+ backend/apps/knowledge/models.py                   |    1 +
+ backend/apps/knowledge/services/embeddings.py      |   40 +-
+ backend/apps/knowledge/services/engine.py          |    3 +-
+ backend/apps/knowledge/services/enrichment.py      |    9 +-
+ backend/apps/planner/models.py                     |  265 +++-
+ backend/apps/planner/serializers.py                |  120 +-
+ backend/apps/planner/services/chat_edit_intents.py |  925 ++++++++++-
+ .../apps/planner/services/conversation_engine.py   | 1589 ++++++++++++-------
+ .../apps/planner/services/conversation_service.py  | 1404 +++--------------
+ backend/apps/planner/services/distance_service.py  |   10 +-
+ backend/apps/planner/services/insight_engine.py    |   75 +-
+ backend/apps/planner/services/live_status.py       |   31 +-
+ backend/apps/planner/services/plan_generation.py   | 1628 ++++++++++++++++++--
+ .../apps/planner/services/recommendation_engine.py |    3 +-
+ backend/apps/planner/services/tip_sync.py          |   15 +-
+ backend/apps/planner/tasks.py                      |   81 +-
+ backend/apps/planner/tests/__init__.py             |    1 -
+ .../apps/planner/tests/test_chat_edit_intents.py   |   99 --
+ backend/apps/planner/tests/test_chat_stream.py     |  102 --
+ .../apps/planner/tests/test_conversation_api.py    |  120 --
+ backend/apps/planner/tests/test_insight_engine.py  |  177 ---
+ backend/apps/planner/tests/test_lifecycle_api.py   |  161 --
+ backend/apps/planner/tests/test_plan_generation.py |  289 ----
+ .../apps/planner/tests/test_transport_compare.py   |   87 --
+ .../planner/tests/test_traveler_profile_api.py     |   53 -
+ backend/apps/planner/tests/test_trip_api.py        |   82 -
+ backend/apps/planner/urls.py                       |    4 +
+ backend/apps/planner/views.py                      |  836 ++++++++--
+ backend/apps/reference/admin.py                    |   19 +
+ .../reference/management/commands/seed_all_bulk.py |  498 ++++--
+ backend/apps/reference/models.py                   |  483 ++++++
+ backend/apps/reference/serializers.py              |   71 +
+ backend/apps/reference/services/places_explore.py  |   39 +-
+ .../apps/reference/services/transfer_profile.py    |    4 +-
+ backend/apps/reference/tests/test_city_briefing.py |   70 -
+ backend/apps/reference/views.py                    |   44 +-
+ .../apps/travelpass/tests/test_travelpass_api.py   |   74 -
+ backend/config/settings/base.py                    |  127 +-
+ backend/config/settings/production.py              |   31 +
+ backend/config/settings/testing.py                 |   31 -
+ backend/pytest.ini                                 |    7 -
+ backend/requirements-dev.txt                       |    8 -
+ backend/update_transport_blocks.py                 |  104 --
+ docker-compose.yml                                 |    8 +
+ docs/01_project_audit.md                           |  884 -----------
+ docs/02_frontend_audit.md                          |  387 -----
+ docs/03_backend_audit.md                           |  337 ----
+ docs/04_frontend_backend_mapping.md                |  131 --
+ docs/05_development_roadmap.md                     |  163 --
+ docs/06_integration_checklist.md                   |  512 ------
+ docs/ARCHITECTURE.md                               |  507 ------
+ docs/DATABASE.md                                   |  612 --------
+ docs/PLANNER_BLUEPRINT.md                          |  167 --
+ docs/SETUP.md                                      |  530 -------
+ docs/ai-chat-implementation-plan.md                |  299 ----
+ docs/ai-orchestration-architecture.md              | 1151 --------------
+ docs/conversation-capability-layer.md              |  614 --------
+ docs/master-planner-conversation-model.md          |  284 ----
+ docs/neuralnomad-ecosystem.md                      |  201 ---
+ docs/now-we-have-enough-jiggly-tarjan.md           |  389 -----
+ docs/planner-master-plan.md                        |  317 ----
+ docs/planner-product-audit-2026-07.md              |  437 ------
+ docs/planner-production-plan.md                    |  123 --
+ docs/planner-redesign-plan.md                      |  273 ----
+ docs/travel-intelligence-implementation-roadmap.md |  638 --------
+ docs/travel-knowledge-engine-plan.md               |  381 -----
+ frontend/package.json                              |    5 +-
+ frontend/src/app/globals.css                       |   16 +-
+ frontend/src/app/layout.tsx                        |    6 +-
+ frontend/src/app/vault/bookings/page.tsx           |   12 +-
+ frontend/src/features/planner/chat/ChatInput.tsx   |  164 +-
+ frontend/src/features/planner/chat/DockedChat.tsx  |  213 +--
+ .../src/features/planner/chat/MessageBubble.tsx    |    4 +-
+ frontend/src/features/planner/chat/MessageList.tsx |  113 +-
+ .../features/planner/chat/PlanLoadingScreen.tsx    |   82 +-
+ frontend/src/features/planner/chat/PlannerChat.tsx |   24 +-
+ .../src/features/planner/chat/WidgetRenderer.tsx   |   34 +-
+ .../features/planner/chat/hooks/useConversation.ts |  160 +-
+ .../features/planner/chat/services/chatStream.ts   |   18 +-
+ frontend/src/features/planner/chat/types.ts        |    9 -
+ .../src/features/planner/chat/widgetRegistry.ts    |   72 +-
+ .../planner/chat/widgets/DateRangeWidget.tsx       |  194 +--
+ .../planner/chat/widgets/DestinationWidget.tsx     |  181 ++-
+ .../planner/chat/widgets/NearbyCitiesWidget.tsx    |   17 +-
+ .../planner/chat/widgets/OptionalDetailsWidget.tsx |   99 +-
+ .../features/planner/chat/widgets/OriginWidget.tsx |  116 +-
+ .../src/features/planner/chat/widgets/index.ts     |   19 +
+ .../src/features/planner/chat/widgets/types.ts     |   53 -
+ .../features/planner/components/ProposalCard.tsx   |   27 +-
+ .../planner/workspace/PlannerWorkspace.tsx         |  223 ++-
+ .../helper-canvases/booking/canvases/BusCanvas.tsx |    7 +-
+ .../helper-canvases/booking/canvases/CabCanvas.tsx |    5 +-
+ .../booking/canvases/CheckoutCanvas.tsx            |   40 +
+ .../booking/canvases/FlightCanvas.tsx              |    5 +-
+ .../booking/canvases/HotelCanvas.tsx               |   32 +-
+ .../booking/canvases/TrainCanvas.tsx               |    5 +-
+ .../booking/canvases/hotel/HotelCard.tsx           |   50 +-
+ .../booking/canvases/hotel/HotelDetailSections.tsx |   95 +-
+ .../explore/ActivityDetailPanel.tsx                |   22 +-
+ .../explore/ActivitySuggestionCard.tsx             |   81 +-
+ .../explore/AttractionDetailPanel.tsx              |   22 +-
+ .../explore/AttractionSuggestionCard.tsx           |   83 +-
+ .../helper-canvases/explore/AttractionsCanvas.tsx  |   27 +
+ .../explore/RestaurantDetailPanel.tsx              |   22 +-
+ .../explore/RestaurantSuggestionCard.tsx           |   97 +-
+ .../helper-canvases/explore/RestaurantsCanvas.tsx  |   17 +
+ .../travel-prep/forex/ForexCanvas.tsx              |   98 +-
+ .../workspace/hooks/useLiveWorkspaceEvents.ts      |    3 +-
+ .../planner/workspace/hooks/usePendingTips.ts      |   78 +-
+ .../planner/workspace/mobile/MobileWorkspace.tsx   |   15 +-
+ .../workspace/plan-canvas/ItineraryTimeline.tsx    |  257 ++-
+ .../workspace/plan-canvas/TripStatusSpine.tsx      |   17 +-
+ .../workspace/plan-canvas/nodes/AddTypeMenu.tsx    |   12 +-
+ .../workspace/plan-canvas/nodes/GenericNode.tsx    |   88 +-
+ .../workspace/plan-canvas/nodes/NodeWrapper.tsx    |    6 +-
+ .../workspace/plan-canvas/nodes/TransportNode.tsx  |   55 +-
+ .../planner/workspace/plan-canvas/types.ts         |   35 +-
+ .../workspace/plan-canvas/utils/categoryStyle.ts   |    8 +-
+ .../planner/workspace/services/blockMerge.ts       |    3 +
+ .../planner/workspace/services/planTransform.ts    |   73 +-
+ frontend/src/features/planner/workspace/types.ts   |    2 +
+ frontend/src/hooks/use-bookings.ts                 |   17 +-
+ frontend/src/lib/utils.ts                          |   21 +
+ frontend/src/providers/auth-provider.tsx           |    6 +-
+ frontend/src/services/api.ts                       |   40 +-
+ frontend/src/services/booking-mapper.service.ts    |    3 +-
+ frontend/src/services/booking.service.ts           |    9 +
+ frontend/src/services/planner.service.ts           |   63 +-
+ frontend/src/services/planner.types.ts             |   88 +-
+ frontend/src/types/booking.ts                      |    5 +
+ frontend/src/types/search.ts                       |    2 +
+ frontend/tsconfig.tsbuildinfo                      |    2 +-
+ 141 files changed, 8663 insertions(+), 14214 deletions(-)
+=== git diff --name-only ===
+README.md
+backend/apps/accounts/tests/test_user.py
+backend/apps/bookings/providers/bus_providers.py
+backend/apps/bookings/providers/cab_providers.py
+backend/apps/bookings/providers/flight_providers.py
+backend/apps/bookings/providers/hotel_providers.py
+backend/apps/bookings/providers/registry.py
+backend/apps/bookings/providers/train_providers.py
+backend/apps/common/ai.py
+backend/apps/knowledge/models.py
+backend/apps/knowledge/services/embeddings.py
+backend/apps/knowledge/services/engine.py
+backend/apps/knowledge/services/enrichment.py
+backend/apps/planner/models.py
+backend/apps/planner/serializers.py
+backend/apps/planner/services/chat_edit_intents.py
+backend/apps/planner/services/conversation_engine.py
+backend/apps/planner/services/conversation_service.py
+backend/apps/planner/services/distance_service.py
+backend/apps/planner/services/insight_engine.py
+backend/apps/planner/services/live_status.py
+backend/apps/planner/services/plan_generation.py
+backend/apps/planner/services/recommendation_engine.py
+backend/apps/planner/services/tip_sync.py
+backend/apps/planner/tasks.py
+backend/apps/planner/tests/__init__.py
+backend/apps/planner/tests/test_chat_edit_intents.py
+backend/apps/planner/tests/test_chat_stream.py
+backend/apps/planner/tests/test_conversation_api.py
+backend/apps/planner/tests/test_insight_engine.py
+backend/apps/planner/tests/test_lifecycle_api.py
+backend/apps/planner/tests/test_plan_generation.py
+backend/apps/planner/tests/test_transport_compare.py
+backend/apps/planner/tests/test_traveler_profile_api.py
+backend/apps/planner/tests/test_trip_api.py
+backend/apps/planner/urls.py
+backend/apps/planner/views.py
+backend/apps/reference/admin.py
+backend/apps/reference/management/commands/seed_all_bulk.py
+backend/apps/reference/models.py
+backend/apps/reference/serializers.py
+backend/apps/reference/services/places_explore.py
+backend/apps/reference/services/transfer_profile.py
+backend/apps/reference/tests/test_city_briefing.py
+backend/apps/reference/views.py
+backend/apps/travelpass/tests/test_travelpass_api.py
+backend/config/settings/base.py
+backend/config/settings/production.py
+backend/config/settings/testing.py
+backend/pytest.ini
+backend/requirements-dev.txt
+backend/update_transport_blocks.py
+docker-compose.yml
+docs/01_project_audit.md
+docs/02_frontend_audit.md
+docs/03_backend_audit.md
+docs/04_frontend_backend_mapping.md
+docs/05_development_roadmap.md
+docs/06_integration_checklist.md
+docs/ARCHITECTURE.md
+docs/DATABASE.md
+docs/PLANNER_BLUEPRINT.md
+docs/SETUP.md
+docs/ai-chat-implementation-plan.md
+docs/ai-orchestration-architecture.md
+docs/conversation-capability-layer.md
+docs/master-planner-conversation-model.md
+docs/neuralnomad-ecosystem.md
+docs/now-we-have-enough-jiggly-tarjan.md
+docs/planner-master-plan.md
+docs/planner-product-audit-2026-07.md
+docs/planner-production-plan.md
+docs/planner-redesign-plan.md
+docs/travel-intelligence-implementation-roadmap.md
+docs/travel-knowledge-engine-plan.md
+frontend/package.json
+frontend/src/app/globals.css
+frontend/src/app/layout.tsx
+frontend/src/app/vault/bookings/page.tsx
+frontend/src/features/planner/chat/ChatInput.tsx
+frontend/src/features/planner/chat/DockedChat.tsx
+frontend/src/features/planner/chat/MessageBubble.tsx
+frontend/src/features/planner/chat/MessageList.tsx
+frontend/src/features/planner/chat/PlanLoadingScreen.tsx
+frontend/src/features/planner/chat/PlannerChat.tsx
+frontend/src/features/planner/chat/WidgetRenderer.tsx
+frontend/src/features/planner/chat/hooks/useConversation.ts
+frontend/src/features/planner/chat/services/chatStream.ts
+frontend/src/features/planner/chat/types.ts
+frontend/src/features/planner/chat/widgetRegistry.ts
+frontend/src/features/planner/chat/widgets/DateRangeWidget.tsx
+frontend/src/features/planner/chat/widgets/DestinationWidget.tsx
+frontend/src/features/planner/chat/widgets/NearbyCitiesWidget.tsx
+frontend/src/features/planner/chat/widgets/OptionalDetailsWidget.tsx
+frontend/src/features/planner/chat/widgets/OriginWidget.tsx
+frontend/src/features/planner/chat/widgets/index.ts
+frontend/src/features/planner/chat/widgets/types.ts
+frontend/src/features/planner/components/ProposalCard.tsx
+frontend/src/features/planner/workspace/PlannerWorkspace.tsx
+frontend/src/features/planner/workspace/helper-canvases/booking/canvases/BusCanvas.tsx
+frontend/src/features/planner/workspace/helper-canvases/booking/canvases/CabCanvas.tsx
+frontend/src/features/planner/workspace/helper-canvases/booking/canvases/CheckoutCanvas.tsx
+frontend/src/features/planner/workspace/helper-canvases/booking/canvases/FlightCanvas.tsx
+frontend/src/features/planner/workspace/helper-canvases/booking/canvases/HotelCanvas.tsx
+frontend/src/features/planner/workspace/helper-canvases/booking/canvases/TrainCanvas.tsx
+frontend/src/features/planner/workspace/helper-canvases/booking/canvases/hotel/HotelCard.tsx
+frontend/src/features/planner/workspace/helper-canvases/booking/canvases/hotel/HotelDetailSections.tsx
+frontend/src/features/planner/workspace/helper-canvases/explore/ActivityDetailPanel.tsx
+frontend/src/features/planner/workspace/helper-canvases/explore/ActivitySuggestionCard.tsx
+frontend/src/features/planner/workspace/helper-canvases/explore/AttractionDetailPanel.tsx
+frontend/src/features/planner/workspace/helper-canvases/explore/AttractionSuggestionCard.tsx
+frontend/src/features/planner/workspace/helper-canvases/explore/AttractionsCanvas.tsx
+frontend/src/features/planner/workspace/helper-canvases/explore/RestaurantDetailPanel.tsx
+frontend/src/features/planner/workspace/helper-canvases/explore/RestaurantSuggestionCard.tsx
+frontend/src/features/planner/workspace/helper-canvases/explore/RestaurantsCanvas.tsx
+frontend/src/features/planner/workspace/helper-canvases/travel-prep/forex/ForexCanvas.tsx
+frontend/src/features/planner/workspace/hooks/useLiveWorkspaceEvents.ts
+frontend/src/features/planner/workspace/hooks/usePendingTips.ts
+frontend/src/features/planner/workspace/mobile/MobileWorkspace.tsx
+frontend/src/features/planner/workspace/plan-canvas/ItineraryTimeline.tsx
+frontend/src/features/planner/workspace/plan-canvas/TripStatusSpine.tsx
+frontend/src/features/planner/workspace/plan-canvas/nodes/AddTypeMenu.tsx
+frontend/src/features/planner/workspace/plan-canvas/nodes/GenericNode.tsx
+frontend/src/features/planner/workspace/plan-canvas/nodes/NodeWrapper.tsx
+frontend/src/features/planner/workspace/plan-canvas/nodes/TransportNode.tsx
+frontend/src/features/planner/workspace/plan-canvas/types.ts
+frontend/src/features/planner/workspace/plan-canvas/utils/categoryStyle.ts
+frontend/src/features/planner/workspace/services/blockMerge.ts
+frontend/src/features/planner/workspace/services/planTransform.ts
+frontend/src/features/planner/workspace/types.ts
+frontend/src/hooks/use-bookings.ts
+frontend/src/lib/utils.ts
+frontend/src/providers/auth-provider.tsx
+frontend/src/services/api.ts
+frontend/src/services/booking-mapper.service.ts
+frontend/src/services/booking.service.ts
+frontend/src/services/planner.service.ts
+frontend/src/services/planner.types.ts
+frontend/src/types/booking.ts
+frontend/src/types/search.ts
+frontend/tsconfig.tsbuildinfo
+warning: in the working copy of '.gitignore', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'README.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/bookings/providers/bus_providers.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/bookings/providers/cab_providers.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/bookings/providers/flight_providers.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/bookings/providers/hotel_providers.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/bookings/providers/registry.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/bookings/providers/train_providers.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/common/ai.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/knowledge/models.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/knowledge/services/embeddings.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/knowledge/services/engine.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/knowledge/services/enrichment.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/planner/services/chat_edit_intents.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/planner/services/distance_service.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/planner/services/live_status.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/planner/services/recommendation_engine.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/planner/services/tip_sync.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/planner/tasks.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/reference/admin.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/reference/management/commands/seed_all_bulk.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/reference/serializers.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/reference/services/places_explore.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/reference/services/transfer_profile.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/reference/views.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/config/settings/production.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/app/globals.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/app/layout.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/app/vault/bookings/page.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/ChatInput.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/DockedChat.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/MessageBubble.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/MessageList.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/PlanLoadingScreen.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/PlannerChat.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/WidgetRenderer.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/hooks/useConversation.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/services/chatStream.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/types.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/widgetRegistry.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/widgets/DateRangeWidget.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/widgets/DestinationWidget.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/widgets/NearbyCitiesWidget.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/widgets/OptionalDetailsWidget.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/widgets/OriginWidget.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/widgets/index.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/booking/canvases/BusCanvas.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/booking/canvases/CabCanvas.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/booking/canvases/CheckoutCanvas.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/booking/canvases/FlightCanvas.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/booking/canvases/HotelCanvas.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/booking/canvases/TrainCanvas.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/booking/canvases/hotel/HotelCard.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/booking/canvases/hotel/HotelDetailSections.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/explore/ActivityDetailPanel.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/explore/ActivitySuggestionCard.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/explore/AttractionDetailPanel.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/explore/AttractionSuggestionCard.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/explore/AttractionsCanvas.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/explore/RestaurantDetailPanel.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/explore/RestaurantSuggestionCard.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/explore/RestaurantsCanvas.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/hooks/useLiveWorkspaceEvents.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/hooks/usePendingTips.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/mobile/MobileWorkspace.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/plan-canvas/TripStatusSpine.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/plan-canvas/nodes/AddTypeMenu.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/plan-canvas/nodes/NodeWrapper.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/plan-canvas/nodes/TransportNode.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/plan-canvas/types.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/plan-canvas/utils/categoryStyle.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/services/planTransform.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/types.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/hooks/use-bookings.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/lib/utils.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/services/booking-mapper.service.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/services/booking.service.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/types/booking.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/types/search.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.gitignore', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'README.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/bookings/providers/bus_providers.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/bookings/providers/cab_providers.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/bookings/providers/flight_providers.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/bookings/providers/hotel_providers.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/bookings/providers/registry.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/bookings/providers/train_providers.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/common/ai.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/knowledge/models.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/knowledge/services/embeddings.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/knowledge/services/engine.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/knowledge/services/enrichment.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/planner/services/chat_edit_intents.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/planner/services/distance_service.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/planner/services/live_status.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/planner/services/recommendation_engine.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/planner/services/tip_sync.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/planner/tasks.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/reference/admin.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/reference/management/commands/seed_all_bulk.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/reference/serializers.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/reference/services/places_explore.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/reference/services/transfer_profile.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/apps/reference/views.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/config/settings/production.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/app/globals.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/app/layout.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/app/vault/bookings/page.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/ChatInput.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/DockedChat.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/MessageBubble.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/MessageList.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/PlanLoadingScreen.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/PlannerChat.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/WidgetRenderer.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/hooks/useConversation.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/services/chatStream.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/types.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/widgetRegistry.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/widgets/DateRangeWidget.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/widgets/DestinationWidget.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/widgets/NearbyCitiesWidget.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/widgets/OptionalDetailsWidget.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/widgets/OriginWidget.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/chat/widgets/index.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/booking/canvases/BusCanvas.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/booking/canvases/CabCanvas.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/booking/canvases/CheckoutCanvas.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/booking/canvases/FlightCanvas.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/booking/canvases/HotelCanvas.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/booking/canvases/TrainCanvas.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/booking/canvases/hotel/HotelCard.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/booking/canvases/hotel/HotelDetailSections.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/explore/ActivityDetailPanel.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/explore/ActivitySuggestionCard.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/explore/AttractionDetailPanel.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/explore/AttractionSuggestionCard.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/explore/AttractionsCanvas.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/explore/RestaurantDetailPanel.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/explore/RestaurantSuggestionCard.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/helper-canvases/explore/RestaurantsCanvas.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/hooks/useLiveWorkspaceEvents.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/hooks/usePendingTips.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/mobile/MobileWorkspace.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/plan-canvas/TripStatusSpine.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/plan-canvas/nodes/AddTypeMenu.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/plan-canvas/nodes/NodeWrapper.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/plan-canvas/nodes/TransportNode.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/plan-canvas/types.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/plan-canvas/utils/categoryStyle.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/services/planTransform.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/planner/workspace/types.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/hooks/use-bookings.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/lib/utils.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/services/booking-mapper.service.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/services/booking.service.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/types/booking.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/types/search.ts', LF will be replaced by CRLF the next time Git touches it
+

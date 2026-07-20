@@ -111,10 +111,9 @@ class SkyScrapperFlightProvider(BaseFlightProvider):
                     results = []
                     for idx, itin in enumerate(itineraries[:15]):
                         leg = itin.get('legs', [{}])[0]
-                        price_val = itin.get('price', {}).get('raw', 5400)
-                        # Guaranteed INR Conversion for USD prices (if price < 500 USD)
-                        if price_val and price_val < 500:
-                            price_val = round(price_val * 85)
+                        price_val = itin.get('price', {}).get('raw')
+                        if not isinstance(price_val, (int, float)):
+                            continue
 
                         carrier = leg.get('carriers', {}).get('marketing', [{}])[0]
                         carrier_name = carrier.get('name', 'Airline')
@@ -277,4 +276,6 @@ class MockFlightProvider(BaseFlightProvider):
                 }
             ]
 
+        for item in results:
+            item["source"] = "mock_inventory"
         return results

@@ -10,24 +10,18 @@ grammar the Plan Canvas already renders (see
 apps/planner/services/block_schema.py).
 """
 
-from apps.planner.services.block_schema import make_provenance, TIER_SUGGESTED
-
-# Google price_level -> approx "for two" amount (INR), used only as a
-# suggestion band, never presented as an exact quote.
-_RESTAURANT_PRICE_BAND = {0: 200, 1: 200, 2: 500, 3: 1000, 4: 2000}
-_RESTAURANT_PRICE_LABEL = {
-    0: '₹200 for two', 1: '₹200 for two', 2: '₹500 for two',
-    3: '₹1000 for two', 4: '₹2000 for two',
-}
+from apps.common.provenance import TIER_SUGGESTED, make_provenance
+from apps.reference.services import price_estimator
 
 
 def _restaurant_fields(r):
     price_level = r.price_level
+    envelope = price_estimator.estimate("restaurant", price_level=price_level)
     return {
         "subtitle": (r.cuisine or r.primary_type or 'Restaurant'),
         "duration_label": None,
-        "price_label": _RESTAURANT_PRICE_LABEL.get(price_level, '₹400 for two'),
-        "cost_amount": _RESTAURANT_PRICE_BAND.get(price_level, 400),
+        "price_label": envelope["provenance"]["basis"],
+        "cost_amount": envelope["expected"],
         "cost_basis": "Approx. price band from Google Places, not an exact bill",
         "details": {
             "outdoor_seating": r.outdoor_seating,
@@ -147,14 +141,14 @@ _CATEGORY_FIELDS = {
 
 def _place_insights(instance):
     """
-    Cached AI judgment synthesis (apps.knowledge.services.enrichment) — real
+    Cached AI judgment synthesis (apps.reference.services.enrichment) — real
     for whatever's actually been enriched, an empty dict for everything else
     rather than a placeholder. See docs/travel-intelligence-implementation-roadmap.md §1.
     """
     try:
         from django.contrib.contenttypes.models import ContentType
 
-        from apps.knowledge.models import PlaceInsight
+        from apps.reference.models import PlaceInsight
     except Exception:
         return {}
 
@@ -172,7 +166,7 @@ def _place_insights(instance):
 
 def _local_tips(instance):
     """
-    Approved local tips (apps.knowledge.services.enrichment) attached to this
+    Approved local tips (apps.reference.services.enrichment) attached to this
     place — scam warnings, etiquette, safety notes. Only tips that have
     cleared the human-review gate surface here; unreviewed auto-generated
     tips (default for scam_warning/after_dark/safety/emergency_prep) are
@@ -183,7 +177,7 @@ def _local_tips(instance):
     try:
         from django.contrib.contenttypes.models import ContentType
 
-        from apps.knowledge.models import LocalTip
+        from apps.reference.models import LocalTip
     except Exception:
         return []
 

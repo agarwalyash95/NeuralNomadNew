@@ -95,4 +95,6 @@ export interface TravelSearchResult {
   stops: number;
   meta: FlightMeta & TrainMeta & HotelMeta & BusMeta & CabMeta;
   providers: ProviderOffer[];
+  source?: 'live_inventory' | 'mock_inventory';
+  provenance?: { source: string; label: string; is_live: boolean };
 }

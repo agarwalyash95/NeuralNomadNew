@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Star, MapPin, Trash2, GripVertical, Sparkles, AlertTriangle, LogIn, LogOut } from 'lucide-react';
+import { Star, MapPin, Trash2, GripVertical, Sparkles, AlertTriangle, LogIn, LogOut, Scale } from 'lucide-react';
 import { ItineraryItem } from '../types';
 import { getCategoryStyle } from '../utils/categoryStyle';
 import NodeWrapper from './NodeWrapper';
@@ -27,6 +27,19 @@ interface GenericNodeProps {
   onMoveToDay?: (dayId: string) => void;
 }
 
+/** StructuredRecommendation.uncertainty_state -> the shared --trust-* CSS
+ *  variables (globals.css) every ProvenanceBadge in the app already colors
+ *  itself with. Mirrors the mapping recommendation_engine.py's own T5.3
+ *  comment documents (uncertainty_state -> trust palette) but which the
+ *  frontend never implemented. */
+const UNCERTAINTY_TRUST_VAR: Record<string, string> = {
+  high_confidence: '--trust-verified',
+  medium_confidence: '--trust-estimated',
+  needs_decision: '--trust-suggested',
+  weather_dependent: '--trust-suggested',
+  traffic_dependent: '--trust-suggested',
+};
+
 /** Category image sizes — photography hierarchy:
  *  Hotels/attractions: 28% (hero)
  *  Food: 22% (thumbnail)
@@ -45,6 +58,17 @@ function GenericNode({ item, isLast, onClick, onRemove, onHover, onVerifyLivePri
   const [explainLoading, setExplainLoading] = useState(false);
   const imgWidth = getImagePanelWidth(item.type);
   const hoursConflict = item._aiInsights?.hours_conflict === true;
+  // M5 'expert reasoning shown': the "considered A, chose B because..."
+  // trade-off, computed at generation time (plan_generation.py
+  // `_tradeoff_sentence`) — shown inline on the card itself, not gated
+  // behind the reactive Explain click below.
+  const tradeoff = item._aiInsights?.candidates?.[0]?.tradeoff as string | undefined;
+  // M2/M4 'compounding memory' (Phase 4): when there was no runner-up to
+  // contrast against, `tradeoff` is undefined but the block's own `why`
+  // (rating/preference/taste/category-affinity reasons — ranking.py) is
+  // still real, computed signal worth showing. Only one of the two lines
+  // renders — they'd otherwise repeat the same top reason.
+  const showWhy = Boolean(item.why) && !tradeoff;
 
   const handleExplain = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -286,6 +310,23 @@ function GenericNode({ item, isLast, onClick, onRemove, onHover, onVerifyLivePri
                         )}
                       </div>
                     )}
+
+                    {/* M5 'expert reasoning shown' — a grounded, deterministic
+                        trade-off against the top runner-up, visible on the
+                        card itself (not only inside the reactive Explain
+                        panel below). */}
+                    {tradeoff && (
+                      <div className="mt-1.5 flex items-start gap-1.5 text-[10px] font-medium leading-relaxed text-ink-400 export-hidden">
+                        <Scale size={10} className="shrink-0 mt-0.5 text-ink-400/70" />
+                        <span>{tradeoff}</span>
+                      </div>
+                    )}
+                    {showWhy && (
+                      <div className="mt-1.5 flex items-start gap-1.5 text-[10px] font-medium leading-relaxed text-ink-400 export-hidden">
+                        <Scale size={10} className="shrink-0 mt-0.5 text-ink-400/70" />
+                        <span>{item.why}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -384,11 +425,16 @@ function GenericNode({ item, isLast, onClick, onRemove, onHover, onVerifyLivePri
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-bold uppercase tracking-wide text-[rgb(var(--color-ai))]">Why this</span>
+                {/* Same --trust-verified/estimated/suggested palette every
+                    ProvenanceBadge in the app uses — uncertainty_state is
+                    the backend's own overall trust tier for this
+                    recommendation (T5.3), previously computed but never
+                    rendered; the badge used a bespoke green/amber cutoff. */}
                 <span
                   className="rounded-full px-1.5 py-0.5 text-[9px] font-bold"
                   style={{
-                    background: explainData.confidence_score >= 75 ? 'rgb(34 197 94 / 0.1)' : 'rgb(217 119 6 / 0.1)',
-                    color: explainData.confidence_score >= 75 ? 'rgb(22 163 74)' : 'rgb(180 83 9)',
+                    background: `rgb(var(${UNCERTAINTY_TRUST_VAR[explainData.uncertainty_state] ?? '--trust-estimated'}) / 0.1)`,
+                    color: `rgb(var(${UNCERTAINTY_TRUST_VAR[explainData.uncertainty_state] ?? '--trust-estimated'}))`,
                   }}
                 >
                   {explainData.confidence_score}% confidence
@@ -402,6 +448,30 @@ function GenericNode({ item, isLast, onClick, onRemove, onHover, onVerifyLivePri
                   ))}
                 </ul>
               )}
+              {/* Per-axis confidence — computed by the backend alongside
+                  the overall score but never surfaced until now. Each
+                  dimension reuses the exact ProvenanceBadge component the
+                  rest of the app uses for cost/transport trust, so "trust
+                  language" reads the same everywhere a user sees it. */}
+              {explainData.confidence_dimensions?.length > 0 && (
+                <div>
+                  <span className="text-[9px] font-semibold uppercase tracking-wide text-ink-400">Confidence by dimension</span>
+                  <ul className="mt-1 space-y-1.5">
+                    {explainData.confidence_dimensions.map((dim, i) => (
+                      <li key={i} className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-semibold capitalize text-ink-700">{dim.dimension}</span>
+                            <ProvenanceBadge provenance={{ tier: dim.trust_tier }} />
+                          </div>
+                          <p className="mt-0.5 text-ink-500">{dim.explanation}</p>
+                        </div>
+                        <span className="shrink-0 text-[10px] font-semibold tabular-nums text-ink-400">{dim.score}%</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {explainData.tradeoffs?.length > 0 && (
                 <div>
                   <span className="text-[9px] font-semibold uppercase tracking-wide text-ink-400">Trade-offs</span>
@@ -410,6 +480,18 @@ function GenericNode({ item, isLast, onClick, onRemove, onHover, onVerifyLivePri
                       <li key={i} className="flex items-start gap-1 text-ink-500"><span className="shrink-0">—</span>{t}</li>
                     ))}
                   </ul>
+                </div>
+              )}
+              {Object.keys(explainData.expected_impact || {}).length > 0 && (
+                <div>
+                  <span className="text-[9px] font-semibold uppercase tracking-wide text-ink-400">Expected impact</span>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {Object.entries(explainData.expected_impact).map(([key, value]) => (
+                      <span key={key} className="rounded-full border border-line bg-paper-0 px-1.5 py-0.5 text-[9px] font-medium text-ink-600">
+                        <span className="capitalize text-ink-400">{key}:</span> {value}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
               {explainData.alternatives?.length > 0 && (

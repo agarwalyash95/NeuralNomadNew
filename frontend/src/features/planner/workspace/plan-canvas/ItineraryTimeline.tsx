@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { MockTripData, ItineraryItem } from './types';
+import { MockTripData, ItineraryItem, ItineraryCity } from './types';
 import CityHeaderNode from './nodes/CityHeaderNode';
 import DayHeaderNode from './nodes/DayHeaderNode';
 import TransportNode from './nodes/TransportNode';
@@ -60,6 +60,82 @@ interface ItineraryTimelineProps {
 /** Transport types — use TransportNode (departure/arrival layout) */
 const TRANSPORT_TYPES = new Set(['flight', 'train', 'bus', 'cab']);
 
+/** Non-bookable anchors — inserted straight onto the timeline (see
+ *  handleInsertLightBlock below), never routed through a Helper Canvas:
+ *  there is nothing to search for a rest block or an evening hotel-return. */
+const LIGHT_BLOCK_TYPES = new Set(['rest', 'hotel_return']);
+
+function findCityHotelTitle(city: ItineraryCity): string | undefined {
+  for (const day of city.days) {
+    const hotel = day.items.find((i) => i.type === 'hotel' && !i.isInactive);
+    if (hotel) return hotel.title;
+  }
+  return undefined;
+}
+
+/** HH:MM + minutes, wrapping at 24h — used only to give a light block a
+ *  real, parseable end time (backend validate_plan._validate_day_temporal
+ *  flags a block with no end time as an "unparseable time" warning, which
+ *  would misdescribe a deliberately light block as a defect). */
+function addMinutesToTime(hhmm: string, minutes: number): string {
+  const [h, m] = hhmm.split(':').map(Number);
+  const total = (((h ?? 0) * 60 + (m ?? 0) + minutes) % (24 * 60) + 24 * 60) % (24 * 60);
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+/** Builds a rest/hotel_return block with a full `_rawActivity` seed —
+ *  planTransform's serializePlanUpdate only spreads fields that already
+ *  exist on `_rawActivity` (id/category/title/etc.), so a freshly-created
+ *  item without one would PATCH to the backend missing those fields. */
+function createLightBlock(
+  nodeType: 'rest' | 'hotel_return',
+  opts: { startTime?: string; hotelTitle?: string }
+): ItineraryItem {
+  const id =
+    typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${nodeType}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const isReturn = nodeType === 'hotel_return';
+  const title = isReturn
+    ? opts.hotelTitle
+      ? `Back to ${opts.hotelTitle}`
+      : 'Back to your hotel'
+    : 'Free time';
+  const notes = isReturn ? '' : 'No plans — rest, wander, or revisit a favorite spot.';
+  const startTime = opts.startTime || (isReturn ? '19:00' : '14:00');
+  const endTime = addMinutesToTime(startTime, isReturn ? 30 : 120);
+  const rawActivity = {
+    id,
+    category: nodeType,
+    title,
+    location_name: '',
+    start_time: startTime,
+    end_time: endTime,
+    estimated_cost: null,
+    estimated_duration_mins: null,
+    status: 'pending',
+    notes,
+    why: '',
+    latitude: null,
+    longitude: null,
+    rating: null,
+    image_url: null,
+    metadata: {},
+    is_active: true,
+  };
+  return {
+    id,
+    type: nodeType,
+    startTime,
+    endTime,
+    title,
+    subtitle: '',
+    details: notes || undefined,
+    isInactive: false,
+    _rawActivity: rawActivity,
+  } as ItineraryItem;
+}
+
 export default function ItineraryTimeline({
   data,
   onItemClick,
@@ -114,11 +190,17 @@ export default function ItineraryTimeline({
   };
 
   useEffect(() => {
-    // Preserve any isDeleting/isInactive states from localData when new props arrive
+    // Preserve any isDeleting/isInactive states from localData when new props arrive.
+    // CANVAS-01 (docs/planner-complete-current-audit-and-repair-plan.md §19
+    // R10): city/day lookups were positional (merged.cities[cIdx],
+    // mCity.days[dIdx]) — if the server reorders, adds, or removes a city or
+    // day between renders, an in-progress isDeleting/isInactive flag could
+    // land on the wrong block entirely. Matched by id instead, same as the
+    // item-level lookup below already correctly does.
     setLocalData(prev => {
       const merged = JSON.parse(JSON.stringify(data));
-      prev.cities.forEach((pCity, cIdx) => {
-        const mCity = merged.cities[cIdx];
+      prev.cities.forEach((pCity) => {
+        const mCity = merged.cities.find((c: any) => c.id === pCity.id);
         if (!mCity) return;
 
         if (pCity.transitToNext?.isDeleting) {
@@ -128,8 +210,8 @@ export default function ItineraryTimeline({
           if (mCity.transitToNext) mCity.transitToNext.isInactive = true;
         }
 
-        pCity.days.forEach((pDay, dIdx) => {
-          const mDay = mCity.days[dIdx];
+        pCity.days.forEach((pDay) => {
+          const mDay = mCity.days.find((d: any) => d.id === pDay.id);
           if (!mDay) return;
 
           pDay.items.forEach((pItem) => {
@@ -183,7 +265,42 @@ export default function ItineraryTimeline({
       onDataChange?.(newData);
     }
   };
- 
+
+  /** Inserts a rest/hotel_return block directly onto the timeline — no
+   *  Helper Canvas round trip, since there's nothing to search for either
+   *  one. Mirrors the same day/city lookup + splice pattern every other
+   *  mutation in this file uses. */
+  const handleInsertLightBlock = (
+    nodeType: 'rest' | 'hotel_return',
+    dayId: string,
+    insertAfterId?: string
+  ) => {
+    const newData: MockTripData = JSON.parse(JSON.stringify(localData));
+    for (const city of newData.cities) {
+      const day = city.days.find((d) => d.id === dayId);
+      if (!day) continue;
+
+      let startTime: string | undefined;
+      let insertIndex = day.items.length;
+      if (insertAfterId) {
+        const idx = day.items.findIndex((i) => i.id === insertAfterId);
+        if (idx !== -1) {
+          insertIndex = idx + 1;
+          startTime = day.items[idx]!.endTime || day.items[idx]!.startTime || undefined;
+        }
+      } else if (day.items.length > 0) {
+        const last = day.items[day.items.length - 1];
+        startTime = last?.endTime || last?.startTime || undefined;
+      }
+
+      const hotelTitle = nodeType === 'hotel_return' ? findCityHotelTitle(city) : undefined;
+      const block = createLightBlock(nodeType, { startTime, hotelTitle });
+      day.items.splice(insertIndex, 0, block);
+      updateData(newData, true);
+      return;
+    }
+  };
+
   const handleDragOver = (event: DragOverEvent) => {
     const { active, over } = event;
     if (!over) return;
@@ -574,20 +691,26 @@ export default function ItineraryTimeline({
                               variant="icon"
                               label="Insert stop"
                               className={cn('export-hidden', showDistance ? '' : 'ml-[-0.25rem]')}
-                              onSelect={(nodeType) => onItemClick?.({
-                                nodeId: `insert-${item.id}-${nextItem.id}`,
-                                nodeType,
-                                nodeTitle: `Insert between ${item.title} and ${nextItem.title}`,
-                                dayId: day.id,
-                                dayNumber: day.dayNumber,
-                                dayLabel: `Day ${day.dayNumber}`,
-                                cityId: city.id,
-                                cityName: city.cityName,
-                                dateStr: day.dateStr,
-                                subtitle: `Between ${item.title} and ${nextItem.title}`,
-                                startTime: item.endTime || item.startTime || '',
-                                insertAfterId: item.id,
-                              })}
+                              onSelect={(nodeType) => {
+                                if (LIGHT_BLOCK_TYPES.has(nodeType)) {
+                                  handleInsertLightBlock(nodeType as 'rest' | 'hotel_return', day.id, item.id);
+                                  return;
+                                }
+                                onItemClick?.({
+                                  nodeId: `insert-${item.id}-${nextItem.id}`,
+                                  nodeType,
+                                  nodeTitle: `Insert between ${item.title} and ${nextItem.title}`,
+                                  dayId: day.id,
+                                  dayNumber: day.dayNumber,
+                                  dayLabel: `Day ${day.dayNumber}`,
+                                  cityId: city.id,
+                                  cityName: city.cityName,
+                                  dateStr: day.dateStr,
+                                  subtitle: `Between ${item.title} and ${nextItem.title}`,
+                                  startTime: item.endTime || item.startTime || '',
+                                  insertAfterId: item.id,
+                                });
+                              }}
                             />
                           </div>
                         );
@@ -632,7 +755,7 @@ export default function ItineraryTimeline({
                         let computedDestination: string | undefined;
                         let distanceKm: number | undefined;
 
-                        const hasCoords = (i: ItineraryItem) => typeof i.latitude === 'number' && typeof i.longitude === 'number';
+                        const hasCoords = (i: ItineraryItem | undefined): i is ItineraryItem => typeof i?.latitude === 'number' && typeof i?.longitude === 'number';
                         
                         let prevWithCoords: ItineraryItem | undefined;
                         for (let i = itemIndex - 1; i >= 0; i--) {
@@ -640,7 +763,9 @@ export default function ItineraryTimeline({
                         }
                         if (!prevWithCoords) {
                           for (let d = dayIndex - 1; d >= 0; d--) {
-                            const dItems = city.days[d].items.filter(i => !i.isInactive);
+                            const day = city.days[d];
+                            if (!day) continue;
+                            const dItems = day.items.filter(i => !i.isInactive);
                             for (let i = dItems.length - 1; i >= 0; i--) {
                               if (hasCoords(dItems[i])) { prevWithCoords = dItems[i]; break; }
                             }
@@ -649,9 +774,13 @@ export default function ItineraryTimeline({
                         }
                         if (!prevWithCoords) {
                           for (let c = cityIndex - 1; c >= 0; c--) {
-                            const cDays = localData.cities[c].days;
+                            const cCity = localData.cities[c];
+                            if (!cCity) continue;
+                            const cDays = cCity.days;
                             for (let d = cDays.length - 1; d >= 0; d--) {
-                              const dItems = cDays[d].items.filter(i => !i.isInactive);
+                              const day = cDays[d];
+                              if (!day) continue;
+                              const dItems = day.items.filter(i => !i.isInactive);
                               for (let i = dItems.length - 1; i >= 0; i--) {
                                 if (hasCoords(dItems[i])) { prevWithCoords = dItems[i]; break; }
                               }
@@ -667,7 +796,9 @@ export default function ItineraryTimeline({
                         }
                         if (!nextWithCoords) {
                           for (let d = dayIndex + 1; d < city.days.length; d++) {
-                            const dItems = city.days[d].items.filter(i => !i.isInactive);
+                            const day = city.days[d];
+                            if (!day) continue;
+                            const dItems = day.items.filter(i => !i.isInactive);
                             for (let i = 0; i < dItems.length; i++) {
                               if (hasCoords(dItems[i])) { nextWithCoords = dItems[i]; break; }
                             }
@@ -676,9 +807,13 @@ export default function ItineraryTimeline({
                         }
                         if (!nextWithCoords) {
                           for (let c = cityIndex + 1; c < localData.cities.length; c++) {
-                            const cDays = localData.cities[c].days;
+                            const cCity = localData.cities[c];
+                            if (!cCity) continue;
+                            const cDays = cCity.days;
                             for (let d = 0; d < cDays.length; d++) {
-                              const dItems = cDays[d].items.filter(i => !i.isInactive);
+                              const day = cDays[d];
+                              if (!day) continue;
+                              const dItems = day.items.filter(i => !i.isInactive);
                               for (let i = 0; i < dItems.length; i++) {
                                 if (hasCoords(dItems[i])) { nextWithCoords = dItems[i]; break; }
                               }
@@ -759,19 +894,25 @@ export default function ItineraryTimeline({
                             variant="block"
                             label="Add stop"
                             className="export-hidden"
-                            onSelect={(nodeType) => onItemClick?.({
-                              nodeId: `add-activity-${day.id}`,
-                              nodeType,
-                              nodeTitle: `Add to Day ${day.dayNumber}`,
-                              dayId: day.id,
-                              dayNumber: day.dayNumber,
-                              dayLabel: `Day ${day.dayNumber}`,
-                              cityId: city.id,
-                              cityName: city.cityName,
-                              dateStr: day.dateStr,
-                              subtitle: `Exploring ${city.cityName}`,
-                              startTime: '09:00',
-                            })}
+                            onSelect={(nodeType) => {
+                              if (LIGHT_BLOCK_TYPES.has(nodeType)) {
+                                handleInsertLightBlock(nodeType as 'rest' | 'hotel_return', day.id);
+                                return;
+                              }
+                              onItemClick?.({
+                                nodeId: `add-activity-${day.id}`,
+                                nodeType,
+                                nodeTitle: `Add to Day ${day.dayNumber}`,
+                                dayId: day.id,
+                                dayNumber: day.dayNumber,
+                                dayLabel: `Day ${day.dayNumber}`,
+                                cityId: city.id,
+                                cityName: city.cityName,
+                                dateStr: day.dateStr,
+                                subtitle: `Exploring ${city.cityName}`,
+                                startTime: '09:00',
+                              });
+                            }}
                           />
                         </div>
                       </div>
@@ -791,19 +932,25 @@ export default function ItineraryTimeline({
                             variant="pill"
                             label="Add"
                             className="export-hidden"
-                            onSelect={(nodeType) => onItemClick?.({
-                              nodeId: `add-activity-${day.id}`,
-                              nodeType,
-                              nodeTitle: `Add to Day ${day.dayNumber}`,
-                              dayId: day.id,
-                              dayNumber: day.dayNumber,
-                              dayLabel: `Day ${day.dayNumber}`,
-                              cityId: city.id,
-                              cityName: city.cityName,
-                              dateStr: day.dateStr,
-                              subtitle: `Exploring ${city.cityName}`,
-                              startTime: '09:00',
-                            })}
+                            onSelect={(nodeType) => {
+                              if (LIGHT_BLOCK_TYPES.has(nodeType)) {
+                                handleInsertLightBlock(nodeType as 'rest' | 'hotel_return', day.id);
+                                return;
+                              }
+                              onItemClick?.({
+                                nodeId: `add-activity-${day.id}`,
+                                nodeType,
+                                nodeTitle: `Add to Day ${day.dayNumber}`,
+                                dayId: day.id,
+                                dayNumber: day.dayNumber,
+                                dayLabel: `Day ${day.dayNumber}`,
+                                cityId: city.id,
+                                cityName: city.cityName,
+                                dateStr: day.dateStr,
+                                subtitle: `Exploring ${city.cityName}`,
+                                startTime: '09:00',
+                              });
+                            }}
                           />
                         </div>
                       </div>
@@ -815,7 +962,7 @@ export default function ItineraryTimeline({
               </div>
             );})}
 
-            {!isCityCollapsed && city.transitToNext && !city.transitToNext.isInactive && (
+            {!isCityCollapsed && cityIndex < localData.cities.length - 1 && city.transitToNext && !city.transitToNext.isInactive && (
               city.transitToNext.isDeleting ? (
                 <DeletingNode
                   key={city.transitToNext.id}

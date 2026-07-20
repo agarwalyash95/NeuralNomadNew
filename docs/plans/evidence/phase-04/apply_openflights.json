@@ -1,0 +1,13 @@
+{
+  "airlines_created": 79,
+  "airlines_skipped_non_iata2": 0,
+  "airportroutes_already_current": 0,
+  "airportroutes_created": 1916,
+  "airportroutes_updated": 0,
+  "batch_id": 20,
+  "both_endpoints_on_file": 65817,
+  "direct_rows": 67652,
+  "mode": "apply",
+  "route_rows_seen": 67663,
+  "touches_india": 1916
+}

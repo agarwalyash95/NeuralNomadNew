@@ -1,6 +1,33 @@
 from celery import shared_task
 from django.utils import timezone
 
+
+def _notify(workspace, notification_type, title, message, action_url=None):
+    """
+    Creates a real Notification row for a workspace's owner. Notification
+    (apps/notifications/models.py) previously had no live producer anywhere
+    in the codebase — every PlanProposal these two watch loops file is a
+    genuinely new, actionable finding a user hasn't seen yet, and each
+    already has its own de-dup guard (an `already_open`/`has_open_*`
+    check before create), so notifying exactly here can't spam a standing
+    condition every 15/30 minutes. Never raises — a notification-write
+    failure must never break the watch loop that found something worth
+    surfacing.
+    """
+    from apps.notifications.models import Notification
+
+    try:
+        Notification.objects.create(
+            user_id=workspace.user_id,
+            notification_type=notification_type,
+            title=title[:255],
+            message=message,
+            action_url=action_url,
+        )
+    except Exception:
+        pass
+
+
 def _run_price_watches():
     from apps.planner.models import PlanProposal, PriceWatch
     from apps.planner.services.block_schema import find_block
@@ -89,6 +116,14 @@ def _run_price_watches():
             },
             created_by="agent",
             base_trip_updated_at=trip.updated_at,
+        )
+        _notify(
+            workspace,
+            "price_drop",
+            f"Price drop: {block_title}",
+            f"Now {result['price']} — save ₹{saved:.0f}. Review the proposal to accept it."
+            if saved > 0
+            else f"Now {result['price']}, at or below your target. Review the proposal to accept it.",
         )
         filed += 1
 
@@ -194,9 +229,9 @@ def infer_traveler_facts(workspace_id):
 
 @shared_task(name="apps.planner.tasks.generate_block_tip")
 def generate_block_tip_task(workspace_id, block_id, title):
-    from apps.planner.services.tip_sync import apply_generated_tip
-    from apps.common.ai import get_genai_client
-    
+    from apps.planner.services.tip_sync import apply_generated_tip, set_tip_status
+    from apps.common.ai import DEFAULT_GEMINI_MODEL, get_genai_client
+
     prompt = (
         f"Write a single short sentence (max 15 words) giving an insider tip or "
         f"practical advice for visiting {title}."
@@ -204,14 +239,16 @@ def generate_block_tip_task(workspace_id, block_id, title):
     try:
         client = get_genai_client()
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model=DEFAULT_GEMINI_MODEL,
             contents=prompt
         )
         tip = response.text.strip()
     except Exception:
-        tip = f"Enjoy your time at {title}!"
+        set_tip_status(workspace_id, block_id, "generation_failed")
+        return {"generated": False, "reason": "generation_failed"}
 
     apply_generated_tip(workspace_id, block_id, tip)
+    return {"generated": True}
 
 
 def _run_trip_watch():
@@ -288,6 +325,12 @@ def _run_trip_watch():
                 if proposal is not None:
                     notified += 1
                     _publish_workspace_updated(str(workspace.id))
+                    _notify(
+                        workspace,
+                        "trip_reminder",
+                        proposal.title,
+                        f"{proposal.rationale} Review the suggestion in your trip.",
+                    )
             except Exception:
                 skipped += 1
 
@@ -318,3 +361,31 @@ def run_generation_job_task(self, job_id):
     from apps.planner.services.plan_generation import run_generation_job
     close_old_connections()
     run_generation_job(job_id, manage_connections=True)
+
+
+# Phase 0a: a reachable broker does NOT mean a worker is consuming tasks —
+# `.delay()` against a live Redis with zero workers enqueues silently and
+# never raises, so the old "except: fall back to a thread" dispatch never
+# actually caught a missing worker, only a down broker. This heartbeat only
+# ever sets its cache key when a REAL worker picks the task off the queue
+# and executes it; Celery beat merely enqueues it. No worker running (the
+# default docker-compose today ships no worker/beat service at all) means
+# the key is simply never set, and dispatch honestly falls back to a thread
+# instead of silently queuing into a void.
+WORKER_HEARTBEAT_CACHE_KEY = "planner:celery_worker_heartbeat"
+WORKER_HEARTBEAT_TTL_SECONDS = 180
+
+
+@shared_task(name="apps.planner.tasks.worker_heartbeat")
+def worker_heartbeat():
+    from django.core.cache import cache
+
+    cache.set(WORKER_HEARTBEAT_CACHE_KEY, timezone.now().isoformat(), timeout=WORKER_HEARTBEAT_TTL_SECONDS)
+
+
+def celery_worker_available() -> bool:
+    """True only if a real worker executed the heartbeat task recently —
+    never true from broker reachability alone."""
+    from django.core.cache import cache
+
+    return cache.get(WORKER_HEARTBEAT_CACHE_KEY) is not None

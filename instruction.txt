@@ -1,0 +1,1 @@
+Read AGENTS.md, CURRENT_STATE.md, and HANDOFF.md. Continue with this new task: [task]. Preserve existing changes and update the handoff before stopping.

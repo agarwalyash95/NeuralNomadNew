@@ -1,0 +1,1 @@
+The canonical repository instructions are in AGENTS.md. Read it completely, then read docs/agent/CURRENT_STATE.md and docs/agent/HANDOFF.md before editing. Inspect the live git status and relevant diff, preserve all pre-existing work, and update the handoff before stopping.

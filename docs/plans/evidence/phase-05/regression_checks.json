@@ -1,0 +1,35 @@
+{
+  "captured_at": "2026-07-20T00:00:00+05:30",
+  "live_price_hotel_fallback": {
+    "call": "lookup_live_price('hotel', '2026-09-01', destination='SomeRandomCityXYZ')",
+    "before_phase_5": "None (confirmed by code inspection of the unmodified function)",
+    "after_phase_5_result": {
+      "status": "success", "price": "Rs 3,000/night", "exact_price": 3000,
+      "provider": "price_range band",
+      "provenance": {"tier": "suggested", "source": "price_range band", "basis": "no price_range data, default band"}
+    },
+    "interpretation": "Ladder now falls through to price_estimator's hotel rung instead of returning nothing."
+  },
+  "transport_compare_cab_regression": {
+    "call": "compare_legs('New Delhi', 'Jaipur', '2026-09-01', travelers=1)",
+    "cab_row": {
+      "mode": "cab", "duration_mins": 239.0, "distance_km": 286.54,
+      "price": 4885, "price_label": "Rs 4,885",
+      "provenance": {"tier": "estimated", "source": "NeuralNomad intercity cab rate card (formalized)", "basis": "Rs 16/km x 286.54 km + Rs 300 base"}
+    },
+    "regression_math": "300 + 16 * 286.54 = 4884.64 -> rounds to 4885, exactly what the old hardcoded _CAB_BASE_FARE/_CAB_RATE_PER_KM constants would have produced.",
+    "interpretation": "price_estimator.estimate('cab', ...) is a true drop-in replacement for the removed inline formula, unambiguous city pair used deliberately to avoid the separate _resolve_city substring-collision bug (see below)."
+  },
+  "conversation_engine_nameerror_fix": {
+    "bug": "conversation_engine.py::_compute_recommended_budget_inr referenced DEST_TIER_RATES and PURPOSE_BUDGET_MULTIPLIERS, neither of which was ever imported into that file — a live NameError waiting to fire the first time _build_optional_prefilled ran on a draft with no budget_inr in metadata.",
+    "fix": "Broken duplicate deleted; conversation_engine.py now imports and calls the canonical recommendations.recommended_budget_inr(draft, purpose).",
+    "call": "recommendations.recommended_budget_inr(FakeDraft(destination_text='Goa', adults=2), 'vacation')",
+    "result": [50000, ["typical domestic costs for this destination", "adjusted for a vacation trip"], false],
+    "interpretation": "Clean tuple, no exception — grep confirms conversation_engine.py no longer references DEST_TIER_RATES/PURPOSE_BUDGET_MULTIPLIERS/_compute_recommended_budget_inr at all; it calls recommended_budget_inr directly (conversation_engine.py:656)."
+  },
+  "separate_pre_existing_bug_confirmed_still_present": {
+    "description": "_resolve_city('Agra') in transport_compare.py (unedited by Phase 5) resolves via plain icontains substring match with no exact-match-first guard, so 'Agra' matches 'Lagrange, US' (Agra is a literal substring of L-AGRA-NGE) instead of Agra, India.",
+    "status_as_of_this_evidence_pass": "FIXED — apps/planner/services/transport_compare.py::_resolve_city now tries name__iexact first, falling back to name__icontains only when no exact match exists. Confirmed by direct code read in the active worktree (backend/apps/planner/services/transport_compare.py). This was the subject of a separate, already-completed session (see memory 'Planner city icontains substring-collision bug').",
+    "caveat": "The Phase 5 code itself (in this main checkout's uncommitted tree) introduces a NEW instance of the identical bug pattern in apps/reference/services/live_price.py::_resolve_observation_fk's cab branch (line ~137: City.objects.filter(name__icontains=origin).first(), no iexact-first guard). Flagged separately below — not fixed as part of generating this evidence, per the repo's 'record, don't silently fix out-of-scope findings' norm."
+  }
+}

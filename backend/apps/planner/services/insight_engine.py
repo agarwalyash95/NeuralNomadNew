@@ -11,16 +11,19 @@ Rules that are purely advisory (no single correct corrective diff) leave
 `action` as None; the frontend renders these as plain informational nodes,
 not accept/dismiss suggestions (see roadmap §2.6).
 
-Six rules are implemented here — the original two needing nothing beyond
-K1/K3 data (DailyWalkLoadWarning, HeatExposureWarning), plus four that
+Seven rules are implemented here — the original two needing nothing beyond
+K1/K3 data (DailyWalkLoadWarning, HeatExposureWarning), plus five that
 became buildable once blocks carry editable start/end times
 (docs/planner-product-audit-2026-07.md Wave 2 TL1): ScheduleGapWarning,
-CheckInMismatchWarning, LateArrivalWarning, and OpeningHoursConflictWarning
-(the last resolves each block's own opening_hours via metadata.master_ref —
-never guesses when the master row or the hours text don't parse cleanly).
-All four are advisory-only (action=None) for the same reason the original
-two are: none has a single mechanically-correct corrective diff, only a
-judgment call about which slot to move to. The rest of the original RULES
+TightTravelTimeWarning (Phase 2a, docs/planner-north-star-audit-and-vision.md
+— reuses validation.py's own haversine-based feasibility check, previously
+computed but never rendered anywhere), CheckInMismatchWarning,
+LateArrivalWarning, and OpeningHoursConflictWarning (the last resolves each
+block's own opening_hours via metadata.master_ref — never guesses when the
+master row or the hours text don't parse cleanly). All five are
+advisory-only (action=None) for the same reason the original two are: none
+has a single mechanically-correct corrective diff, only a judgment call
+about which slot to move to. The rest of the original RULES
 list (CrowdPeakWarning, SunriseAdjustedTiming, OnRouteOpportunity,
 HotelTravelTimeSaving, PreferenceMatch, ReviewRecencyDrop, FreeEntryToday,
 RouteClosureConflict, HolidayClosureConflict, TimeBudgetTradeoff) depend on
@@ -167,6 +170,61 @@ class ScheduleGapWarning(InsightRule):
                             f"Day {day.get('day_number')} has a {hours:g}-hour gap between "
                             f"{a1.get('title', 'your last stop')} and {a2.get('title', 'your next stop')} "
                             f"— room for something else, or just a slower morning."
+                        ),
+                        "related_block_ids": [a1.get("id"), a2.get("id")],
+                        "action": None,
+                    })
+        return insights
+
+
+class TightTravelTimeWarning(InsightRule):
+    """
+    Phase 2a (docs/planner-north-star-audit-and-vision.md) — surfaces the
+    exact same haversine-based tight-travel-time check
+    services/validation.py::_validate_day_travel_time already computes at
+    generation and every edit, but which was only ever a transient warning
+    inside that call's own ValidationReport — never persisted or rendered
+    anywhere. Reuses validation.py's own thresholds so the two never drift:
+    a brisk 40 km/h pace, 10-minute grace, 15-minute tolerance, so this
+    only fires on a genuinely implausible gap between two real-coordinate
+    blocks, never a normal city crossing. Deliberately still not
+    duplicated as a second computation in validation.py itself — that one
+    stays the pre-save gatekeeper (runs inside a mutation transaction, no
+    trip.days round trip needed); this one is the rendered, per-day
+    surface a real user actually sees on the Plan Canvas.
+    """
+    key = "tight_travel_time"
+
+    def evaluate(self, trip):
+        insights = []
+        for day in trip.days or []:
+            timed = [
+                (_to_minutes(a.get("start_time")), _to_minutes(a.get("end_time")), a)
+                for a in (day.get("activities") or [])
+                if _is_active(a) and a.get("latitude") is not None and a.get("longitude") is not None
+            ]
+            timed = [(s, e, a) for s, e, a in timed if s is not None]
+            timed.sort(key=lambda t: t[0])
+            for (_s1, e1, a1), (s2, _e2, a2) in zip(timed, timed[1:]):
+                if e1 is None:
+                    continue
+                gap_mins = s2 - e1
+                if gap_mins <= 0:
+                    continue  # overlap/backwards — a different, already-repaired concern
+                distance_km = haversine_distance_km(
+                    float(a1["latitude"]), float(a1["longitude"]),
+                    float(a2["latitude"]), float(a2["longitude"]),
+                )
+                plausible_mins = (distance_km / 40) * 60 + 10
+                if gap_mins < plausible_mins - 15:
+                    insights.append({
+                        "rule": self.key,
+                        "day_number": day.get("day_number"),
+                        "severity": "warning",
+                        "message": (
+                            f"Only {int(gap_mins)} min between {a1.get('title', 'your last stop')} and "
+                            f"{a2.get('title', 'your next stop')} (~{distance_km:.0f} km apart) — "
+                            "may be too tight to travel between them."
                         ),
                         "related_block_ids": [a1.get("id"), a2.get("id")],
                         "action": None,
@@ -471,6 +529,7 @@ RULES = [
     DailyWalkLoadWarning(),
     HeatExposureWarning(),
     ScheduleGapWarning(),
+    TightTravelTimeWarning(),
     CheckInMismatchWarning(),
     LateArrivalWarning(),
     OpeningHoursConflictWarning(),

@@ -1,0 +1,40 @@
+{
+  "captured_at": "2026-07-20T00:00:00+05:30",
+  "purpose": "Live-verify the TravelPriceObservation writer (previously zero call sites repo-wide) and the rollup->benchmark path, including the origin_city vs destination_city bug fix the implementation report describes.",
+  "step_1_baseline": {
+    "before_test_call": {"observations": 0, "summaries": 0},
+    "grep_confirmation": "TravelPriceObservation.objects.create had zero call sites repo-wide before this phase (confirmed by grep, per implementation report)."
+  },
+  "step_2_writer_call": {
+    "call": "provider_registry.search('cab', {'origin': 'New Delhi', 'destination': 'Jaipur', 'date': '2026-08-15', 'distance_km': 280})",
+    "note": "mock provider path — LIVE_PROVIDERS_ENABLED is off in this dev environment, same as the original verification",
+    "results_returned": 2,
+    "observations_created": [
+      {"id": 35, "service_type": "cab", "source_type": "provider_cache", "price": "4200.00", "city_id": 5780},
+      {"id": 36, "service_type": "cab", "source_type": "provider_cache", "price": "850.00", "city_id": 5780}
+    ],
+    "city_id_5780": "New Delhi",
+    "interpretation": "0 -> 2 real rows, city correctly resolved to New Delhi via the origin param."
+  },
+  "step_3_rollup": {
+    "command": "python manage.py rollup_price_summaries",
+    "output": "2 observations -> 1 groups (created=1 updated=0, 0 skipped: no resolved city)",
+    "resulting_summary_row": {
+      "id": 2, "service_type": "cab", "origin_city_id": 5780, "destination_city_id": null,
+      "month": 7, "sample_count": 2, "p25_price": "850.00", "median_price": "2525.00", "p75_price": "4200.00", "confidence": 0.3
+    }
+  },
+  "step_4_bug_fix_confirmation": {
+    "bug": "estimate_cab()'s benchmark lookup originally queried TravelPriceSummary.destination_city, but cab observations resolve their city FK to the origin (pickup city) per _resolve_observation_fk's cab branch — so a real seeded cab summary was silently never found.",
+    "call": "estimate('cab', distance_km=100, city=<New Delhi>)",
+    "result": {
+      "min": 850.0, "expected": 2525.0, "max": 4200.0, "confidence": 0.3, "method": "benchmark",
+      "provenance": {"tier": "estimated", "source": "TravelPriceSummary", "basis": "2 observations"}
+    },
+    "interpretation": "method=='benchmark' confirms the fixed query correctly finds the origin_city-keyed summary row instead of falling through to the FareRule rung."
+  },
+  "step_5_cleanup": {
+    "deleted": {"TravelPriceObservation_ids": [35, 36], "TravelPriceSummary_ids": [2]},
+    "final_state": {"observations": 0, "summaries": 0}
+  }
+}

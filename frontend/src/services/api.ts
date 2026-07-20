@@ -19,6 +19,15 @@ class ApiClient {
       headers: {
         'Content-Type': 'application/json',
       },
+      // Phase 0c: the backend now assigns anonymous (unauthenticated)
+      // planner traffic a per-session identity via the Django session
+      // cookie (apps.planner.views.get_planner_user) instead of one shared
+      // demo user — without withCredentials the browser never sends/stores
+      // that cookie, so every request would look like a brand-new visitor
+      // and continuity (the user's own workspace/draft) would break. The
+      // backend already allowlists explicit origins + CORS_ALLOW_CREDENTIALS
+      // (config/settings/base.py), so this is the only missing piece.
+      withCredentials: true,
     });
 
     // Request interceptor - add auth token
@@ -79,6 +88,17 @@ class ApiClient {
           const access = res.data.access;
           if (typeof window !== 'undefined') {
             localStorage.setItem('accessToken', access);
+            try {
+              const raw = localStorage.getItem('neuralnomad-auth');
+              if (raw) {
+                const parsed = JSON.parse(raw);
+                if (parsed.state) {
+                  if (!parsed.state.tokens) parsed.state.tokens = {};
+                  parsed.state.tokens.access = access;
+                  localStorage.setItem('neuralnomad-auth', JSON.stringify(parsed));
+                }
+              }
+            } catch {}
           }
           return access;
         })
@@ -91,11 +111,27 @@ class ApiClient {
 
   // Authentication Methods
   private getAccessToken(): string | null {
-    return typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+    if (typeof window === 'undefined') return null;
+    try {
+      const raw = localStorage.getItem('neuralnomad-auth');
+      if (raw) {
+        const parsed = JSON.parse(raw) as { state?: { tokens?: { access?: string } } };
+        return parsed?.state?.tokens?.access ?? null;
+      }
+    } catch {}
+    return localStorage.getItem('accessToken');
   }
 
   private getRefreshToken(): string | null {
-    return typeof window !== 'undefined' ? localStorage.getItem('refreshToken') : null;
+    if (typeof window === 'undefined') return null;
+    try {
+      const raw = localStorage.getItem('neuralnomad-auth');
+      if (raw) {
+        const parsed = JSON.parse(raw) as { state?: { tokens?: { refresh?: string } } };
+        return parsed?.state?.tokens?.refresh ?? null;
+      }
+    } catch {}
+    return localStorage.getItem('refreshToken');
   }
 
   setTokens(accessToken: string, refreshToken: string): void {

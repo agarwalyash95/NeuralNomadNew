@@ -1,0 +1,235 @@
+Command: git -c safe.directory=D:/Projects/NeuralNomad status --short
+
+ M .gitignore
+ M README.md
+ D backend/apps/accounts/tests/test_user.py
+ M backend/apps/bookings/providers/bus_providers.py
+ M backend/apps/bookings/providers/cab_providers.py
+ M backend/apps/bookings/providers/flight_providers.py
+ M backend/apps/bookings/providers/hotel_providers.py
+ M backend/apps/bookings/providers/registry.py
+ M backend/apps/bookings/providers/train_providers.py
+ M backend/apps/common/ai.py
+ M backend/apps/knowledge/models.py
+ M backend/apps/knowledge/services/embeddings.py
+ M backend/apps/knowledge/services/engine.py
+ M backend/apps/knowledge/services/enrichment.py
+ M backend/apps/planner/models.py
+ M backend/apps/planner/serializers.py
+ M backend/apps/planner/services/chat_edit_intents.py
+ M backend/apps/planner/services/conversation_engine.py
+ M backend/apps/planner/services/conversation_service.py
+ M backend/apps/planner/services/distance_service.py
+ M backend/apps/planner/services/insight_engine.py
+ M backend/apps/planner/services/live_status.py
+ M backend/apps/planner/services/plan_generation.py
+ M backend/apps/planner/services/recommendation_engine.py
+ M backend/apps/planner/services/tip_sync.py
+ M backend/apps/planner/tasks.py
+ D backend/apps/planner/tests/__init__.py
+ D backend/apps/planner/tests/test_chat_edit_intents.py
+ D backend/apps/planner/tests/test_chat_stream.py
+ D backend/apps/planner/tests/test_conversation_api.py
+ D backend/apps/planner/tests/test_insight_engine.py
+ D backend/apps/planner/tests/test_lifecycle_api.py
+ D backend/apps/planner/tests/test_plan_generation.py
+ D backend/apps/planner/tests/test_transport_compare.py
+ D backend/apps/planner/tests/test_traveler_profile_api.py
+ D backend/apps/planner/tests/test_trip_api.py
+ M backend/apps/planner/urls.py
+ M backend/apps/planner/views.py
+ M backend/apps/reference/admin.py
+ M backend/apps/reference/management/commands/seed_all_bulk.py
+ M backend/apps/reference/models.py
+ M backend/apps/reference/serializers.py
+ M backend/apps/reference/services/places_explore.py
+ M backend/apps/reference/services/transfer_profile.py
+RD backend/apps/reference/tests.py -> backend/apps/reference/tests/test_city_briefing.py
+ M backend/apps/reference/views.py
+ D backend/apps/travelpass/tests/test_travelpass_api.py
+ M backend/config/settings/base.py
+ M backend/config/settings/production.py
+ D backend/config/settings/testing.py
+ D backend/pytest.ini
+ M backend/requirements-dev.txt
+ D backend/update_transport_blocks.py
+ M docker-compose.yml
+ D docs/01_project_audit.md
+ D docs/02_frontend_audit.md
+ D docs/03_backend_audit.md
+ D docs/04_frontend_backend_mapping.md
+ D docs/05_development_roadmap.md
+ D docs/06_integration_checklist.md
+ D docs/ARCHITECTURE.md
+ D docs/DATABASE.md
+ D docs/PLANNER_BLUEPRINT.md
+ M docs/SETUP.md
+ D docs/ai-chat-implementation-plan.md
+ D docs/ai-orchestration-architecture.md
+ D docs/conversation-capability-layer.md
+ D docs/master-planner-conversation-model.md
+ D docs/neuralnomad-ecosystem.md
+ D docs/now-we-have-enough-jiggly-tarjan.md
+ D docs/planner-master-plan.md
+ D docs/planner-product-audit-2026-07.md
+ D docs/planner-production-plan.md
+ D docs/planner-redesign-plan.md
+ D docs/travel-intelligence-implementation-roadmap.md
+ D docs/travel-knowledge-engine-plan.md
+ M frontend/package.json
+ M frontend/src/app/globals.css
+ M frontend/src/app/layout.tsx
+ M frontend/src/app/vault/bookings/page.tsx
+ M frontend/src/features/planner/chat/ChatInput.tsx
+ M frontend/src/features/planner/chat/DockedChat.tsx
+ M frontend/src/features/planner/chat/MessageBubble.tsx
+ M frontend/src/features/planner/chat/MessageList.tsx
+ M frontend/src/features/planner/chat/PlanLoadingScreen.tsx
+ M frontend/src/features/planner/chat/PlannerChat.tsx
+ M frontend/src/features/planner/chat/WidgetRenderer.tsx
+ M frontend/src/features/planner/chat/hooks/useConversation.ts
+ M frontend/src/features/planner/chat/services/chatStream.ts
+ M frontend/src/features/planner/chat/types.ts
+ M frontend/src/features/planner/chat/widgetRegistry.ts
+ M frontend/src/features/planner/chat/widgets/DateRangeWidget.tsx
+ M frontend/src/features/planner/chat/widgets/DestinationWidget.tsx
+ M frontend/src/features/planner/chat/widgets/NearbyCitiesWidget.tsx
+ M frontend/src/features/planner/chat/widgets/OptionalDetailsWidget.tsx
+ M frontend/src/features/planner/chat/widgets/OriginWidget.tsx
+ M frontend/src/features/planner/chat/widgets/index.ts
+ D frontend/src/features/planner/chat/widgets/types.ts
+ M frontend/src/features/planner/components/ProposalCard.tsx
+ M frontend/src/features/planner/workspace/PlannerWorkspace.tsx
+ M frontend/src/features/planner/workspace/helper-canvases/booking/canvases/BusCanvas.tsx
+ M frontend/src/features/planner/workspace/helper-canvases/booking/canvases/CabCanvas.tsx
+ M frontend/src/features/planner/workspace/helper-canvases/booking/canvases/CheckoutCanvas.tsx
+ M frontend/src/features/planner/workspace/helper-canvases/booking/canvases/FlightCanvas.tsx
+ M frontend/src/features/planner/workspace/helper-canvases/booking/canvases/HotelCanvas.tsx
+ M frontend/src/features/planner/workspace/helper-canvases/booking/canvases/TrainCanvas.tsx
+ M frontend/src/features/planner/workspace/helper-canvases/booking/canvases/hotel/HotelCard.tsx
+ M frontend/src/features/planner/workspace/helper-canvases/booking/canvases/hotel/HotelDetailSections.tsx
+ M frontend/src/features/planner/workspace/helper-canvases/explore/ActivityDetailPanel.tsx
+ M frontend/src/features/planner/workspace/helper-canvases/explore/ActivitySuggestionCard.tsx
+ M frontend/src/features/planner/workspace/helper-canvases/explore/AttractionDetailPanel.tsx
+ M frontend/src/features/planner/workspace/helper-canvases/explore/AttractionSuggestionCard.tsx
+ M frontend/src/features/planner/workspace/helper-canvases/explore/AttractionsCanvas.tsx
+ M frontend/src/features/planner/workspace/helper-canvases/explore/RestaurantDetailPanel.tsx
+ M frontend/src/features/planner/workspace/helper-canvases/explore/RestaurantSuggestionCard.tsx
+ M frontend/src/features/planner/workspace/helper-canvases/explore/RestaurantsCanvas.tsx
+ M frontend/src/features/planner/workspace/helper-canvases/travel-prep/forex/ForexCanvas.tsx
+ M frontend/src/features/planner/workspace/hooks/useLiveWorkspaceEvents.ts
+ M frontend/src/features/planner/workspace/hooks/usePendingTips.ts
+ M frontend/src/features/planner/workspace/mobile/MobileWorkspace.tsx
+ M frontend/src/features/planner/workspace/plan-canvas/ItineraryTimeline.tsx
+ M frontend/src/features/planner/workspace/plan-canvas/TripStatusSpine.tsx
+ M frontend/src/features/planner/workspace/plan-canvas/nodes/AddTypeMenu.tsx
+ M frontend/src/features/planner/workspace/plan-canvas/nodes/GenericNode.tsx
+ M frontend/src/features/planner/workspace/plan-canvas/nodes/NodeWrapper.tsx
+ M frontend/src/features/planner/workspace/plan-canvas/nodes/TransportNode.tsx
+ M frontend/src/features/planner/workspace/plan-canvas/types.ts
+ M frontend/src/features/planner/workspace/plan-canvas/utils/categoryStyle.ts
+ M frontend/src/features/planner/workspace/services/blockMerge.ts
+ M frontend/src/features/planner/workspace/services/planTransform.ts
+ M frontend/src/features/planner/workspace/types.ts
+ M frontend/src/hooks/use-bookings.ts
+ M frontend/src/lib/utils.ts
+ M frontend/src/providers/auth-provider.tsx
+ M frontend/src/services/api.ts
+ M frontend/src/services/booking-mapper.service.ts
+ M frontend/src/services/booking.service.ts
+ M frontend/src/services/planner.service.ts
+ M frontend/src/services/planner.types.ts
+ M frontend/src/types/booking.ts
+ M frontend/src/types/search.ts
+ M frontend/tsconfig.tsbuildinfo
+?? .claude/settings.local.json
+?? .clinerules
+?? .cursorrules
+?? .github/
+?? .windsurfrules
+?? AGENTS.md
+?? CLAUDE.md
+?? GEMINI.md
+?? backend/apps/knowledge/migrations/0003_neighbourhood_external_id_and_more.py
+?? backend/apps/knowledge/migrations/0004_neighbourhood_locality_and_more.py
+?? backend/apps/planner/migrations/0013_plangenerationjob_degraded_plangenerationjob_usage.py
+?? backend/apps/planner/migrations/0014_plannertrip_scorecard.py
+?? backend/apps/planner/migrations/0015_plannerworkspace_revision.py
+?? backend/apps/planner/migrations/0016_plannerchatmessage_turn_id.py
+?? backend/apps/planner/migrations/0017_planner_foundation_contracts.py
+?? backend/apps/planner/migrations/0018_jsonfield_decimal_encoder.py
+?? backend/apps/planner/migrations/0019_jsonfield_decimal_encoder_remaining.py
+?? backend/apps/planner/migrations/0020_remove_planner_intent_flow.py
+?? backend/apps/planner/services/block_contract.py
+?? backend/apps/planner/services/capabilities/
+?? backend/apps/planner/services/currency.py
+?? backend/apps/planner/services/diff_engine.py
+?? backend/apps/planner/services/episodic_memory.py
+?? backend/apps/planner/services/fallback_plan.py
+?? backend/apps/planner/services/foundation.py
+?? backend/apps/planner/services/geocoding.py
+?? backend/apps/planner/services/intelligence/
+?? backend/apps/planner/services/journey_resolver.py
+?? backend/apps/planner/services/plan_context.py
+?? backend/apps/planner/services/plan_mutations.py
+?? backend/apps/planner/services/planner_state.py
+?? backend/apps/planner/services/preference_learner.py
+?? backend/apps/planner/services/ranking.py
+?? backend/apps/planner/services/refinement.py
+?? backend/apps/planner/services/scoring.py
+?? backend/apps/planner/services/taste.py
+?? backend/apps/planner/services/turn_intent.py
+?? backend/apps/planner/services/turn_log.py
+?? backend/apps/planner/services/validation.py
+?? backend/apps/planner/services/weather_service.py
+?? backend/apps/planner/services/widget_orchestrator.py
+?? backend/apps/reference/management/commands/audit_reference_data.py
+?? backend/apps/reference/management/commands/backfill_city_coordinates.py
+?? backend/apps/reference/management/commands/backfill_station_intelligence.py
+?? backend/apps/reference/management/commands/validate_reference_data.py
+?? backend/apps/reference/migrations/0009_reference_provenance.py
+?? backend/apps/reference/migrations/0010_city_image_url.py
+?? backend/apps/reference/migrations/0011_railwaystation_coordinates.py
+?? backend/apps/reference/migrations/0012_airport_hub_importance_airport_normalized_code_and_more.py
+?? backend/apps/reference/services/canonical_resolver.py
+?? backend/apps/reference/services/provenance.py
+?? backend/apps/reference/services/station_selector.py
+?? backend/apps/reference/tests/__init__.py
+?? backend/apps/reference/tests/test_reference_scenarios.py
+?? backend/apps/reference/utils.py
+?? docs/agent/
+?? docs/planner-complete-current-audit-and-repair-plan.md
+?? docs/planner-north-star-audit-and-vision.md
+?? docs/plans/
+?? frontend/src/features/planner/chat/JourneyFeedNote.tsx
+?? frontend/src/features/planner/chat/TripProgressStrip.tsx
+?? frontend/src/features/planner/chat/capabilities/
+?? frontend/src/features/planner/chat/widgets/AccommodationWidget.tsx
+?? frontend/src/features/planner/chat/widgets/ActivityPreferenceWidget.tsx
+?? frontend/src/features/planner/chat/widgets/ClusterWidget.tsx
+?? frontend/src/features/planner/chat/widgets/DestinationHighlightWidget.tsx
+?? frontend/src/features/planner/chat/widgets/FoodPreferenceWidget.tsx
+?? frontend/src/features/planner/chat/widgets/GroupTypeWidget.tsx
+?? frontend/src/features/planner/chat/widgets/InternationalWidget.tsx
+?? frontend/src/features/planner/chat/widgets/MultiCityWidget.tsx
+?? frontend/src/features/planner/chat/widgets/PackingWidget.tsx
+?? frontend/src/features/planner/chat/widgets/PlanConfirmationWidget.tsx
+?? frontend/src/features/planner/chat/widgets/PlanningSummaryCard.tsx
+?? frontend/src/features/planner/chat/widgets/SelfDriveWidget.tsx
+?? frontend/src/features/planner/chat/widgets/SpecialRequirementWidget.tsx
+?? frontend/src/features/planner/chat/widgets/TransportPreferencesWidget.tsx
+?? frontend/src/features/planner/chat/widgets/TransportSelectionWidget.tsx
+?? frontend/src/features/planner/chat/widgets/TravelInsuranceWidget.tsx
+?? frontend/src/features/planner/chat/widgets/TravelIntelligenceWidget.tsx
+?? frontend/src/features/planner/chat/widgets/TripPreferenceWidget.tsx
+?? frontend/src/features/planner/chat/widgets/fieldOptions.ts
+?? frontend/src/features/planner/chat/widgets/shared/
+?? frontend/src/features/planner/workspace/helper-canvases/booking/SampleInventoryBanner.tsx
+?? frontend/src/features/planner/workspace/helper-canvases/brandDedup.ts
+?? frontend/src/features/planner/workspace/plan-canvas/PlanSyncBanner.tsx
+?? frontend/src/lib/auth-token.ts
+?? instruction.txt
+?? scripts/
+warning: unable to access 'C:\Users\ASUS/.config/git/ignore': Permission denied
+warning: unable to access 'C:\Users\ASUS/.config/git/ignore': Permission denied
+

@@ -1,0 +1,17 @@
+{
+  "mode": "apply",
+  "source": "auto --skip-network (exact reviewed local proposal)",
+  "paid_api_calls": 0,
+  "stations": {"targeted": 314, "proposed": 0, "applied": 0, "by_source": {}},
+  "cities": {
+    "targeted": 8636,
+    "coordinate_proposed": 8364,
+    "coordinate_applied": 8364,
+    "by_source": {"curated": 2, "linked_station": 8362},
+    "publishability_changed": 15123
+  },
+  "remaining_placeholder_cities": 270,
+  "publishable_placeholder_cities": 0,
+  "row_creation": 0,
+  "row_deletion": 0
+}

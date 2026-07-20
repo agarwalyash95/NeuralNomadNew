@@ -30,15 +30,30 @@ export function ProposalCard({ proposal, onAccept, onReject }: ProposalCardProps
   const [isRejecting, setIsRejecting] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
   const [conflict, setConflict] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const deltas = proposal.diff?.deltas;
 
   const handleAccept = async () => {
     setIsBusy(true);
+    setErrorMessage(null);
     try {
       await onAccept(proposal.id);
     } catch (err) {
-      if ((err as { status?: number }).status === 409) setConflict(true);
+      const apiErr = err as { status?: number; message?: string };
+      if (apiErr.status === 409) {
+        setConflict(true);
+      } else {
+        // Phase 1 (docs/planner-north-star-audit-and-vision.md): accept can
+        // now also 400 — accept_proposal runs the same commitment-hierarchy
+        // guard patch_trip/select_item already did (a booked/locked block
+        // can't be silently dropped/retimed/replaced by a proposal). That
+        // path was unreachable before Phase 1's new chat-derived proposal
+        // kinds (remove/move/swap a named block, remove a middle day) made
+        // it a real, expected outcome a user can hit — surfaced here rather
+        // than the buttons just silently resetting with no explanation.
+        setErrorMessage(apiErr.message || 'This proposal could not be applied. The plan is unchanged.');
+      }
     } finally {
       setIsBusy(false);
     }
@@ -126,6 +141,16 @@ export function ProposalCard({ proposal, onAccept, onReject }: ProposalCardProps
             </span>
           ) : null}
         </div>
+      )}
+
+      {errorMessage && !conflict && (
+        // Unlike `conflict` (terminal — the proposal expired, no retry
+        // possible), a 400 here doesn't consume the proposal: it's still
+        // open server-side, so Accept/Reject stay available below —
+        // e.g. the user can unlock the booked item elsewhere and retry.
+        <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-semibold text-red-800">
+          {errorMessage}
+        </p>
       )}
 
       {conflict ? (

@@ -8,10 +8,63 @@ from apps.planner.models import (
     TripDraftState,
 )
 
+_CLUSTER_CHIP_LABELS = {
+    "party": "Who's traveling",
+    "trip_style": "Set budget & style",
+    "logistics": "Stay & transport",
+    "stay_style": "Stay preferences",
+    "journey_style": "Journey preferences",
+    "dining": "Dining preferences",
+    "fine_tune": "Fine-tune details (optional)",
+}
+
+
+def build_suggested_replies(metadata: dict) -> list:
+    """
+    Context-aware next-step chips (docs/ai-chat-implementation-plan.md
+    Phase 6) — deterministic, derived entirely from what the turn already
+    computed (assistant message metadata), so the REST response and the SSE
+    `done` event can share one implementation instead of drifting.
+    """
+    meta = metadata or {}
+    missing = set(meta.get("missing_slots") or [])
+    chips = []
+
+    if meta.get("ready_for_plan"):
+        chips.append("Create my plan ✨")
+
+    for cluster in meta.get("pending_clusters") or []:
+        label = _CLUSTER_CHIP_LABELS.get(cluster)
+        if label:
+            chips.append(label)
+            break
+
+    for cap in meta.get("capabilities") or []:
+        offer = (cap.get("data") or {}).get("offer")
+        if offer and offer.get("chip"):
+            chips.append(offer["chip"])
+            break
+
+    if "destination" not in missing:
+        if "origin" not in missing and "travel_dates" not in missing:
+            chips.append("Compare train vs flight")
+        else:
+            chips.append("Check weather")
+
+    seen = set()
+    deduped = []
+    for chip in chips:
+        if chip not in seen:
+            seen.add(chip)
+            deduped.append(chip)
+    return deduped[:4]
+
 
 class TripDraftStateSerializer(serializers.ModelSerializer):
     ready_for_plan = serializers.BooleanField(source="is_ready_for_plan", read_only=True)
     missing_slots = serializers.SerializerMethodField()
+    destination_country = serializers.SerializerMethodField()
+    mobility_preferences = serializers.SerializerMethodField()
 
     class Meta:
         model = TripDraftState
@@ -19,7 +72,11 @@ class TripDraftStateSerializer(serializers.ModelSerializer):
             "id",
             "intent",
             "destination_city",
+            "destination_country",
             "destination_text",
+            "origin_city",
+            "origin_text",
+            "mobility_preferences",
             "start_date",
             "end_date",
             "adults",
@@ -37,6 +94,14 @@ class TripDraftStateSerializer(serializers.ModelSerializer):
     def get_missing_slots(self, obj):
         return obj.missing_slots()
 
+    def get_destination_country(self, obj):
+        city = getattr(obj, "destination_city", None)
+        country = getattr(city, "country", None) if city else None
+        return getattr(country, "name", country or "")
+
+    def get_mobility_preferences(self, obj):
+        return dict((obj.metadata or {}).get("mobility") or {})
+
 
 class PlannerWorkspaceSerializer(serializers.ModelSerializer):
     chat_count = serializers.SerializerMethodField()
@@ -45,6 +110,9 @@ class PlannerWorkspaceSerializer(serializers.ModelSerializer):
     lifecycle = serializers.SerializerMethodField()
     next_action = serializers.SerializerMethodField()
     bucket = serializers.SerializerMethodField()
+    # §4.3: derived by the ONE authoritative resolver — never persisted,
+    # never computed client-side from four separate fields.
+    planner_state = serializers.SerializerMethodField()
 
     class Meta:
         model = PlannerWorkspace
@@ -60,17 +128,25 @@ class PlannerWorkspaceSerializer(serializers.ModelSerializer):
             "active_canvases",
             "draft_state",
             "is_modified",
+            "revision",
             "lifecycle",
             "next_action",
             "bucket",
+            "planner_state",
         ]
-        read_only_fields = ["id", "last_activity_at", "created_at", "updated_at", "is_modified"]
+        read_only_fields = ["id", "last_activity_at", "created_at", "updated_at", "is_modified", "revision"]
 
     def get_active_canvases(self, obj):
         return []
 
+    def get_planner_state(self, obj):
+        from apps.planner.services.planner_state import resolve_state
+
+        return resolve_state(obj)
+
     def get_chat_count(self, obj):
-        return obj.chat_messages.count()
+        annotated = getattr(obj, "chat_count_value", None)
+        return annotated if annotated is not None else obj.chat_messages.count()
 
     def get_lifecycle(self, obj):
         """
@@ -124,7 +200,7 @@ class PlannerWorkspaceSerializer(serializers.ModelSerializer):
 class PlannerChatMessageSerializer(serializers.ModelSerializer):
     class Meta:
         model = PlannerChatMessage
-        fields = ["id", "role", "message", "widgets", "commands", "metadata", "created_at"]
+        fields = ["id", "role", "message", "widgets", "commands", "metadata", "turn_id", "created_at"]
 
 
 class ChatResponseSerializer(serializers.Serializer):
@@ -135,9 +211,17 @@ class ChatResponseSerializer(serializers.Serializer):
     command_results = serializers.ListField()
     ready_for_plan = serializers.BooleanField()
     missing_slots = serializers.ListField(child=serializers.CharField())
+    suggested_replies = serializers.SerializerMethodField()
+
+    def get_suggested_replies(self, obj):
+        assistant_message = obj.get("assistant_message") if isinstance(obj, dict) else getattr(obj, "assistant_message", None)
+        metadata = getattr(assistant_message, "metadata", None) or {}
+        return build_suggested_replies(metadata)
 
 
 class PlannerTripSerializer(serializers.ModelSerializer):
+    revision = serializers.IntegerField(source="workspace.revision", read_only=True)
+
     class Meta:
         model = PlannerTrip
         fields = [
@@ -150,16 +234,36 @@ class PlannerTripSerializer(serializers.ModelSerializer):
             "metadata",
             "cities",
             "days",
+            # Phase 4 (docs/planner-output-generation-architecture.md):
+            # {overall, dimensions, reasons, flagged_for_review} — {} for
+            # trips created before this shipped or via the legacy fallback
+            # path, which is honest (a curated fallback was never scored).
+            "scorecard",
+            "revision",
         ]
 
     def to_representation(self, instance):
         """Every trip read speaks block schema v2 — legacy rows are upcast on the fly."""
         from apps.planner.services.block_schema import upcast_trip_payload
 
-        return upcast_trip_payload(
+        payload = upcast_trip_payload(
             super().to_representation(instance),
             default_currency=instance.currency_code or "INR",
         )
+        scorecard = payload.get("scorecard") or {}
+        payload["scorecard"] = {
+            "quality_state": scorecard.get("quality_state") or (
+                "review_recommended" if scorecard.get("flagged_for_review") else "strong"
+            ),
+            "flagged_for_review": bool(scorecard.get("flagged_for_review")),
+            "reasons": list(scorecard.get("reasons") or []),
+            # M5 'expert reasoning shown': the LLM critic pass's findings,
+            # when one ran (plan_generation.py::_run_critic_review) — None
+            # when the plan wasn't flagged, the AI-call budget was already
+            # spent, or the call failed. Never fabricated client-side.
+            "critic_review": scorecard.get("critic_review"),
+        }
+        return payload
 
 
 class PlanProposalSerializer(serializers.ModelSerializer):
@@ -279,9 +383,5 @@ class TripSerializer(serializers.ModelSerializer):
 
     def get_cover_image(self, obj):
         draft = getattr(obj, "draft_state", None)
-        city = draft.destination_city.name.lower() if draft and draft.destination_city else ""
-        if "goa" in city:
-            return "https://images.unsplash.com/photo-1614082242765-7c98ca0f3df3?w=800&q=80"
-        if "delhi" in city:
-            return "https://images.unsplash.com/photo-1587474260584-136574528ed5?w=800&q=80"
-        return "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80"
+        city = draft.destination_city if draft else None
+        return city.image_url if city and city.image_url else "/static/images/destination-placeholder.svg"

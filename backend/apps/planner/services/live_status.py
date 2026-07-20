@@ -50,33 +50,24 @@ def get_trip_prep_status(workspace):
     draft = getattr(workspace, "draft_state", None)
     destination_text = getattr(draft, "destination_text", "") if draft else ""
     start_date = getattr(draft, "start_date", None) if draft else None
-    travel_month = start_date.month if start_date else None
 
-    normal = _weather_from_normals(destination_text, travel_month)
-    if normal is None:
-        return {
-            "weather": {
-                "avg_temp_c": None,
-                "precipitation_mm": None,
-                "provenance": "unknown",
-                "note": "No climate data available for this destination yet.",
-            },
-            "packing": ["Comfortable walking shoes", "Phone charger", "Reusable water bottle"],
-        }
+    from apps.planner.services.weather_service import fetch_live_weather
+    res = fetch_live_weather(destination_text, start_date)
 
-    avg_temp = float(normal.avg_temp_c) if normal.avg_temp_c is not None else None
-    precip = float(normal.precipitation_mm) if normal.precipitation_mm is not None else None
-    packing = _packing_from_bucket(normal.feels_like_bucket, precip)
-    if normal.packing_note:
-        packing.append(normal.packing_note)
+    avg_temp = res.get("avg_temp_c")
+    precip = res.get("precipitation_mm")
+    bucket = res.get("feels_like_bucket", "mild")
+    packing = _packing_from_bucket(bucket, precip)
 
     return {
         "weather": {
             "avg_temp_c": avg_temp,
             "precipitation_mm": precip,
-            "feels_like_bucket": normal.feels_like_bucket,
-            "provenance": "estimated",
-            "note": f"Based on historical climate averages for {destination_text or 'this destination'}.",
+            "feels_like_bucket": bucket,
+            "condition": res.get("condition"),
+            "provenance": res.get("provenance"),
+            "note": res.get("note"),
         },
         "packing": packing,
     }
+

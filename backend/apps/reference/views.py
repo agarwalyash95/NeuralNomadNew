@@ -23,10 +23,12 @@ from .serializers import (
 )
 from .services.suggestions import to_suggestion, to_suggestion_list
 
-# The four explore() actions below all delegate to KnowledgeEngine.resolve()
-# (apps.knowledge.services.engine), imported locally in each action to avoid
-# a reference->knowledge->reference import cycle at module load time. Field
-# masks / Places query templates / field mappers live in one place now:
+# The four explore() actions below all delegate to
+# apps.reference.services.places_explore.resolve_places() (Phase 7: folded
+# in from the former apps.knowledge.services.engine.KnowledgeEngine, a thin
+# wrapper over the same module's explore_places/_category_config), imported
+# locally in each action matching this file's existing local-import style.
+# Field masks / Places query templates / field mappers live in one place:
 # apps.reference.services.places_explore._category_config().
 
 
@@ -37,9 +39,9 @@ def _trigger_enrichment_if_needed(category, instance):
     before confirming). Without this, a place only gets PlaceInsight rows if
     it happens to win a slot in run_enrichment_pass's popularity-ordered
     batch — new/replaced places start at popularity_score=0 and can wait
-    indefinitely for that. See apps.knowledge.services.enrichment.
+    indefinitely for that. See apps.reference.services.enrichment.
     """
-    from apps.knowledge.services.enrichment import needs_enrichment
+    from apps.reference.services.enrichment import needs_enrichment
 
     if needs_enrichment(category, instance):
         from apps.reference.tasks import enrich_place
@@ -56,6 +58,28 @@ def _parse_coords(request):
             pass
     return None, None
 
+
+def _explore_options(request):
+    try:
+        page = max(int(request.query_params.get("page", 1)), 1)
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        radius_km = min(max(float(request.query_params.get("radius_km", 15)), 1.0), 50.0)
+    except (TypeError, ValueError):
+        radius_km = 15.0
+    return page, radius_km
+
+
+def _paged_suggestions(places, category, page, page_size=20):
+    start = (page - 1) * page_size
+    items = list(places or [])
+    return {
+        "results": to_suggestion_list(items[start:start + page_size], category),
+        "page": page,
+        "has_more": start + page_size < len(items),
+    }
+
 # Field mappers (map_hotel/map_restaurant/map_attraction/map_activity) now live
 # in services/places_explore.py — service logic, not view logic — and are
 # imported above under their original `_map_*` names so the four explore()
@@ -63,6 +87,7 @@ def _parse_coords(request):
 
 
 class BaseReferenceViewSet(viewsets.ReadOnlyModelViewSet):
+    permission_classes = [AllowAny]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
 
 class CountryViewSet(BaseReferenceViewSet):
@@ -140,12 +165,13 @@ class HotelMasterViewSet(BaseReferenceViewSet):
         if not location:
             return Response({'error': 'Location is required'}, status=status.HTTP_400_BAD_REQUEST)
         lat_val, lng_val = _parse_coords(request)
+        page, radius_km = _explore_options(request)
 
-        from apps.knowledge.services.engine import KnowledgeEngine
-        source, places, error = KnowledgeEngine.resolve('hotel', location, lat=lat_val, lng=lng_val)
+        from apps.reference.services.places_explore import resolve_places
+        source, places, error = resolve_places('hotel', location, lat=lat_val, lng=lng_val, radius_km=radius_km)
         if error and not places:
             return Response({'error': error}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        return Response({'source': source, 'results': to_suggestion_list(places, 'hotel')})
+        return Response({'source': source, **_paged_suggestions(places, 'hotel', page)})
 
     @action(detail=True, methods=['get'])
     def details(self, request, pk=None):
@@ -165,12 +191,13 @@ class RestaurantMasterViewSet(BaseReferenceViewSet):
         if not location:
             return Response({'error': 'Location is required'}, status=status.HTTP_400_BAD_REQUEST)
         lat_val, lng_val = _parse_coords(request)
+        page, radius_km = _explore_options(request)
 
-        from apps.knowledge.services.engine import KnowledgeEngine
-        source, places, error = KnowledgeEngine.resolve('restaurant', location, lat=lat_val, lng=lng_val)
+        from apps.reference.services.places_explore import resolve_places
+        source, places, error = resolve_places('restaurant', location, lat=lat_val, lng=lng_val, radius_km=radius_km)
         if error and not places:
             return Response({'error': error}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        return Response({'source': source, 'results': to_suggestion_list(places, 'restaurant')})
+        return Response({'source': source, **_paged_suggestions(places, 'restaurant', page)})
 
     @action(detail=True, methods=['get'])
     def details(self, request, pk=None):
@@ -190,12 +217,13 @@ class AttractionMasterViewSet(BaseReferenceViewSet):
         if not location:
             return Response({'error': 'Location is required'}, status=status.HTTP_400_BAD_REQUEST)
         lat_val, lng_val = _parse_coords(request)
+        page, radius_km = _explore_options(request)
 
-        from apps.knowledge.services.engine import KnowledgeEngine
-        source, places, error = KnowledgeEngine.resolve('attraction', location, lat=lat_val, lng=lng_val)
+        from apps.reference.services.places_explore import resolve_places
+        source, places, error = resolve_places('attraction', location, lat=lat_val, lng=lng_val, radius_km=radius_km)
         if error and not places:
             return Response({'error': error}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        return Response({'source': source, 'results': to_suggestion_list(places, 'attraction')})
+        return Response({'source': source, **_paged_suggestions(places, 'attraction', page)})
 
     @action(detail=True, methods=['get'])
     def details(self, request, pk=None):
@@ -215,12 +243,13 @@ class ActivityMasterViewSet(BaseReferenceViewSet):
         if not location:
             return Response({'error': 'Location is required'}, status=status.HTTP_400_BAD_REQUEST)
         lat_val, lng_val = _parse_coords(request)
+        page, radius_km = _explore_options(request)
 
-        from apps.knowledge.services.engine import KnowledgeEngine
-        source, places, error = KnowledgeEngine.resolve('activity', location, lat=lat_val, lng=lng_val)
+        from apps.reference.services.places_explore import resolve_places
+        source, places, error = resolve_places('activity', location, lat=lat_val, lng=lng_val, radius_km=radius_km)
         if error and not places:
             return Response({'error': error}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        return Response({'source': source, 'results': to_suggestion_list(places, 'activity')})
+        return Response({'source': source, **_paged_suggestions(places, 'activity', page)})
 
     @action(detail=True, methods=['get'])
     def details(self, request, pk=None):
@@ -304,7 +333,7 @@ class CityBriefingView(APIView):
 
         from django.contrib.contenttypes.models import ContentType
 
-        from apps.knowledge.models import LocalTip
+        from apps.reference.models import LocalTip
 
         content_type = ContentType.objects.get_for_model(City)
         tip_rows = LocalTip.objects.filter(
@@ -400,7 +429,7 @@ class PlaceDetailsView(APIView):
 class SemanticSearchView(APIView):
     """
     Hybrid-ready semantic search — GET /reference/search/?q=...&category=restaurant
-    Cosine-similarity over EntityEmbedding (apps.knowledge.services.embeddings),
+    Cosine-similarity over EntityEmbedding (apps.reference.services.embeddings),
     resolved back to the Suggestion envelope. Lexical/full-text fusion is not
     added yet (see docs/travel-knowledge-engine-plan.md §10) — this is the
     semantic half on its own, already useful standalone.
@@ -419,7 +448,7 @@ class SemanticSearchView(APIView):
         except ValueError:
             limit = 10
 
-        from apps.knowledge.services.embeddings import semantic_search
+        from apps.reference.services.embeddings import semantic_search
 
         results = semantic_search(query, categories=categories, limit=limit)
         return Response({
@@ -485,7 +514,7 @@ class PlacePhotoProxyView(APIView):
 class ExploreAllView(APIView):
     """
     Combined search across tourist attractions, restaurants, and outdoor activities.
-    Uses KnowledgeEngine.resolve() to trigger cache-on-miss Google Places loading.
+    Uses resolve_places() to trigger cache-on-miss Google Places loading.
     """
     permission_classes = [AllowAny]
 
@@ -516,7 +545,7 @@ class ExploreAllView(APIView):
         if not location:
             return Response({'error': 'Location is required'}, status=status.HTTP_400_BAD_REQUEST)
 
-        from apps.knowledge.services.engine import KnowledgeEngine
+        from apps.reference.services.places_explore import resolve_places
 
         categories = ['attraction', 'restaurant', 'activity']
         results = []
@@ -524,7 +553,7 @@ class ExploreAllView(APIView):
 
         for category in categories:
             try:
-                source, places, error = KnowledgeEngine.resolve(category, location, lat=lat_val, lng=lng_val)
+                source, places, error = resolve_places(category, location, lat=lat_val, lng=lng_val)
                 if not error and places:
                     if source == 'google_places':
                         overall_source = 'google_places'
@@ -538,4 +567,3 @@ class ExploreAllView(APIView):
         results.sort(key=lambda x: x.get('rating') or 0, reverse=True)
 
         return Response({'source': overall_source, 'location': location, 'results': results})
-

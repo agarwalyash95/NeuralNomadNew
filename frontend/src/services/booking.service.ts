@@ -17,6 +17,15 @@ export const bookingService = {
     return apiClient.get('/bookings/bookings/');
   },
 
+  /** Items booked INSIDE a generated trip (PlanBlockCommitment) never
+   *  become a bookings.Booking row — this is the separate, read-only
+   *  bridge (backend committed_bookings view) so "My Bookings" can show
+   *  both surfaces. See docs/planner-north-star-audit-and-vision.md
+   *  Phase 0e for why the two are separate systems, not merged. */
+  async getCommittedBookings(): Promise<Booking[]> {
+    return apiClient.get('/planner/committed-bookings/');
+  },
+
   async createBooking(payload: CreateBookingRequest): Promise<Booking> {
     return apiClient.post('/bookings/bookings/', payload);
   },

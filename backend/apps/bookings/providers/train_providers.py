@@ -75,14 +75,19 @@ class LiveTrainStatusProvider(BaseTrainProvider):
                             "meta": {
                                 "platform": t.get('platform', 'PF 1'),
                                 "classes": [
-                                    {"code": "3A", "name": "3rd AC", "price": 1050, "status": "AVAILABLE-14"},
-                                    {"code": "2A", "name": "2nd AC", "price": 1480, "status": "AVAILABLE-6"},
-                                    {"code": "SL", "name": "Sleeper", "price": 420, "status": "WL 12"}
+                                    {"code": "3A", "name": "3rd AC", "price": None, "status": None},
+                                    {"code": "2A", "name": "2nd AC", "price": None, "status": None},
+                                    {"code": "SL", "name": "Sleeper", "price": None, "status": None}
                                 ]
                             },
                             "providers": [
-                                {"provider": "IRCTC Official", "price": 1050, "deeplink": "#"}
+                                {"provider": "IRCTC Official", "price": None, "deeplink": "#"}
                             ],
+                            "price_provenance": {
+                                "classification": "insufficient_data",
+                                "tier": "estimated",
+                                "source": "provider_schedule_without_fare",
+                            },
                             "is_active": True
                         })
                     return results
@@ -197,4 +202,11 @@ class MockTrainProvider(BaseTrainProvider):
                 }
             ]
 
+        for item in results:
+            item["source"] = "mock_inventory"
+            item["price_provenance"] = {
+                "classification": "mock_data",
+                "tier": "estimated",
+                "source": "mock_inventory",
+            }
         return results

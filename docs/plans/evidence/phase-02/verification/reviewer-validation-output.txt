@@ -1,0 +1,22 @@
+Phase 02 independent verification — 2026-07-19 Asia/Calcutta
+
+PASS — check_layer_boundaries: zero violations, two unchanged allowlisted geocoding imports.
+PASS — manage.py check: no issues.
+PASS — makemigrations --check --dry-run: no changes.
+PASS — migrate --plan: no planned operations.
+PASS — compileall apps config.
+PASS — geo + existing reference scenarios: 6 passed in 63.20s.
+PASS — final post-experiment geo tests: 3 passed in 1.35s.
+PASS — physical schema: all eight coordinate indexes present.
+PASS — detailed audit: 586 reason-coded non-publishable rows; per-state reports present.
+PASS — railway coverage: 8,697/9,011 = 96.5154%.
+PASS — publishable placeholder cities: zero.
+PASS — post-apply dry run: zero coordinate/publishability proposals.
+PASS — contractual Phase 0-comparable nearby-hub performance: p95 2.917 ms.
+PASS — default EXPLAIN uses ref_rail_lat_lon_idx.
+
+Observation — indexed bbox fallback diagnostic: median 10.061 ms, p95 80.476 ms.
+This is not the master plan's baseline-relative p95 workload; it is retained as a Phase 3
+benchmark risk. The required physical index plan passes.
+
+No paid API called. No row created or deleted.

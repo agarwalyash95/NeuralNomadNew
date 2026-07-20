@@ -1,5 +1,5 @@
 import React, { useRef, useMemo } from 'react';
-import { Utensils, ArrowLeft, Footprints, Wallet, Clock } from 'lucide-react';
+import { Utensils, ArrowLeft, Footprints, Wallet, Clock, GitCompareArrows } from 'lucide-react';
 import type { MealRecommendation } from './services/mealRecommendationEngine';
 import { getFoodFirstPhotos, isOpenNow } from './services/mealPresentation';
 import { getCategoryStyle } from '../../plan-canvas/utils/categoryStyle';
@@ -32,7 +32,7 @@ interface RestaurantDetailPanelProps {
  * stat cards, no oversized CTA bar.
  */
 export default function RestaurantDetailPanel({
-  recommendation, onSelect, onBack, tripContext, isCompared: _isCompared, onCompareToggle: _onCompareToggle,
+  recommendation, onSelect, onBack, tripContext, isCompared, onCompareToggle,
 }: RestaurantDetailPanelProps) {
   const { suggestion, walkTimeMins, estimatedCostForTwo, costIsEstimate } = recommendation;
 
@@ -76,6 +76,24 @@ export default function RestaurantDetailPanel({
       {onBack && (
         <button type="button" onClick={onBack} className="absolute top-4 left-4 z-40 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 backdrop-blur-sm shadow-md text-ink-700 hover:bg-white cursor-pointer transition-all active:scale-95">
           <ArrowLeft size={16} />
+        </button>
+      )}
+
+      {/* Phase 2b (docs/planner-north-star-audit-and-vision.md) — was
+          destructured with underscore aliases to satisfy the unused-var
+          lint rule; nothing rendered them, so RestaurantCompareTray pinning
+          was unreachable from this panel. */}
+      {onCompareToggle && (
+        <button
+          type="button"
+          onClick={onCompareToggle}
+          aria-pressed={isCompared}
+          title={isCompared ? 'Remove from comparison' : 'Add to comparison'}
+          className={`absolute top-4 right-4 z-40 flex h-9 w-9 items-center justify-center rounded-full shadow-md backdrop-blur-sm cursor-pointer transition-all active:scale-95 ${
+            isCompared ? 'bg-cat-food text-white' : 'bg-white/90 text-ink-700 hover:bg-white'
+          }`}
+        >
+          <GitCompareArrows size={16} />
         </button>
       )}
 

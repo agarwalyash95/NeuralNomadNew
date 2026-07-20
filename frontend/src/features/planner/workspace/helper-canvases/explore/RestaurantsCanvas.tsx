@@ -15,6 +15,7 @@ import { ItineraryItem, Suggestion } from '../../plan-canvas/types';
 import RestaurantSuggestionCard from './RestaurantSuggestionCard';
 import RestaurantDetailPanel from './RestaurantDetailPanel';
 import RestaurantCardSkeleton from './RestaurantCardSkeleton';
+import RestaurantCompareTray from './RestaurantCompareTray';
 import { getMealRecommendations } from './services/mealRecommendationEngine';
 import { applyAIQuickFilter, AI_QUICK_ACTIONS, type AIQuickActionId } from './services/mealPresentation';
 
@@ -230,6 +231,15 @@ export default function RestaurantsCanvas({ onClose, tripContext, onAddToPlan }:
     });
   };
 
+  // Phase 2b (docs/planner-north-star-audit-and-vision.md) — comparedIds was
+  // already tracked, and isCompared/onCompareToggle were already threaded
+  // into RestaurantDetailPanel, but RestaurantCompareTray itself was never
+  // mounted anywhere: a user could pin restaurants and never see a comparison.
+  const comparedRecommendations = useMemo(
+    () => comparedIds.map(id => refinedRecommendations.find(r => r.suggestion.id === id)).filter((r): r is NonNullable<typeof r> => Boolean(r)),
+    [comparedIds, refinedRecommendations],
+  );
+
   const activeFilterCount = (activeAIAction ? 1 : 0) + (selectedTags.length === 1 && selectedTags[0] === 'AI Picks' ? 0 : selectedTags.length);
 
   const addedMessage = tripContext.activeNodeDayLabel
@@ -363,6 +373,8 @@ export default function RestaurantsCanvas({ onClose, tripContext, onAddToPlan }:
                       onSelect={() => handleSelectRecommendation(rec.suggestion.id)}
                       onAdd={() => handleAddSuggestion(rec.suggestion)}
                       tripContext={tripContext}
+                      isPinned={comparedIds.includes(rec.suggestion.id)}
+                      onTogglePin={() => handleCompareToggle(rec.suggestion.id)}
                     />
                   ))}
                 </div>
@@ -375,6 +387,11 @@ export default function RestaurantsCanvas({ onClose, tripContext, onAddToPlan }:
               </div>
             )}
 
+            <RestaurantCompareTray
+              compared={comparedRecommendations}
+              onRemove={handleCompareToggle}
+              onSelect={(s) => handleAddSuggestion(s)}
+            />
            </motion.div>
         ) : (
           <motion.div

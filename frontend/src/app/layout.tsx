@@ -4,10 +4,6 @@ import AuthProvider from '@/providers/auth-provider';
 import QueryProvider from '@/providers/query-provider';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 
-import { Inter } from 'next/font/google';
-
-const inter = Inter({ subsets: ['latin'], variable: '--font-sans' });
-
 export const metadata = {
   title: 'NeuralNomad | Travel Platform',
   description: 'Design your perfect trip with ease.',
@@ -19,7 +15,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     '504846204351-i9faae4vu66s09f19e2h3sgtsas73mi6.apps.googleusercontent.com';
 
   return (
-    <html lang="en" className={`${inter.variable}`}>
+    <html lang="en">
       <body className="min-h-screen bg-slate-50 text-slate-900 antialiased selection:bg-slate-200 font-sans">
         <GoogleOAuthProvider clientId={googleClientId}>
           <QueryProvider>

@@ -1,0 +1,15 @@
+{
+  "mode": "dry_run",
+  "source": "auto (DataMeet, Wikidata, curated, linked station)",
+  "paid_api_calls": 0,
+  "stations": {"targeted": 314, "proposed": 0, "by_source": {}},
+  "cities": {
+    "targeted": 8636,
+    "coordinate_proposed": 8364,
+    "by_source": {"curated": 2, "linked_station": 8362},
+    "publishability_changed": 15123
+  },
+  "railway_coordinate_coverage_after_proposal": 0.965154,
+  "remaining_placeholder_cities_after_proposal": 270,
+  "publishable_placeholder_cities_after_proposal": 0
+}

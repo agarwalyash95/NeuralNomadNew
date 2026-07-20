@@ -135,6 +135,46 @@ export default function CheckoutCanvas({ planData, workspaceId, onClose, onConfi
 
       {step === 'summary' && (
         <div className="flex-1 flex flex-col gap-3">
+          {(planData?.qualityReview?.flagged || (planData?.qualityReview?.gaps.length ?? 0) > 0) && (
+            <div role="alert" className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
+              <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+              <div>
+                <p className="font-bold">
+                  {planData?.qualityReview?.state === 'blocked'
+                    ? 'Blocked until the conflicts below are resolved.'
+                    : planData?.qualityReview?.flagged
+                      ? 'Review recommended before booking.'
+                      : 'Strong plan, with a few details still needing verification.'}
+                </p>
+                {(planData?.qualityReview?.gaps.length ?? 0) > 0 && (
+                  <ul className="mt-1 list-disc pl-4">
+                    {planData!.qualityReview!.gaps.slice(0, 4).map((gap, index) => (
+                      <li key={`${gap.day ?? 'trip'}-${gap.category ?? 'gap'}-${index}`}>{gap.reason || `${gap.category || 'Plan'} detail unavailable`}</li>
+                    ))}
+                  </ul>
+                )}
+                {/* M5 'expert reasoning shown' — the LLM critic pass's
+                    findings, when one ran. Distinct from the deterministic
+                    gaps above: this is a second, independent AI opinion,
+                    not a re-statement of the same scorer reasons. */}
+                {planData?.qualityReview?.criticReview && (
+                  <div className="mt-2 border-t border-amber-200 pt-1.5">
+                    <p className="font-bold">Expert review: {planData.qualityReview.criticReview.summary}</p>
+                    {planData.qualityReview.criticReview.findings.length > 0 && (
+                      <ul className="mt-1 list-disc pl-4">
+                        {planData.qualityReview.criticReview.findings.slice(0, 4).map((finding, index) => (
+                          <li key={`critic-${index}`}>
+                            {finding.day_number ? `Day ${finding.day_number}: ` : ''}
+                            {finding.issue}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           {!hasItems ? (
             <div className="flex flex-col items-center justify-center text-center py-12 px-4 bg-white rounded-2xl border border-line">
               <ShoppingCart size={28} className="mb-3 text-ink-300" />

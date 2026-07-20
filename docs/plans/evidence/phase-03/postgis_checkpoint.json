@@ -1,0 +1,49 @@
+{
+  "adoption_triggers": {
+    "bbox_routinely_over_5000": false,
+    "entity_count_over_500k": false,
+    "p95_over_150ms": false,
+    "polygon_or_geometry_feature_approved": false
+  },
+  "max_bbox_candidates_seen": 199,
+  "note": "This command reports the checkpoint only; PostGIS adoption itself requires a separate, owner-approved infra change regardless of the recommendation above.",
+  "overall_p95_ms": 9.946,
+  "per_center_benchmarks": [
+    {
+      "bbox_candidates": 199,
+      "center": "Delhi",
+      "median_ms": 7.371,
+      "p95_ms": 11.315,
+      "radius_km": 80,
+      "uses_coordinate_index": true
+    },
+    {
+      "bbox_candidates": 124,
+      "center": "Mumbai",
+      "median_ms": 6.024,
+      "p95_ms": 8.131,
+      "radius_km": 80,
+      "uses_coordinate_index": true
+    },
+    {
+      "bbox_candidates": 95,
+      "center": "Bengaluru",
+      "median_ms": 5.084,
+      "p95_ms": 7.586,
+      "radius_km": 80,
+      "uses_coordinate_index": true
+    }
+  ],
+  "publishable_entity_counts": {
+    "reference.ActivityMaster": 356,
+    "reference.Airport": 7063,
+    "reference.AttractionMaster": 441,
+    "reference.BusStation": 0,
+    "reference.City": 15203,
+    "reference.HotelMaster": 388,
+    "reference.RailwayStation": 8697,
+    "reference.RestaurantMaster": 461
+  },
+  "recommendation": "defer",
+  "total_publishable_point_entities": 32609
+}

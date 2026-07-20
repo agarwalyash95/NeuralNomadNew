@@ -1,0 +1,20 @@
+97 objects imported automatically (use -v 2 for details).
+
+{
+  "City": 15395,
+  "Airport": 7063,
+  "RailwayStation": 9011,
+  "CityAlias": 0,
+  "District": 0,
+  "SourceRegistry": 5,
+  "SourceRelease": 0,
+  "ImportBatch": 0,
+  "StagingRecord": 0,
+  "ProviderEntityMap": 0,
+  "DataQualityIssue": 0,
+  "City_with_geonameid": 0,
+  "City_with_wikidata": 0,
+  "Airport_with_wikidata": 0,
+  "Airport_with_ourairports": 0,
+  "RailwayStation_with_wikidata": 0
+}

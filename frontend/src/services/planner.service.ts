@@ -17,8 +17,11 @@ import type {
   TransportPreference,
   TransportLegComparison,
   GenerationJobStatus,
+  JourneyOption,
   RecommendedTrip,
   StructuredRecommendation,
+  PlanMutationResponse,
+  PriceLookupResult,
 } from './planner.types';
 
 const BASE = '/planner/workspaces';
@@ -35,8 +38,8 @@ export const plannerService = {
   createWorkspace: (title: string = 'New Trip') =>
     apiClient.post<PlannerWorkspace>(`${BASE}/`, { title }),
 
-  sendLazyMessage: (message: string, structured_value?: any) =>
-    apiClient.post<ChatResponse>('/planner/chat/', { message, structured_value }),
+  sendLazyMessage: (message: string, structured_value?: any, turn_id?: string) =>
+    apiClient.post<ChatResponse>('/planner/chat/', { message, structured_value, turn_id }),
 
   getWorkspace: (id: string) =>
     apiClient.get<PlannerWorkspace>(`${BASE}/${id}/`),
@@ -52,16 +55,28 @@ export const plannerService = {
   listMessages: (workspaceId: string) =>
     apiClient.get<ChatMessage[]>(`${BASE}/${workspaceId}/chat/`),
 
-  sendMessage: (workspaceId: string, message: string, structured_value?: any) =>
-    apiClient.post<ChatResponse>(`${BASE}/${workspaceId}/chat/`, { message, structured_value }),
+  sendMessage: (workspaceId: string, message: string, structured_value?: any, turn_id?: string) =>
+    apiClient.post<ChatResponse>(`${BASE}/${workspaceId}/chat/`, { message, structured_value, turn_id }),
 
   /** Kicks off background generation — returns 202 with the job to poll */
-  createPlan: (workspaceId: string) =>
-    apiClient.post<GenerationJobStatus>(`${BASE}/${workspaceId}/plan/`),
+  createPlan: (
+    workspaceId: string,
+    options: {
+      confirm: true;
+      expected_draft_revision: number;
+      regenerate?: boolean;
+    }
+  ) => apiClient.post<GenerationJobStatus>(`${BASE}/${workspaceId}/plan/`, options),
 
   /** Real generation progress — poll ~1s while the loading screen shows */
   getPlanStatus: (workspaceId: string) =>
     apiClient.get<GenerationJobStatus>(`${BASE}/${workspaceId}/plan/status/`),
+
+  resolveJourneyOptions: (workspaceId: string, expectedRevision: number) =>
+    apiClient.post<{ revision: number; options: JourneyOption[]; needs_input: boolean }>(
+      `${BASE}/${workspaceId}/journey-options/`,
+      { expected_revision: expectedRevision }
+    ),
 
   // â”€â”€â”€ Plan â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -75,8 +90,24 @@ export const plannerService = {
     return apiClient.get<PlannerTrip>(`${BASE}/${workspaceId}/plan/`);
   },
 
-  updatePlan: (workspaceId: string, data: Partial<PlannerTrip>) =>
+  updatePlan: (
+    workspaceId: string,
+    data: Partial<PlannerTrip> & { expected_revision?: number; mutation_id?: string; source?: string }
+  ) =>
     apiClient.patch<PlannerTrip>(`${BASE}/${workspaceId}/plan/`, data),
+
+  selectPlanItem: (
+    workspaceId: string,
+    data: {
+      target_block_id: string;
+      selected_item: Record<string, any>;
+      expected_revision: number;
+      mutation_id: string;
+      provider: string;
+      selected_id: string;
+      provenance: 'user_input' | 'widget' | 'manual_edit' | 'database' | 'cached_api' | 'live_api' | 'model_knowledge' | 'model_inference';
+    }
+  ) => apiClient.post<PlanMutationResponse>(`${BASE}/${workspaceId}/mutations/`, { type: 'select_item', ...data }),
 
   // ─── Plan lifecycle: Recent → Saved → Booked ─────────────
 
@@ -110,7 +141,7 @@ export const plannerService = {
       destination?: string;
     }
   ) =>
-    apiClient.post<{ verified: boolean; block: any; price: any }>(
+    apiClient.post<{ verified: boolean; block: any; price: any; revision: number }>(
       `${BASE}/${workspaceId}/blocks/${blockId}/verify/`,
       context
     ),
@@ -210,6 +241,22 @@ export const plannerService = {
     if (date) params.set('date', date);
     if (travelers) params.set('travelers', String(travelers));
     return apiClient.get<TransportLegComparison>(`/planner/legs/compare/?${params.toString()}`);
+  },
+
+  /**
+   * Phase 2e (docs/planner-north-star-audit-and-vision.md) — a price check
+   * for something not yet in the plan (e.g. a hotel search result). Never
+   * fabricates: throws (404 via apiClient's error handling) when no live
+   * or historical price exists, the same honest outcome verifyBlockPrice
+   * already gives for a placed block.
+   */
+  lookupPrice: (params: { serviceType: string; date: string; provider?: string; destination?: string; origin?: string; code?: string }) => {
+    const query = new URLSearchParams({ service_type: params.serviceType, date: params.date });
+    if (params.provider) query.set('provider', params.provider);
+    if (params.destination) query.set('destination', params.destination);
+    if (params.origin) query.set('origin', params.origin);
+    if (params.code) query.set('code', params.code);
+    return apiClient.get<{ found: boolean; price: PriceLookupResult }>(`/planner/price-lookup/?${query.toString()}`);
   },
 
   // ─── Route optimization — always files a proposal, never mutates directly ──

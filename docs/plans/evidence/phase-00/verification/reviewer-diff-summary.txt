@@ -1,0 +1,9 @@
+Tracked Phase 00 product diff summary at reviewer time:
+
+ backend/apps/attractions/views.py                  | 38 ++++++++++++-
+ backend/apps/bookings/providers/bus_providers.py   | 20 ++++++-
+ backend/apps/bookings/providers/train_providers.py | 20 +++++--
+ backend/apps/reference/services/live_price.py      | 65 ++++++++++++++++++----
+ 4 files changed, 121 insertions(+), 22 deletions(-)
+
+Additional Phase 00-owned files are untracked in the pre-existing dirty tree and are enumerated in the implementation report: canonical resolver, station selector, coordinate backfill command, attraction command package, baseline script, and phase records. No unrelated hunk was attributed to Phase 00.

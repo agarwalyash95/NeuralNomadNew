@@ -1,0 +1,26 @@
+{
+  "contractual_workload": {
+    "definition": "the Phase 0 baseline_metrics.py nearby_hub_lookup over RailwayStationServiceArea",
+    "runs": 25,
+    "median_ms": 1.57,
+    "p95_ms": 2.917,
+    "max_ms": 3.467,
+    "target_p95_ms": 50,
+    "target_passed": true,
+    "phase_0_baseline_p95_ms": 3.45
+  },
+  "indexed_geo_fallback_diagnostic": {
+    "definition": "nearest railway hubs around Delhi at the approved 80 km rail access radius",
+    "bbox_candidates": 199,
+    "returned": 20,
+    "runs": 100,
+    "median_ms": 10.061,
+    "p95_ms": 80.476,
+    "max_ms": 277.588,
+    "contract_gate": false,
+    "default_plan": "Bitmap Heap Scan -> Bitmap Index Scan on ref_rail_lat_lon_idx",
+    "default_uses_coordinate_index": true,
+    "diagnostic_uses_coordinate_index": true,
+    "interpretation": "median and index plan are healthy; process-level tail varies with local service scheduling"
+  }
+}

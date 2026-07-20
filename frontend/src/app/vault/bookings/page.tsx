@@ -226,7 +226,17 @@ export default function VaultBookingsPage() {
                     {getIcon(booking.booking_type)}
                   </div>
                   <div>
-                    <h3 className="font-bold text-slate-900 text-lg leading-tight">{booking.provider}</h3>
+                    <div className="flex items-center gap-1.5">
+                      <h3 className="font-bold text-slate-900 text-lg leading-tight">{booking.provider}</h3>
+                      {/* Honest source tag — this row came from a trip's own
+                          commitment ladder (reserved, no payment collected),
+                          not the direct booking/payment flow. */}
+                      {booking.source === 'trip_planner' && (
+                        <span className="shrink-0 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-600">
+                          From your trip
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-slate-500 font-medium mt-0.5 tracking-wide uppercase">
                       {booking.reference_number}
                     </p>

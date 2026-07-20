@@ -87,8 +87,21 @@ export function useBookings() {
     try {
       setLoading(true);
       setError(null);
-      const data = await bookingService.getBookings();
-      setBookings(normalizeBookings(data));
+      // Two independent sources (docs/planner-north-star-audit-and-vision.md
+      // Phase 0e): direct bookings.Booking rows, and items booked inside a
+      // generated trip (bridged read-only from PlanBlockCommitment). Fetched
+      // with allSettled so one source failing doesn't blank out the other —
+      // only surface the error banner if BOTH fail.
+      const [directResult, committedResult] = await Promise.allSettled([
+        bookingService.getBookings(),
+        bookingService.getCommittedBookings(),
+      ]);
+      if (directResult.status === 'rejected' && committedResult.status === 'rejected') {
+        throw directResult.reason;
+      }
+      const direct = directResult.status === 'fulfilled' ? normalizeBookings(directResult.value) : [];
+      const committed = committedResult.status === 'fulfilled' ? committedResult.value : [];
+      setBookings([...direct, ...committed]);
     } catch (loadError) {
       console.error(loadError);
       setError('Unable to load booking inventory.');

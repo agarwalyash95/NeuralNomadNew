@@ -67,6 +67,16 @@ export default function ForexCanvas({ onClose, tripContext }: ForexCanvasProps) 
     ['bali', 'bangkok', 'dubai', 'singapore', 'london', 'paris', 'nepal', 'europe'].some(intl => c.toLowerCase().includes(intl))
   );
 
+  // Phase 2c (docs/planner-north-star-audit-and-vision.md) — the ATM/cash
+  // advisory below was hardcoded to Manali/Kasol/Tosh/Kheerganga/Bhuntar and
+  // shown for ANY domestic destination, so a Goa or Jaipur trip saw fake
+  // Himachal ATM guidance. Mirrors the exact same region-gating VisaCanvas
+  // already applies to its Rohtang permit / altitude cards (§9.4 there) —
+  // gate the region-specific content on the real destination instead of
+  // showing it universally.
+  const tripPlaces = [tripContext.destination, ...tripContext.allCities].join(' ').toLowerCase();
+  const isManaliRegion = ['manali', 'kasol', 'tosh', 'kheerganga', 'bhuntar', 'solang', 'manikaran', 'malana', 'naggar', 'chalal'].some(p => tripPlaces.includes(p));
+
   useEffect(() => {
     if (!isDomesticTrip) {
       fetchRates();
@@ -129,29 +139,34 @@ export default function ForexCanvas({ onClose, tripContext }: ForexCanvasProps) 
             </div>
           </div>
 
-          {/* ATM Warning */}
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-            <div className="flex items-start gap-3">
-              <AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-600" />
-              <div>
-                <h3 className="text-title !text-amber-900">⚠️ ATM Advisory for {tripContext.destination}</h3>
-                <ul className="mt-2 space-y-1.5 text-xs text-amber-800">
-                  <li>• ATMs in <strong>Kasol, Tosh, and Kheerganga</strong> are often out of cash or out of service</li>
-                  <li>• <strong>Bhuntar</strong> (near KUU airport) has the most reliable ATMs in the area</li>
-                  <li>• Withdraw cash at <strong>Delhi or Chandigarh</strong> before reaching Manali if possible</li>
-                </ul>
+          {/* ATM Warning — Manali-area only; a real, checkable regional fact,
+              not a universal domestic-India truth (Phase 2c). */}
+          {isManaliRegion && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-600" />
+                <div>
+                  <h3 className="text-title !text-amber-900">⚠️ ATM Advisory for {tripContext.destination}</h3>
+                  <ul className="mt-2 space-y-1.5 text-xs text-amber-800">
+                    <li>• ATMs in <strong>Kasol, Tosh, and Kheerganga</strong> are often out of cash or out of service</li>
+                    <li>• <strong>Bhuntar</strong> (near KUU airport) has the most reliable ATMs in the area</li>
+                    <li>• Withdraw cash at <strong>Delhi or Chandigarh</strong> before reaching Manali if possible</li>
+                  </ul>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
-          {/* Cash recommendations */}
+          {/* Cash recommendations — universal estimate, honest generic
+              labels (Phase 2c: previously said "paragliding, trekking" /
+              "shared cabs", specific enough to mislead a beach or city trip). */}
           <div className="rounded-xl border border-line bg-paper-2 p-4">
             <h3 className="mb-3 text-title">Recommended Cash for {tripContext.travellers} traveller(s)</h3>
             <div className="space-y-2">
               {[
-                { label: 'Local food (dhabas & cafes)', amount: 800 * tripContext.travellers, per: 'per day' },
-                { label: 'Activities (paragliding, trekking)', amount: 2500 * tripContext.travellers, per: 'estimate' },
-                { label: 'Local transport (shared cabs)', amount: 600 * tripContext.travellers, per: 'per day' },
+                { label: 'Local food & dining', amount: 800 * tripContext.travellers, per: 'per day' },
+                { label: 'Activities & experiences', amount: 2500 * tripContext.travellers, per: 'estimate' },
+                { label: 'Local transport', amount: 600 * tripContext.travellers, per: 'per day' },
                 { label: 'Emergency buffer', amount: 5000, per: 'total' },
               ].map(({ label, amount: amt, per }) => (
                 <div key={label} className="flex items-center justify-between text-caption">
@@ -166,35 +181,44 @@ export default function ForexCanvas({ onClose, tripContext }: ForexCanvasProps) 
             </div>
           </div>
 
-          {/* Denomination tip — support/neutral (blue is reserved for booking, §1.3 C2) */}
+          {/* Denomination tip — universal note always true, region-specific
+              UPI/petrol-pump detail gated (Phase 2c). */}
           <div className="rounded-xl border border-line bg-paper-1 p-4">
             <h3 className="mb-2 text-title">💡 Denomination Tips</h3>
             <ul className="space-y-1 text-body">
-              <li>• Keep plenty of <strong>₹500 & ₹100 notes</strong> — local dhabas rarely have change for ₹2000</li>
-              <li>• UPI works in Manali town & Kasol but <strong>NOT in Kheerganga, Tosh, or Chalal</strong></li>
-              <li>• Petrol pumps near Bhuntar accept cards reliably</li>
+              <li>• Keep plenty of <strong>₹500 & ₹100 notes</strong> — small local vendors rarely have change for ₹2000</li>
+              {isManaliRegion && (
+                <>
+                  <li>• UPI works in Manali town & Kasol but <strong>NOT in Kheerganga, Tosh, or Chalal</strong></li>
+                  <li>• Petrol pumps near Bhuntar accept cards reliably</li>
+                </>
+              )}
             </ul>
           </div>
 
-          {/* Nearby ATMs / Forex */}
-          <div className="rounded-xl border border-line bg-paper-2 p-4">
-            <h3 className="mb-3 text-title">Nearest ATMs & Forex</h3>
-            <div className="space-y-3">
-              {[
-                { name: 'SBI ATM — Manali Mall Road', dist: '0.5 km from town center', note: 'May run out Oct–Nov' },
-                { name: 'HDFC ATM — Bhuntar', dist: 'Near KUU Airport, Bhuntar', note: 'Most reliable in the valley' },
-                { name: 'Bhuntar Forex Exchange', dist: 'Near Bus Stand, Bhuntar', note: 'USD/EUR — limited stock' },
-              ].map(atm => (
-                <div key={atm.name} className="flex items-start gap-2">
-                  <MapPin size={14} className="mt-0.5 shrink-0 text-ink-400" />
-                  <div>
-                    <p className="text-body font-semibold text-ink-900">{atm.name}</p>
-                    <p className="text-caption">{atm.dist} • {atm.note}</p>
+          {/* Nearby ATMs / Forex — real named locations exist only for the
+              Manali area today; never fabricate ATM names for an arbitrary
+              destination we haven't looked up (Phase 2c). */}
+          {isManaliRegion && (
+            <div className="rounded-xl border border-line bg-paper-2 p-4">
+              <h3 className="mb-3 text-title">Nearest ATMs & Forex</h3>
+              <div className="space-y-3">
+                {[
+                  { name: 'SBI ATM — Manali Mall Road', dist: '0.5 km from town center', note: 'May run out Oct–Nov' },
+                  { name: 'HDFC ATM — Bhuntar', dist: 'Near KUU Airport, Bhuntar', note: 'Most reliable in the valley' },
+                  { name: 'Bhuntar Forex Exchange', dist: 'Near Bus Stand, Bhuntar', note: 'USD/EUR — limited stock' },
+                ].map(atm => (
+                  <div key={atm.name} className="flex items-start gap-2">
+                    <MapPin size={14} className="mt-0.5 shrink-0 text-ink-400" />
+                    <div>
+                      <p className="text-body font-semibold text-ink-900">{atm.name}</p>
+                      <p className="text-caption">{atm.dist} • {atm.note}</p>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     );

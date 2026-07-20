@@ -8,6 +8,7 @@ import { ProposalCard } from '../../components/ProposalCard';
 import ItineraryTimeline from '../plan-canvas/ItineraryTimeline';
 import PlannerMap from '../plan-canvas/PlannerMap';
 import AIInsightsPanel from '../plan-canvas/AIInsightsPanel';
+import PlanSyncBanner from '../plan-canvas/PlanSyncBanner';
 import { usePlannerHoverStore } from '@/store/planner-hover.store';
 import { TripViewModel, ItineraryItem } from '../plan-canvas/types';
 import type { NodeClickPayload } from '../types';
@@ -57,6 +58,7 @@ interface MobileWorkspaceProps {
   onRejectProposal: (id: string, reason?: string) => Promise<unknown>;
   focusedDayId: string | null;
   onFocusDay: (dayId: string) => void;
+  onReviewSync: () => void;
 }
 
 export default function MobileWorkspace({
@@ -81,6 +83,7 @@ export default function MobileWorkspace({
   onRejectProposal,
   focusedDayId,
   onFocusDay,
+  onReviewSync,
 }: MobileWorkspaceProps) {
   const [view, setView] = useState<'timeline' | 'map'>('timeline');
   const [sheetItem, setSheetItem] = useState<ItineraryItem | null>(null);
@@ -139,12 +142,16 @@ export default function MobileWorkspace({
         </button>
         <button
           onClick={() => onOpenPanel('checkout')}
-          className="flex h-11 shrink-0 items-center gap-1.5 rounded-full bg-blue-600 px-4 text-[12px] font-bold text-white"
+          className="flex h-11 shrink-0 items-center gap-1.5 rounded-full bg-ink-900 px-4 text-[12px] font-bold text-white shadow-surface"
         >
           <CreditCard size={14} />
           Book
         </button>
       </div>
+
+      {planData.syncStatus && (
+        <PlanSyncBanner status={planData.syncStatus} onReview={onReviewSync} compact />
+      )}
 
       {/* Day pager — horizontally-snapping */}
       <div className="flex gap-1.5 overflow-x-auto border-b border-line bg-paper-1 px-3 py-2 shrink-0 snap-x snap-mandatory">
@@ -156,7 +163,7 @@ export default function MobileWorkspace({
               document.getElementById(`day-${day.dayNumber}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }}
             className={`flex h-11 shrink-0 snap-start items-center rounded-full px-3.5 text-[12px] font-bold transition-colors ${
-              focusedDayId === day.id ? 'bg-blue-600 text-white' : 'border border-line bg-paper-2 text-ink-600'
+            focusedDayId === day.id ? 'bg-ink-900 text-white' : 'border border-line bg-paper-2 text-ink-600'
             }`}
           >
             Day {day.dayNumber}
@@ -171,7 +178,7 @@ export default function MobileWorkspace({
           aria-selected={view === 'timeline'}
           onClick={() => setView('timeline')}
           className={`flex h-11 flex-1 items-center justify-center gap-1.5 text-[12px] font-bold ${
-            view === 'timeline' ? 'border-b-2 border-blue-600 text-blue-700' : 'text-ink-500'
+            view === 'timeline' ? 'border-b-2 border-ink-900 text-ink-900' : 'text-ink-500'
           }`}
         >
           <List size={14} /> Timeline
@@ -181,7 +188,7 @@ export default function MobileWorkspace({
           aria-selected={view === 'map'}
           onClick={() => setView('map')}
           className={`flex h-11 flex-1 items-center justify-center gap-1.5 text-[12px] font-bold ${
-            view === 'map' ? 'border-b-2 border-blue-600 text-blue-700' : 'text-ink-500'
+            view === 'map' ? 'border-b-2 border-ink-900 text-ink-900' : 'text-ink-500'
           }`}
         >
           <MapIcon size={14} /> Map

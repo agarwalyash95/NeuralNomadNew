@@ -71,7 +71,7 @@ def enrich_place(category, object_id):
     popularity-ordered batch to reach it. New/replaced places start at
     popularity_score=0 and can wait indefinitely for that batch otherwise.
     """
-    from apps.knowledge.services.enrichment import enrich_one
+    from apps.reference.services.enrichment import enrich_one
     from apps.reference.services.places_explore import _category_config
 
     model = _category_config()[category]["model"]
@@ -84,23 +84,23 @@ def enrich_place(category, object_id):
 
 @shared_task(name="apps.reference.tasks.run_enrichment_pass")
 def run_enrichment_pass():
-    """Hotel/Restaurant/Attraction LLM judgment synthesis — see apps.knowledge.services.enrichment."""
-    from apps.knowledge.services.enrichment import run_enrichment_pass as _run
+    """Hotel/Restaurant/Attraction LLM judgment synthesis — see apps.reference.services.enrichment."""
+    from apps.reference.services.enrichment import run_enrichment_pass as _run
 
     return _run()
 
 
 @shared_task(name="apps.reference.tasks.run_safety_etiquette_pass")
 def run_safety_etiquette_pass():
-    """City-level safety/etiquette LocalTip generation — see apps.knowledge.services.enrichment."""
-    from apps.knowledge.services.enrichment import run_safety_etiquette_pass as _run
+    """City-level safety/etiquette LocalTip generation — see apps.reference.services.enrichment."""
+    from apps.reference.services.enrichment import run_safety_etiquette_pass as _run
 
     return _run()
 
 
 @shared_task(name="apps.reference.tasks.compute_embeddings_backlog")
 def compute_embeddings_backlog():
-    """Semantic embeddings for hybrid search — see apps.knowledge.services.embeddings."""
-    from apps.knowledge.services.embeddings import compute_embeddings_backlog as _run
+    """Semantic embeddings for hybrid search — see apps.reference.services.embeddings."""
+    from apps.reference.services.embeddings import compute_embeddings_backlog as _run
 
     return _run()

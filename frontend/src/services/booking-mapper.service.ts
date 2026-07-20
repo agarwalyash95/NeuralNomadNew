@@ -1,4 +1,5 @@
 import { TravelSearchResult } from '@/types/search';
+import { todayLocalISO } from '@/lib/utils';
 
 export function mapSearchResultToBooking(result: TravelSearchResult, selectedProvider?: { provider: string; price: number }) {
   // Pick lowest provider price or the explicitly selected one
@@ -21,7 +22,7 @@ export function mapSearchResultToBooking(result: TravelSearchResult, selectedPro
     booking_type: bookingTypeMap[result.service_type] || result.service_type,
     amount: resolvedProvider.price,
     currency: 'INR',
-    start_date: new Date().toISOString().slice(0, 10),
+    start_date: todayLocalISO(),
     end_date: null,
     provider: resolvedProvider.provider,
     details: {

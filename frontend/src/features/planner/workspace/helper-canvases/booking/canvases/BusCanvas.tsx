@@ -17,6 +17,7 @@ import { useTransportPreference } from '@/features/planner/hooks/usePlannerQueri
 import { CanvasErrorCard, classifyFetchErrorVariant, type CanvasErrorVariant } from '../../shared/CanvasErrorCard';
 import { LiveSearchProgress, useLiveSearchPhases, useTierEscalation } from '../../shared/LiveSearchProgress';
 import TransportCardSkeleton from './TransportCardSkeleton';
+import SampleInventoryBanner from '../SampleInventoryBanner';
 
 const BUS_SEARCH_PHASES = [
   { key: 'search', label: 'Searching bus inventory' },
@@ -128,13 +129,14 @@ export default function BusCanvas({ onClose, tripContext, onAddToPlan }: BusCanv
         return {
           id: bus.id,
           operator: bus.title,
-          busType: bus.meta?.bus_type || 'AC Sleeper',
+          busType: bus.meta?.bus_type || 'Type unavailable',
           departure: { time: bus.departure_time || null, location: bus.origin_city || searchParams.origin || 'Origin' },
           arrival: { time: bus.arrival_time || null, location: bus.destination_city || searchParams.destination || tripContext.destination },
           duration: bus.duration || null,
           price,
           seats: seat?.seats_available != null ? `${seat.seats_available} seats left` : null,
-          amenities: ['Charging Point', 'Blanket'],
+          amenities: bus.meta?.amenities || [],
+          source: bus.source,
         };
       });
       setResults(mapped);
@@ -197,6 +199,7 @@ export default function BusCanvas({ onClose, tripContext, onAddToPlan }: BusCanv
   return (
     <div className="flex h-full flex-col bg-paper-1">
       <CanvasHeader icon={<Bus size={18} />} iconColor="bg-sky-600" label="Buses" title={searchSummary} tripContext={tripContext} onClose={onClose} />
+      {results.some((result: any) => result.source === 'mock_inventory') && <SampleInventoryBanner />}
       <CurrentlyBookedCard tripContext={tripContext} nodeType="bus" />
       <div className="custom-scrollbar flex-1 overflow-y-auto">
         {!isSearchExpanded && (

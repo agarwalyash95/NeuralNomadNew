@@ -1,0 +1,28 @@
+Processing Railway Stations...
+Processing Airports...
+Processing Bus Stations...
+{
+  "airport": {
+    "created": 15064,
+    "deleted_stale": 10868,
+    "unchanged": 35850,
+    "updated": 573
+  },
+  "bus": {
+    "created": 0,
+    "deleted_stale": 0,
+    "unchanged": 0,
+    "updated": 0
+  },
+  "mode": "incremental",
+  "railway": {
+    "created": 729748,
+    "deleted_stale": 572499,
+    "unchanged": 37078,
+    "updated": 4683
+  }
+}
+
+real	25m33.072s
+user	0m0.031s
+sys	0m0.031s

@@ -56,6 +56,27 @@ export function addDaysToISO(isoDate: string | undefined, days: number): string 
   return d.toISOString().slice(0, 10);
 }
 
+/** Calendar dates are local civil dates, never UTC instants. */
+export function localDateToISO(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export function todayLocalISO(): string {
+  return localDateToISO(new Date());
+}
+
+export function parseLocalISODate(value: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [year, month, day] = value.split('-').map(Number);
+  const parsed = new Date(year!, month! - 1, day!);
+  return parsed.getFullYear() === year && parsed.getMonth() === month! - 1 && parsed.getDate() === day
+    ? parsed
+    : null;
+}
+
 export function formatCurrency(amount: number, currency: string = 'INR'): string {
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',

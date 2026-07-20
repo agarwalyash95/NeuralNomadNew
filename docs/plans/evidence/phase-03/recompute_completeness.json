@@ -1,0 +1,23 @@
+{
+  "activities": {
+    "changed": 356,
+    "mean_delta": 0.6455,
+    "total": 356
+  },
+  "attractions": {
+    "changed": 441,
+    "mean_delta": 0.6659,
+    "total": 441
+  },
+  "hotels": {
+    "changed": 388,
+    "mean_delta": 0.6183,
+    "total": 388
+  },
+  "mode": "apply",
+  "restaurants": {
+    "changed": 461,
+    "mean_delta": 0.6626,
+    "total": 461
+  }
+}

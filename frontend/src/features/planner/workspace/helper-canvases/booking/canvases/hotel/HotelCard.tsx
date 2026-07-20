@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Check, Plus, BedDouble } from 'lucide-react';
+import { Check, Plus, BedDouble, GitCompareArrows } from 'lucide-react';
 import type { Suggestion } from '@/features/planner/workspace/plan-canvas/types';
 import type { ItineraryImpact } from './itineraryImpact';
 import type { TripFitResult } from './tripFit';
@@ -12,9 +12,14 @@ interface HotelCardProps {
   isPending: boolean;
   onSelect: () => void;
   onAdd: () => void;
+  /** Phase 2b (docs/planner-north-star-audit-and-vision.md) — pin state for
+   *  HotelCompareTray. Optional so this card still works anywhere isPinned
+   *  tracking doesn't apply. */
+  isPinned?: boolean;
+  onTogglePin?: () => void;
 }
 
-export default function HotelCard({ hotel, fit, impact, isPending, onSelect, onAdd }: HotelCardProps) {
+export default function HotelCard({ hotel, fit, impact, isPending, onSelect, onAdd, isPinned, onTogglePin }: HotelCardProps) {
   const tagline = fit.reasons[0]?.text || hotel.subtitle || 'Perfect alignment with itinerary stops.';
 
   const comparisonCheck = useMemo(() => {
@@ -68,18 +73,35 @@ export default function HotelCard({ hotel, fit, impact, isPending, onSelect, onA
             {comparisonCheck}
           </span>
           
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onAdd(); }}
-            className={`flex h-7 w-7 items-center justify-center rounded-full shadow-xs transition-all duration-200 cursor-pointer ${
-              isPending 
-                ? 'bg-cat-stay text-white shadow-sm shadow-cat-stay/25' 
-                : 'bg-paper-1 hover:bg-line/40 text-ink-700 border border-line hover:scale-105'
-            }`}
-            title={isPending ? 'Added' : 'Select hotel'}
-          >
-            {isPending ? <Check size={13} strokeWidth={3} /> : <Plus size={13} strokeWidth={3} />}
-          </button>
+          <div className="flex items-center gap-1.5">
+            {onTogglePin && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
+                className={`flex h-7 w-7 items-center justify-center rounded-full shadow-xs transition-all duration-200 cursor-pointer ${
+                  isPinned
+                    ? 'bg-cat-stay/15 text-cat-stay border border-cat-stay/40'
+                    : 'bg-paper-1 hover:bg-line/40 text-ink-500 border border-line hover:scale-105'
+                }`}
+                title={isPinned ? 'Remove from comparison' : 'Add to comparison'}
+                aria-pressed={isPinned}
+              >
+                <GitCompareArrows size={13} strokeWidth={2.5} />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onAdd(); }}
+              className={`flex h-7 w-7 items-center justify-center rounded-full shadow-xs transition-all duration-200 cursor-pointer ${
+                isPending
+                  ? 'bg-cat-stay text-white shadow-sm shadow-cat-stay/25'
+                  : 'bg-paper-1 hover:bg-line/40 text-ink-700 border border-line hover:scale-105'
+              }`}
+              title={isPending ? 'Added' : 'Select hotel'}
+            >
+              {isPending ? <Check size={13} strokeWidth={3} /> : <Plus size={13} strokeWidth={3} />}
+            </button>
+          </div>
         </div>
       </div>
     </div>

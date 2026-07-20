@@ -50,9 +50,9 @@ class BookingComTaxiProvider(BaseCabProvider):
                 if taxis:
                     results = []
                     for idx, taxi in enumerate(taxis[:15]):
-                        price_val = taxi.get('price', {}).get('amount', 2800)
-                        if price_val and price_val < 500:
-                            price_val = round(price_val * 85)
+                        price_val = taxi.get('price', {}).get('amount')
+                        if not isinstance(price_val, (int, float)):
+                            continue
                         results.append({
                             "id": f"taxi-{taxi.get('id', idx)}",
                             "service_type": "cab",
@@ -184,4 +184,6 @@ class MockCabProvider(BaseCabProvider):
                 }
             ]
 
+        for item in results:
+            item["source"] = "mock_inventory"
         return results

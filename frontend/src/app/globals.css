@@ -47,15 +47,15 @@
     --secondary-foreground: 210 40% 98%;
 
     /* ── Warm paper surface system ────────────────────────────────────────── */
-    --paper-0: 246 244 239;    /* page shell      #f6f4ef */
-    --paper-1: 251 250 247;    /* panels          #fbfaf7 */
+    --paper-0: 249 248 246;    /* page shell      #f9f8f6 */
+    --paper-1: 252 251 250;    /* panels          #fcfbfa */
     --paper-2: 255 255 255;    /* cards           #ffffff */
-    --line: 226 221 210;       /* hairline        #e2ddd2 */
-    --line-strong: 221 215 202; /* borders        #ddd7ca */
-    --ink-900: 30 30 26;       /* headings        #1e1e1a */
-    --ink-700: 68 64 58;       /* body            #44403a */
-    --ink-500: 122 116 107;    /* muted           #7a746b */
-    --ink-400: 156 149 123;    /* faint labels    #9c957b */
+    --line: 235 233 228;       /* hairline        #ebe9e4 */
+    --line-strong: 226 224 218; /* borders        #e2e0da */
+    --ink-900: 26 26 26;       /* headings        #1a1a1a */
+    --ink-700: 64 64 64;       /* body            #404040 */
+    --ink-500: 115 115 115;    /* muted           #737373 */
+    --ink-400: 163 163 163;    /* faint labels    #a3a3a3 */
 
     /* ── Semantic color system (Color Psychology) ─────────────────────────
        Blue    = Booking & navigation ONLY

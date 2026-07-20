@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, RefreshCw } from 'lucide-react';
 // exportPdf (and jsPDF within it) is dynamically imported inside
@@ -9,7 +9,6 @@ import { Sparkles, RefreshCw } from 'lucide-react';
 
 // ── Plan Canvas Components & Utilities ─────────────────────────────────────
 import { parsePriceToInteger } from './plan-canvas/utils/priceParser';
-import { useProposalCount } from './hooks/useProposalCount';
 import { usePendingTips } from './hooks/usePendingTips';
 import { ProposalCard } from '../components/ProposalCard';
 import DockedChat from '../chat/DockedChat';
@@ -32,7 +31,7 @@ import VisaCanvas from './helper-canvases/travel-prep/visa/VisaCanvas';
 
 // ── Plan Canvas — new path ──────────────────────────────────────────────────
 import { TripViewModel, ItineraryItem } from './plan-canvas/types';
-import { mergeReplacementItem, toRawActivity } from './services/blockMerge';
+import { toRawActivity } from './services/blockMerge';
 import { usePrefetchPlaceDetails } from './hooks/usePlaceDetails';
 import { useLiveWorkspaceEvents } from './hooks/useLiveWorkspaceEvents';
 import { transformTripData, serializePlanUpdate, getVerifyContext } from './services/planTransform';
@@ -41,6 +40,7 @@ import AIInsightsPanel from './plan-canvas/AIInsightsPanel';
 import PlannerHeader from './plan-canvas/PlannerHeader';
 import ItineraryTimeline from './plan-canvas/ItineraryTimeline';
 import TripStatusSpine from './plan-canvas/TripStatusSpine';
+import PlanSyncBanner from './plan-canvas/PlanSyncBanner';
 import { inferDestType } from './plan-canvas/utils/destinationAtmosphere';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -83,6 +83,7 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
   const [isExporting, setIsExporting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [planData, setPlanData] = useState<TripViewModel | null>(null);
+  const revisionRef = useRef(0);
   // Undo/redo command stacks over TripViewModel snapshots — reset whenever
   // the workspace changes so switching trips doesn't carry over history.
   const [undoStack, setUndoStack] = useState<TripViewModel[]>([]);
@@ -116,6 +117,7 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
   const [isSavingCloud, setIsSavingCloud] = useState(false);
   // ── Proposals — AI proposes, the traveler decides ──────────────────────
   const queryClient = useQueryClient();
+  const { data: workspace } = useWorkspace(workspaceId);
   const { data: openProposals = [] } = useProposals(workspaceId);
   const acceptProposal = useAcceptProposal(workspaceId);
   const rejectProposal = useRejectProposal(workspaceId);
@@ -213,6 +215,7 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
       return {
         tripId: workspaceId,
         destination: '',
+        destinationCountry: workspace?.draft_state?.destination_country || '',
         allCities: [],
         startDate: '',
         endDate: '',
@@ -250,6 +253,7 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
     return {
       tripId: workspaceId,
       destination: firstCity?.cityName ?? '',
+      destinationCountry: workspace?.draft_state?.destination_country || firstCity?.country || '',
       allCities,
       // Structured fields from the view model — no display-string parsing
       startDate: planData.startDate ?? '',
@@ -278,7 +282,7 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
       activeDayItemTitles,
       activeCityItems,
     };
-  }, [planData, workspaceId, activeNodePayload, focusedDayContext, activeDayItemTitles]);
+  }, [planData, workspaceId, workspace?.draft_state?.destination_country, activeNodePayload, focusedDayContext, activeDayItemTitles]);
 
   // ── Sync initial active city/day & trigger background prefetching ─────
   // Runs once per workspace load, not on every edit — `planData` is replaced
@@ -388,7 +392,6 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
   // we poll every 4 s until data arrives — covers race conditions right after
   // generation, and transient backend errors. Polling stops the moment we
   // get a valid trip with cities.
-  const { data: workspace } = useWorkspace(workspaceId);
   const workspaceHasPlan = workspace && workspace.status !== 'draft';
 
   const {
@@ -471,13 +474,30 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
     if (!workspaceId) { setIsLoading(false); return; }
     if (isPlanPending) { setIsLoading(true); return; }
 
+    // CANVAS-01 (docs/planner-complete-current-audit-and-repair-plan.md
+    // §19 R10): a background refetch (usePendingTips / useLiveWorkspaceEvents)
+    // can land here while a local timeline edit is still waiting out its
+    // 1200ms debounce (schedulePersist below) — rebuilding planData from
+    // that possibly-pre-edit `trip` snapshot would silently overwrite the
+    // unsaved edit. Flush the pending persist first so the edit wins the
+    // race, and skip this rebuild for now; persistPlan's own
+    // queryClient.setQueryData call re-triggers this same effect with the
+    // correct, post-edit trip once the flush lands.
+    if (pendingPersistRef.current) {
+      void flushPendingPersist();
+      setIsLoading(false);
+      return;
+    }
+
     if (!isPlanError && trip && trip.cities && trip.cities.length > 0) {
+      revisionRef.current = trip.revision ?? 0;
       setPlanData(transformTripData(trip));
     } else {
       // Expected when the plan is still in draft mode or data hasn't arrived yet
       setPlanData(null);
     }
     setIsLoading(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId, trip, isPlanPending, isPlanError]);
 
   // ── Handlers ─────────────────────────────────────────────────────────────
@@ -509,12 +529,22 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
     }
   };
 
-  const persistPlan = async (newData: TripViewModel) => {
+  const persistPlan = useCallback(async (newData: TripViewModel) => {
     if (!workspaceId) return;
     setIsSavingCloud(true);
     try {
       const { days, cities } = serializePlanUpdate(newData);
-      const updatedTrip = await plannerService.updatePlan(workspaceId, { days: days as any, cities: cities as any });
+      const mutationId = typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `manual-${Date.now()}-${Math.random()}`;
+      const updatedTrip = await plannerService.updatePlan(workspaceId, {
+        days: days as any,
+        cities: cities as any,
+        expected_revision: revisionRef.current,
+        mutation_id: mutationId,
+        source: 'manual_edit',
+      });
+      revisionRef.current = updatedTrip.revision;
       queryClient.setQueryData(plannerKeys.plan(workspaceId), updatedTrip);
       queryClient.invalidateQueries({ queryKey: plannerKeys.ledger(workspaceId) });
       // The PATCH sets is_modified server-side — refresh workspace/bucket so a
@@ -526,29 +556,59 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
       // warning about itself sitting on screen after the edit lands.
       queryClient.invalidateQueries({ queryKey: plannerKeys.insights(workspaceId) });
       queryClient.invalidateQueries({ queryKey: plannerKeys.proposals(workspaceId) });
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to save updated plan to backend:', err);
+      if (err?.code === 'stale_revision' || err?.status === 409) {
+        const latest = await refetchPlan();
+        if (latest.data) {
+          revisionRef.current = latest.data.revision ?? revisionRef.current;
+          setPlanData(transformTripData(latest.data));
+        }
+        setOptimizeNoticeTone('info');
+        setOptimizeNotice('This trip changed in another planner action. I reloaded the latest saved version.');
+      }
     } finally {
       setTimeout(() => setIsSavingCloud(false), 800);
     }
-  };
+  }, [workspaceId, queryClient, refetchPlan]);
 
   // Debounced network write — local state updates instantly (below) so undo
   // stays snappy, but a burst of edits (drag, then a swap, then a time
   // tweak) coalesces into one PATCH instead of one per keystroke/drop.
   const patchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const schedulePersist = (data: TripViewModel) => {
+  const pendingPersistRef = useRef<TripViewModel | null>(null);
+  const persistQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const schedulePersist = useCallback((data: TripViewModel) => {
     if (patchTimerRef.current) clearTimeout(patchTimerRef.current);
-    patchTimerRef.current = setTimeout(() => persistPlan(data), 1200);
+    pendingPersistRef.current = data;
+    patchTimerRef.current = setTimeout(() => {
+      const pending = pendingPersistRef.current;
+      pendingPersistRef.current = null;
+      if (pending) {
+        persistQueueRef.current = persistQueueRef.current.then(() => persistPlan(pending));
+      }
+    }, 1200);
+  }, [persistPlan]);
+
+  const flushPendingPersist = async () => {
+    if (patchTimerRef.current) {
+      clearTimeout(patchTimerRef.current);
+      patchTimerRef.current = null;
+    }
+    const pending = pendingPersistRef.current;
+    pendingPersistRef.current = null;
+    if (pending) {
+      persistQueueRef.current = persistQueueRef.current.then(() => persistPlan(pending));
+    }
+    await persistQueueRef.current;
   };
 
   /**
    * handlePlanDataChange — the single choke point every plan mutation flows
    * through (drag, replace, delete, time edit...). Every call here records
    * the PRE-change state on the undo stack, so Ctrl+Z always has something
-   * real to restore — see handleUndo/handleRedo below. Redefined fresh each
-   * render, so it always closes over the current planData/stacks — no stale
-   * closures despite not being memoized.
+   * real to restore — see handleUndo/handleRedo below. The callbacks are
+   * memoized so the global keyboard listener remains stable between renders.
    */
   const handlePlanDataChange = (newData: TripViewModel) => {
     if (planData) {
@@ -559,23 +619,23 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
     schedulePersist(newData);
   };
 
-  const handleUndo = () => {
+  const handleUndo = useCallback(() => {
     if (undoStack.length === 0 || !planData) return;
     const prev = undoStack[undoStack.length - 1]!;
     setUndoStack((stack) => stack.slice(0, -1));
     setRedoStack((stack) => [...stack, planData]);
     setPlanData(prev);
     schedulePersist(prev);
-  };
+  }, [undoStack, planData, schedulePersist]);
 
-  const handleRedo = () => {
+  const handleRedo = useCallback(() => {
     if (redoStack.length === 0 || !planData) return;
     const next = redoStack[redoStack.length - 1]!;
     setRedoStack((stack) => stack.slice(0, -1));
     setUndoStack((stack) => [...stack, planData]);
     setPlanData(next);
     schedulePersist(next);
-  };
+  }, [redoStack, planData, schedulePersist]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -592,7 +652,7 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [undoStack, redoStack, planData]);
+  }, [undoStack, redoStack, planData, handleUndo, handleRedo]);
 
   /**
    * handleVerifyLivePrice — ask the backend to check a block's price against
@@ -634,6 +694,7 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
     try {
       const context = getVerifyContext(targetItem, targetCityName, targetDateStr);
       const result = await plannerService.verifyBlock(workspaceId, itemId, context);
+      if (typeof result.revision === 'number') revisionRef.current = result.revision;
 
       if (result.verified && result.block) {
         const updatedData = JSON.parse(JSON.stringify(planData)) as TripViewModel;
@@ -736,8 +797,8 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
    * handleAddToPlan — called by any Helper Canvas when user confirms a selection.
    * Finds the node that triggered the canvas (by activeNodePayload) and replaces it.
    */
-  const handleAddToPlan = (newItem: ItineraryItem, options?: { thenBook?: boolean }) => {
-    if (!planData) return;
+  const handleAddToPlan = async (newItem: ItineraryItem, options?: { thenBook?: boolean }) => {
+    if (!planData || !workspaceId) return;
 
     // A block's trust tier must never go blank on replace — if the Helper
     // Canvas that produced this item didn't stamp a provenance, give it the
@@ -750,23 +811,54 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
       };
     }
 
-    const newData: TripViewModel = JSON.parse(JSON.stringify(planData));
-
     // Fallback to hovered/default item context if swap clicked without opening helper canvas
     const targetNodeId = activeNodePayload?.nodeId || usePlannerHoverStore.getState().hoveredItem?.id || defaultItem?.id;
     if (!targetNodeId) return;
 
-    let targetDayId = activeNodePayload?.dayId;
-    if (!targetDayId) {
-      for (const city of newData.cities) {
-        for (const day of city.days) {
-          if (day.items.some(i => i.id === targetNodeId)) {
-            targetDayId = day.id;
-            break;
-          }
+    await flushPendingPersist();
+    setIsSavingCloud(true);
+    setOptimizeNotice(null);
+    try {
+      const provenance = newItem.cost?.provenance?.tier === 'verified'
+        ? 'live_api'
+        : newItem.masterRef
+          ? 'database'
+          : 'model_knowledge';
+      const mutationId = typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `selection-${Date.now()}-${Math.random()}`;
+      const result = await plannerService.selectPlanItem(workspaceId, {
+        target_block_id: targetNodeId,
+        selected_item: toRawActivity(newItem),
+        expected_revision: revisionRef.current,
+        mutation_id: mutationId,
+        provider: newItem.title,
+        selected_id: newItem.place_id || newItem.id,
+        provenance,
+      });
+      setUndoStack((stack) => [...stack.slice(-49), planData]);
+      setRedoStack([]);
+      revisionRef.current = result.revision;
+      queryClient.setQueryData(plannerKeys.plan(workspaceId), result.trip);
+      setPlanData(transformTripData(result.trip));
+      queryClient.invalidateQueries({ queryKey: plannerKeys.workspace(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: plannerKeys.ledger(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: plannerKeys.insights(workspaceId) });
+      setActivePanel(options?.thenBook ? 'checkout' : 'none');
+      setActiveNodePayload(null);
+    } catch (err: any) {
+      console.error('Failed to save Helper Canvas selection:', err);
+      if (err?.status === 409 || err?.code === 'stale_revision') {
+        const latest = await refetchPlan();
+        if (latest.data) {
+          revisionRef.current = latest.data.revision ?? revisionRef.current;
+          setPlanData(transformTripData(latest.data));
         }
-        if (targetDayId) break;
       }
+      setOptimizeNoticeTone('info');
+      setOptimizeNotice(err?.message || 'That selection could not be saved. The previous plan is unchanged.');
+    } finally {
+      setIsSavingCloud(false);
     }
 
 
@@ -776,61 +868,28 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
 
     // Replace the specific clicked or hovered node. The old block's slot data
     // (id, timing, backend fields) survives the swap — only the place changes.
-    let replaced = false;
-    for (const city of newData.cities) {
-      for (const day of city.days) {
-        const idx = day.items.findIndex(i => i.id === targetNodeId);
-        if (idx !== -1) {
-          day.items[idx] = mergeReplacementItem(day.items[idx]!, newItem);
-          replaced = true;
-          break;
-        }
-      }
-      if (replaced) break;
-    }
 
     // Inter-city transit (city.transitToNext) lives outside day.items, so the
     // loop above never matches it — previously that meant a flight/train/bus
     // swap silently fell through to the "append as a new day item" branch
     // below instead of updating the transit segment, leaving a phantom
     // duplicate item and the stale transit block untouched.
-    if (!replaced) {
-      for (const city of newData.cities) {
-        if (city.transitToNext?.id === targetNodeId) {
-          city.transitToNext = mergeReplacementItem(city.transitToNext, newItem);
-          replaced = true;
-          break;
-        }
-      }
-    }
 
-    if (!replaced && targetDayId) {
-      for (const city of newData.cities) {
-        const day = city.days.find(d => d.id === targetDayId);
-        if (day) {
-          // A brand-new block needs a complete backend dict too, or the next
-          // PATCH would persist only the handful of fields serialize touches.
-          newItem.aiTipStatus = !newItem.aiTip ? 'pending' : newItem.aiTipStatus;
-          newItem._rawActivity = toRawActivity(newItem);
-          // Insert-between: land right after the anchor item instead of
-          // always appending to the end of the day.
-          const anchorIdx = activeNodePayload?.insertAfterId
-            ? day.items.findIndex(i => i.id === activeNodePayload.insertAfterId)
-            : -1;
-          if (anchorIdx !== -1) {
-            day.items.splice(anchorIdx + 1, 0, newItem);
-          } else {
-            day.items.push(newItem);
-          }
-          break;
-        }
-      }
-    }
+  };
 
-    handlePlanDataChange(newData);
-    // "Add to booking" flows straight into Checkout with the block priced
-    setActivePanel(options?.thenBook ? 'checkout' : 'none');
-    setActiveNodePayload(null);
+  const handleReviewSync = () => {
+    const scopes = new Set(planData?.syncStatus?.scopes || []);
+    if (scopes.has('rooms')) {
+      setActivePanel('hotel');
+    } else if (scopes.has('transport') || scopes.has('connectors') || scopes.has('transport_capacity')) {
+      setActivePanel('compare');
+    } else if (scopes.has('prices') || scopes.has('availability')) {
+      setActivePanel('compare');
+    } else {
+      setActivePanel('attractions');
+    }
+    setOptimizeNoticeTone('info');
+    setOptimizeNotice('Review the affected options. The warning clears only after the matching selection is saved.');
   };
 
 
@@ -1088,6 +1147,7 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
         onRejectProposal={(id, reason) => rejectProposal.mutateAsync({ proposalId: id, reason })}
         focusedDayId={focusedDayId}
         onFocusDay={setFocusedDayId}
+        onReviewSync={handleReviewSync}
       />
     );
   }
@@ -1162,6 +1222,11 @@ export default function PlannerWorkspace({ workspaceId }: PlannerWorkspaceProps)
           viewMode={viewMode}
           onViewModeChange={setViewMode}
         />
+        {planData.syncStatus && (
+          <div className="pb-3">
+            <PlanSyncBanner status={planData.syncStatus} onReview={handleReviewSync} />
+          </div>
+        )}
       </div>
 
       {/* Content row: resizable Timeline / Map split, filling remaining height */}

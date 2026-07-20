@@ -14,10 +14,12 @@ import { ItineraryItem, Suggestion } from '../../../plan-canvas/types';
 import HotelCard from './hotel/HotelCard';
 import HotelDetailSections from './hotel/HotelDetailSections';
 import HotelCardSkeleton from './hotel/HotelCardSkeleton';
+import HotelCompareTray from './hotel/HotelCompareTray';
 import { DEFAULT_HOTEL_FILTERS, isFiltersDefault, type HotelFilters } from './hotel/HotelFilterSheet';
 import { computeItineraryImpact, type ItineraryImpact } from './hotel/itineraryImpact';
 import { computeTripFit } from './hotel/tripFit';
 import { addDaysToISO } from '@/lib/utils';
+import { dedupeByBrand } from '../../brandDedup';
 
 interface HotelCanvasProps {
   onClose?: () => void;
@@ -31,7 +33,8 @@ const TIER_LABELS = ['$', '$$', '$$$', '$$$$'];
 
 export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: HotelCanvasProps) {
   const defaultLocation = tripContext.activeNodeCityName || tripContext.destination;
-  const [searchQuery, setSearchQuery] = useState(defaultLocation ? `${defaultLocation}, India` : '');
+  const countrySuffix = tripContext.destinationCountry ? `, ${tripContext.destinationCountry}` : '';
+  const [searchQuery, setSearchQuery] = useState(defaultLocation ? `${defaultLocation}${countrySuffix}` : '');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const [filters, setFilters] = useState<HotelFilters>(DEFAULT_HOTEL_FILTERS);
@@ -56,8 +59,9 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
 
   useEffect(() => {
     const loc = tripContext.activeNodeCityName || tripContext.destination;
-    setSearchQuery(loc ? `${loc}, India` : '');
-  }, [tripContext.tripId, tripContext.activeNodeCityName, tripContext.destination]);
+    const suffix = tripContext.destinationCountry ? `, ${tripContext.destinationCountry}` : '';
+    setSearchQuery(loc ? `${loc}${suffix}` : '');
+  }, [tripContext.tripId, tripContext.activeNodeCityName, tripContext.destination, tripContext.destinationCountry]);
 
   const fetchHotels = async (query: string) => {
     if (!query.trim()) {
@@ -167,7 +171,7 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
 
   const visibleResults = useMemo(
     () =>
-      sheetFiltered
+      dedupeByBrand(sheetFiltered)
         .filter(h => !plannedTitles.has(h.name.trim().toLowerCase()))
         .slice()
         .sort((a, b) => (fitsById.get(b.id)?.score ?? 0) - (fitsById.get(a.id)?.score ?? 0)),
@@ -205,6 +209,19 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
   const togglePin = (id: number) => {
     setPinnedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : prev.length < 3 ? [...prev, id] : prev));
   };
+
+  // Phase 2b (docs/planner-north-star-audit-and-vision.md) — pinnedIds was
+  // already tracked, and isCompared/onCompareToggle were already threaded
+  // into HotelDetailSections, but HotelCompareTray itself was never
+  // mounted anywhere: a user could pin hotels and never see a comparison.
+  const pinnedHotels = useMemo(
+    () =>
+      pinnedIds
+        .map((id) => results.find((h) => h.id === id))
+        .filter((h): h is Suggestion => Boolean(h))
+        .map((hotel) => ({ hotel, impact: impactsById.get(hotel.id) ?? null, fit: fitsById.get(hotel.id)! })),
+    [pinnedIds, results, impactsById, fitsById]
+  );
 
   const handleSelectRecommendation = (id: number) => {
     const el = listScrollContainerRef.current;
@@ -484,6 +501,8 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
                         isPending={false}
                         onSelect={() => handleSelectRecommendation(hotel.id)}
                         onAdd={() => handleSelectHotel(hotel)}
+                        isPinned={pinnedIds.includes(hotel.id)}
+                        onTogglePin={() => togglePin(hotel.id)}
                       />
                     </div>
                   ))}
@@ -501,6 +520,11 @@ export default function HotelCanvas({ onClose, tripContext, onAddToPlan }: Hotel
               </div>
             )}
 
+            <HotelCompareTray
+              pinned={pinnedHotels}
+              onUnpin={(id) => togglePin(id)}
+              onSelect={(selectedHotel) => handleSelectHotel(selectedHotel)}
+            />
           </motion.div>
         ) : (
           <motion.div

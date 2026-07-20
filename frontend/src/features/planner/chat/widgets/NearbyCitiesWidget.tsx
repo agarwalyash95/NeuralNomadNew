@@ -14,6 +14,7 @@ export function NearbyCitiesWidget({ widget, onSubmit }: NearbyCitiesWidgetProps
     distance: string;
     why_visit: string;
     recommended_duration: string;
+    image_url?: string | null;
   }>) || [];
 
   const [selectedCities, setSelectedCities] = useState<string[]>([]);
@@ -53,7 +54,7 @@ export function NearbyCitiesWidget({ widget, onSubmit }: NearbyCitiesWidgetProps
           <p className="text-xs font-bold uppercase tracking-wider text-ink-500">Recommended Excursions</p>
           <p className="mt-0.5 text-[10px] text-ink-400">Add nearby cities to make it a multi-city trip</p>
         </div>
-        <span className="flex items-center gap-1 rounded-full bg-[rgb(var(--color-ai)/0.08)] px-2 py-0.5 text-[10px] font-bold text-[rgb(var(--color-ai))]">
+        <span className="flex items-center gap-1 rounded-full bg-ink-900/10 px-2 py-0.5 text-[10px] font-bold text-ink-900">
           <Sparkles size={10} className="motion-safe:animate-pulse" /> AI Curated
         </span>
       </div>
@@ -77,11 +78,19 @@ export function NearbyCitiesWidget({ widget, onSubmit }: NearbyCitiesWidgetProps
                 checked={isSelected}
                 readOnly
                 disabled={submitted}
-                className="mt-0.5 h-4 w-4 rounded border-line-strong accent-[rgb(var(--color-ai))]"
+                className="mt-0.5 h-4 w-4 rounded border-line-strong accent-ink-900"
               />
+              {item.image_url && (
+                <div
+                  role="img"
+                  aria-label={item.city}
+                  className="h-12 w-12 shrink-0 rounded-lg bg-paper-0 bg-cover bg-center"
+                  style={{ backgroundImage: `url(${item.image_url})` }}
+                />
+              )}
               <div className="flex-1">
                 <h3 className="flex items-center gap-1.5 text-sm font-bold text-ink-800">
-                  <MapPin size={13} className="text-[rgb(var(--color-ai))]" /> {item.city}
+                  <MapPin size={13} className="text-ink-900" /> {item.city}
                 </h3>
                 <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase text-ink-400">
                   <span className="flex items-center gap-1"><Navigation size={10} /> {item.distance}</span>
@@ -110,7 +119,7 @@ export function NearbyCitiesWidget({ widget, onSubmit }: NearbyCitiesWidgetProps
           disabled={selectedCities.length === 0 || submitted}
           className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold transition-all ${selectedCities.length === 0 || submitted
               ? 'bg-paper-0 text-ink-400 cursor-not-allowed border border-line'
-              : 'bg-gradient-to-r from-[rgb(var(--color-ai))] to-violet-700 text-white hover:opacity-90 shadow-surface'}`}
+              : 'bg-gradient-to-r from-ink-900 to-violet-700 text-white hover:opacity-90 shadow-surface'}`}
         >
           {submitted ? <><Check size={15} /> Added</> : <><Plus size={15} /> Add ({selectedCities.length})</>}
         </button>

@@ -1,0 +1,34 @@
+Phase 01 independent verification — 2026-07-19 Asia/Calcutta
+
+PASS — python manage.py check_layer_boundaries --json
+status=pass; violations=[]; exactly two allowlisted imports:
+- apps/reference/services/places_explore.py:43 -> apps.planner.services.geocoding
+- apps/reference/management/commands/backfill_city_coordinates.py:10 -> apps.planner.services.geocoding
+
+PASS — python manage.py check
+System check identified no issues (0 silenced).
+
+PASS — python manage.py makemigrations --check --dry-run
+No changes detected.
+
+PASS — python manage.py migrate --plan
+No planned migration operations.
+
+PASS — python -m compileall apps config
+All packages compiled successfully.
+
+PASS — corrected provenance compatibility/import assertions
+REVIEWER_PHASE_01_PROVENANCE_PARITY_PASS
+The planner export is the common function object; all three existing tier constants
+and the exact basis/verified_at payload contract are unchanged; migrated modules import.
+
+PASS — DJANGO_SETTINGS_MODULE=config.settings.development pytest apps/reference/tests/test_reference_scenarios.py -q
+3 passed in 75.22s.
+
+Reviewer harness note: an initial assertion command referenced TIER_INSUFFICIENT and
+observed_at, neither of which exists in the pre-change repository contract. It failed
+at import before testing production behavior. The command was corrected to the actual
+three-tier basis/verified_at API and passed as recorded above. No production edit was
+made in response.
+
+No paid API was called. No data was mutated.

@@ -1,0 +1,11 @@
+{
+  "already_current": 0,
+  "batch_id": 6,
+  "conflicts": 0,
+  "india_rows_seen": 649,
+  "india_rows_with_iata": 163,
+  "matched": 105,
+  "mode": "apply",
+  "unmatched_no_airport": 58,
+  "updated": 105
+}

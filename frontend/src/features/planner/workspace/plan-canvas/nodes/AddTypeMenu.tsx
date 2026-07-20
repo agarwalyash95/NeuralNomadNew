@@ -12,13 +12,19 @@ export interface AddTypeMenuProps {
   className?: string;
 }
 
-// Every option maps 1:1 to an existing Helper Canvas. Labels only — the icon
-// (colored per category) comes from NodeWrapper's ICON_STYLES, the same
-// language used on every itinerary node, instead of raw emoji.
+// Most options map 1:1 to an existing Helper Canvas. 'rest' and
+// 'hotel_return' are the two non-bookable exceptions — the caller (see
+// ItineraryTimeline's onSelect handlers) inserts them straight onto the
+// timeline instead of opening a canvas, since there is nothing to search.
+// Labels only — the icon (colored per category) comes from NodeWrapper's
+// ICON_STYLES, the same language used on every itinerary node, instead of
+// raw emoji.
 const ADD_TYPES: { value: string; label: string }[] = [
   { value: 'attraction', label: 'Attraction' },
   { value: 'food', label: 'Restaurant' },
   { value: 'hotel', label: 'Hotel' },
+  { value: 'rest', label: 'Free time' },
+  { value: 'hotel_return', label: 'Back to hotel' },
   { value: 'flight', label: 'Flight' },
   { value: 'train', label: 'Train' },
   { value: 'bus', label: 'Bus' },

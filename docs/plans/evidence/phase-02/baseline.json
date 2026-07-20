@@ -1,0 +1,20 @@
+{
+  "captured_at": "2026-07-19 Asia/Calcutta",
+  "repository": "D:\\Projects\\NeuralNomad",
+  "branch": "main",
+  "baseline_commit": "a386842821d035337fa539b470418d1da101b06c",
+  "cities": {"total": 15395, "missing_coordinates": 2, "placeholder_coordinates": 8634},
+  "airports": {"total": 7063, "missing_coordinates": 0},
+  "railway_stations": {"total": 9011, "missing_coordinates": 314, "coordinate_coverage": 0.965154},
+  "bus_stations": {"total": 0, "missing_coordinates": 0},
+  "metro_stations": {"total": 0, "coordinate_fields_before_phase": false},
+  "place_masters": {
+    "hotels": 388,
+    "restaurants": 461,
+    "attractions": 441,
+    "activities": 356,
+    "missing_coordinates": 0
+  },
+  "reference_migration_baseline": "0012 applied",
+  "paid_api_calls": 0
+}

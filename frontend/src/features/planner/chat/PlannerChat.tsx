@@ -11,7 +11,10 @@ import { useConversation } from './hooks/useConversation';
 import { useChatScroll } from './hooks/useChatScroll';
 import { MessageList } from './MessageList';
 import { ChatInput } from './ChatInput';
+import { TripProgressStrip } from './TripProgressStrip';
 import PlanLoadingScreen from './PlanLoadingScreen';
+import { usePinnedCapabilities } from './capabilities/usePinnedCapabilities';
+import { PinnedRail } from './capabilities/PinnedRail';
 
 // Intent badges for the header strip
 const INTENT_DISPLAY: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
@@ -48,6 +51,7 @@ export default function PlannerChat({ workspaceId }: PlannerChatProps) {
     isCreatingPlan,
     generationJob,
     suggestedReplies,
+    tripProgress,
     error,
     detectedIntent,
     confidenceScore,
@@ -58,11 +62,13 @@ export default function PlannerChat({ workspaceId }: PlannerChatProps) {
     handleSuggestClick,
     handleSubmit,
     handleCreatePlan,
+    handleConfirmAndGenerate,
     handleRetryGeneration,
     handleLoadingComplete,
   } = useConversation({ workspaceId });
 
   const bottomRef = useChatScroll([messages, isSending]);
+  const { pinned, pinnedKeys, togglePin } = usePinnedCapabilities();
 
   const onSuggestClick = (title: string) => {
     handleSuggestClick(title);
@@ -101,7 +107,7 @@ export default function PlannerChat({ workspaceId }: PlannerChatProps) {
     const end = new Date(workspace.draft_state.end_date);
     const diffTime = Math.abs(end.getTime() - start.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    if (diffDays > 0) durationDays = diffDays;
+    if (diffDays >= 0) durationDays = diffDays + 1;
   }
 
   const budgetText = workspace?.draft_state?.budget_amount
@@ -122,7 +128,7 @@ export default function PlannerChat({ workspaceId }: PlannerChatProps) {
   const isHighlighted = isMandatoryComplete && confidenceScore >= 85;
 
   return (
-    <div className="relative flex h-full w-full flex-col overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(124,58,237,0.08),_transparent_32%),linear-gradient(180deg,#fbfaf7_0%,#f6f4ef_100%)]">
+    <div className="relative flex h-full w-full flex-col overflow-hidden bg-paper-0">
       <div className={cn(
         "flex flex-1 flex-col items-center overflow-y-auto px-4 transition-all duration-300",
         messages.length === 0 ? "pb-48 pt-12" : "pb-36 pt-6"
@@ -130,7 +136,7 @@ export default function PlannerChat({ workspaceId }: PlannerChatProps) {
         {/* Hero header — only shown on landing empty state */}
         {messages.length === 0 && (
           <div className="mb-10 mt-6 flex w-full max-w-4xl flex-col items-center text-center">
-            <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl border border-[rgb(var(--color-ai)/0.3)] bg-paper-2 text-[rgb(var(--color-ai))] shadow-surface">
+            <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl border border-[rgb(var(--color-ai)/0.25)] bg-[rgb(var(--color-ai)/0.08)] text-[rgb(var(--color-ai))] shadow-[0_12px_35px_rgba(0,0,0,0.06)]">
               <Plane size={32} strokeWidth={2} />
             </div>
             <h1 className="mb-3 text-4xl font-semibold tracking-tight text-ink-900 sm:text-5xl">
@@ -140,6 +146,13 @@ export default function PlannerChat({ workspaceId }: PlannerChatProps) {
               Tell me what you need — a flight, hotel, train, or full itinerary — and I&apos;ll take care of the rest.
             </p>
           </div>
+        )}
+
+        {messages.length > 0 && (
+          <>
+            <TripProgressStrip tripProgress={tripProgress} />
+            <PinnedRail pinned={pinned} onTogglePin={togglePin} />
+          </>
         )}
 
         {messages.length === 0 ? (
@@ -152,7 +165,7 @@ export default function PlannerChat({ workspaceId }: PlannerChatProps) {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.05 }}
                 onClick={() => onSuggestClick(item.title)}
-                className="group flex items-start gap-4 rounded-2xl border border-line-strong bg-paper-2 px-5 py-5 text-left shadow-surface transition-all hover:-translate-y-0.5 hover:border-[rgb(var(--color-ai)/0.35)] hover:shadow-hover"
+                className="group flex items-start gap-4 rounded-2xl border border-line-strong bg-paper-2/90 px-5 py-5 text-left shadow-[0_10px_30px_rgba(15,23,42,0.05)] transition-all hover:-translate-y-0.5 hover:border-[rgb(var(--color-ai)/0.35)] hover:shadow-hover"
               >
                 <div className="mt-0.5 rounded-xl bg-paper-0 p-2 text-ink-500 transition-colors group-hover:bg-[rgb(var(--color-ai)/0.08)] group-hover:text-[rgb(var(--color-ai))]">
                   {item.icon}
@@ -177,7 +190,10 @@ export default function PlannerChat({ workspaceId }: PlannerChatProps) {
             openExplanations={openExplanations}
             setOpenExplanations={setOpenExplanations}
             onSubmitWidget={handleSubmit}
+            onConfirmAndGenerate={handleConfirmAndGenerate}
             bottomRef={bottomRef}
+            pinnedKeys={pinnedKeys}
+            onTogglePin={togglePin}
           />
         )}
       </div>

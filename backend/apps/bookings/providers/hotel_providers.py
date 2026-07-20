@@ -58,13 +58,12 @@ class BookingComHotelProvider(BaseHotelProvider):
                         results = []
                         for idx, h in enumerate(hotels_data[:15]):
                             property_info = h.get('property', {})
-                            price_val = property_info.get('priceBreakdown', {}).get('grossPrice', {}).get('value', 3500)
-                            if price_val and price_val < 500:
-                                price_val = round(price_val * 85)
+                            gross_price = property_info.get('priceBreakdown', {}).get('grossPrice', {})
+                            price_val = gross_price.get('value')
                             results.append({
                                 "id": f"bcom-{h.get('hotel_id', idx)}",
                                 "service_type": "hotel",
-                                "title": property_info.get('name', f"Hotel {city_name}"),
+                                "title": property_info.get('name') or "Unnamed provider property",
                                 "code": f"HTL-{idx+1}",
                                 "origin_city": "",
                                 "destination_city": city_name,
@@ -76,17 +75,13 @@ class BookingComHotelProvider(BaseHotelProvider):
                                 "days_of_week": [],
                                 "stops": 0,
                                 "meta": {
-                                    "star_rating": round(property_info.get('reviewScore', 8.5) / 2, 1),
-                                    "address": property_info.get('address', f"Central {city_name}"),
-                                    "amenities": ["Free WiFi", "Pool", "Restaurant", "Room Service"],
+                                    "review_score": property_info.get('reviewScore'),
+                                    "address": property_info.get('address'),
                                     "photo_url": property_info.get('photoUrls', [''])[0],
-                                    "rooms": [
-                                        {"type": "Deluxe King Room", "price_per_night": round(price_val), "breakfast_included": True}
-                                    ]
+                                    "currency": gross_price.get('currency'),
                                 },
-                                "providers": [
-                                    {"provider": "Booking.com Direct", "price": round(price_val), "deeplink": "#"}
-                                ],
+                                "providers": ([{"provider": "Booking.com Direct", "price": round(price_val), "currency": gross_price.get('currency'), "deeplink": property_info.get('url')}]
+                                              if price_val is not None else []),
                                 "is_active": True
                             })
                         if results:
@@ -143,66 +138,6 @@ class MockHotelProvider(BaseHotelProvider):
                 "is_active": obj.is_active
             })
 
-        if not results:
-            results = [
-                {
-                    "id": f"hotel-dynamic-1-{city_name.lower()}",
-                    "service_type": "hotel",
-                    "title": f"The Grand Palace {city_name}",
-                    "code": "HTL-101",
-                    "origin_city": "",
-                    "destination_city": city_name,
-                    "origin_code": "",
-                    "destination_code": "",
-                    "departure_time": "14:00 Check-In",
-                    "arrival_time": "11:00 Check-Out",
-                    "duration": "Per Night",
-                    "days_of_week": [],
-                    "stops": 0,
-                    "meta": {
-                        "star_rating": 4.8,
-                        "address": f"City Center, {city_name}",
-                        "amenities": ["Free WiFi", "Swimming Pool", "Spa & Wellness", "Restaurant", "Free Parking"],
-                        "rooms": [
-                            {"type": "Deluxe Room", "price_per_night": 4500, "breakfast_included": True},
-                            {"type": "Executive Suite", "price_per_night": 7800, "breakfast_included": True}
-                        ]
-                    },
-                    "providers": [
-                        {"provider": "Booking.com", "price": 4500, "deeplink": "#"},
-                        {"provider": "Agoda", "price": 4350, "deeplink": "#"}
-                    ],
-                    "is_active": True
-                },
-                {
-                    "id": f"hotel-dynamic-2-{city_name.lower()}",
-                    "service_type": "hotel",
-                    "title": f"Heritage Resort & Spa {city_name}",
-                    "code": "HTL-102",
-                    "origin_city": "",
-                    "destination_city": city_name,
-                    "origin_code": "",
-                    "destination_code": "",
-                    "departure_time": "13:00 Check-In",
-                    "arrival_time": "10:00 Check-Out",
-                    "duration": "Per Night",
-                    "days_of_week": [],
-                    "stops": 0,
-                    "meta": {
-                        "star_rating": 4.5,
-                        "address": f"Lake View Road, {city_name}",
-                        "amenities": ["Free WiFi", "Bar & Lounge", "Restaurant", "Garden View"],
-                        "rooms": [
-                            {"type": "Premium Garden Room", "price_per_night": 3200, "breakfast_included": False},
-                            {"type": "Luxury Suite", "price_per_night": 5800, "breakfast_included": True}
-                        ]
-                    },
-                    "providers": [
-                        {"provider": "MakeMyTrip", "price": 3200, "deeplink": "#"},
-                        {"provider": "Booking.com", "price": 3350, "deeplink": "#"}
-                    ],
-                    "is_active": True
-                }
-            ]
-
+        for item in results:
+            item["source"] = "mock_inventory"
         return results

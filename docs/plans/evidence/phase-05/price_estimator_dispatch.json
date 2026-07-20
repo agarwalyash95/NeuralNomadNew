@@ -1,0 +1,61 @@
+{
+  "captured_at": "2026-07-20T00:00:00+05:30",
+  "purpose": "Live-exercise price_estimator.estimate() for all 7 dispatch categories against real seeded FareRule/SourceRegistry data — the implementation report's central deliverable.",
+  "cab": {
+    "call": "estimate('cab', distance_km=100)",
+    "result": {
+      "min": 1710, "expected": 1900, "max": 2185, "currency": "INR", "unit": "trip",
+      "confidence": 0.6, "method": "rule:fare_rule:1",
+      "provenance": {"tier": "estimated", "source": "NeuralNomad intercity cab rate card (formalized)", "basis": "Rs 16/km x 100 km + Rs 300 base"}
+    },
+    "regression_check": "300 + 16*100 = 1900 — exact match to the pre-existing hardcoded formula this replaced."
+  },
+  "bus": {
+    "call": "estimate('bus', distance_km=100)",
+    "result": {
+      "min": 117, "expected": 130, "max": 150, "currency": "INR", "unit": "per_person",
+      "confidence": 0.35, "method": "rule:fare_rule:2",
+      "provenance": {"tier": "estimated", "source": "UPSRTC Ordinary (non-AC) bus rate, national fallback — needs periodic re-verification", "basis": "Rs 1.3/km x 100 km"}
+    }
+  },
+  "train": {
+    "call": "estimate('train', distance_km=100)",
+    "result": {
+      "min": null, "expected": null, "max": null, "confidence": 0.0, "method": "insufficient_data",
+      "provenance": {"tier": "suggested", "source": "none", "basis": "No fare rule or historical observation available for this category yet."}
+    },
+    "interpretation": "Correct, by-design honest state — no train FareRule seeded this phase (IRCTC slab table only available as unreadable scanned PDF)."
+  },
+  "restaurant": {
+    "call": "estimate('restaurant', price_level=2)",
+    "result": {
+      "min": 375, "expected": 500, "max": 750, "currency": "INR", "unit": "per_two",
+      "confidence": 0.3, "method": "rule:price_level_band",
+      "provenance": {"tier": "suggested", "source": "Google price_level band", "basis": "₹500 for two"}
+    }
+  },
+  "hotel": {
+    "call": "estimate('hotel', destination_text='Jaipur', price_range='mid')",
+    "result": {
+      "min": 2100, "expected": 3000, "max": 4200, "currency": "INR", "unit": "per_night",
+      "confidence": 0.3, "method": "rule:price_range_band",
+      "provenance": {"tier": "suggested", "source": "price_range band", "basis": "Google price_range 'mid' band"}
+    }
+  },
+  "food_daily": {
+    "call": "estimate('food_daily', travelers=2, days=3, purpose='vacation')",
+    "result": {
+      "min": 6300, "expected": 9000, "max": 12600, "currency": "INR", "unit": "trip",
+      "confidence": 0.3, "method": "rule:food_per_day",
+      "provenance": {"tier": "suggested", "source": "rule of thumb", "basis": "Rs 1500/person/day x 3 day(s) x 2 traveler(s)"}
+    }
+  },
+  "trip_day_budget": {
+    "call": "estimate('trip_day_budget', destination_text='Jaipur', purpose='vacation')",
+    "result": {
+      "min": 3500, "expected": 5000, "max": 7500, "currency": "INR", "unit": "per_traveler_per_day",
+      "confidence": 0.3, "method": "rule:destination_tier",
+      "provenance": {"tier": "suggested", "source": "destination-tier heuristic", "basis": "typical domestic per-day cost for this destination"}
+    }
+  }
+}

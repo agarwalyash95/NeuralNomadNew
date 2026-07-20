@@ -1,0 +1,45 @@
+Phase 00 implementer validation
+Repository root: D:\Projects\NeuralNomad
+Date: 2026-07-19 Asia/Calcutta
+
+PASS — `python manage.py audit_reference_data --json`
+Key results: 15,395 cities; 2 missing city coordinates; 8,634 India-centroid city rows; 9,011 railway stations; 314 missing station coordinates; 123 price-history rows.
+
+PASS — `python ..\scripts\baseline_metrics.py`
+Captured every reference/knowledge/planner table count. Nearby-hub lookup: median 2.101 ms, p95 3.45 ms, max 12.825 ms over 25 reads. Direct-route baseline unavailable because the database has zero AirportRoute/TrainRoute/BusRoute rows. Latest 50 generation usage records do not expose call-count fields.
+
+PASS — `python manage.py scrub_attraction_image_urls --dry-run`
+35 rows; 35 primary and 17 secondary URLs convertible; zero unrecoverable URLs.
+
+PASS — `python manage.py scrub_attraction_image_urls --apply`
+Applied the reviewed 35-row scrub. No rows inserted or deleted.
+
+PASS — post-scrub Django shell query
+35 rows remain; primary key-bearing URLs: 0; secondary key-bearing rows: 0.
+
+PASS — offline mocked Phase 00 behavior command
+Output: `PHASE_00_TARGETED_CHECKS_PASS`.
+Covered: providers-disabled honest miss, live result without price remains missing, provider-price extraction, metro-context resolver execution, scrub conversion/removal behavior, proxy URL secrecy, selector frequency payload, and place-ID ownership guard.
+
+PASS — `python manage.py check`
+System check identified no issues (0 silenced).
+
+PASS — `python manage.py makemigrations --check --dry-run`
+No changes detected.
+
+PASS — `python manage.py migrate --plan`
+No planned migration operations.
+
+PASS — `python -m compileall apps config`
+All packages compiled successfully.
+
+PASS — post-apply `python manage.py scrub_attraction_image_urls --dry-run`
+35 rows scanned; zero rows requiring changes.
+
+PASS — `$env:DJANGO_SETTINGS_MODULE='config.settings.development'; pytest apps/reference/tests/test_reference_scenarios.py -q`
+3 passed in 20.50s.
+
+PASS — grep gate over Phase 00 price/photo files
+No DEL/BOM default search route, unconditional verified price write, or stored `photoreference=...&key=` construction remains.
+
+No paid API was called during validation. Mocked request paths did not reach the network.

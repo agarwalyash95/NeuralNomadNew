@@ -12,15 +12,9 @@ no matching reference route is omitted, never estimated from nothing.
 
 from apps.planner.services.distance_service import DistanceService
 from apps.reference.services.live_price import lookup_live_price
+from apps.reference.services import price_estimator
 
 _SCHEDULED_MODES = ("flight", "train", "bus")
-
-# Same rate card CabCanvas uses client-side for a distance-based fare —
-# duplicated here deliberately rather than importing frontend code; keeping
-# the backend the source of truth for a leg endpoint that has no "canvas"
-# of its own to fall back on.
-_CAB_BASE_FARE = 300
-_CAB_RATE_PER_KM = 16
 
 
 def _resolve_city(name):
@@ -28,7 +22,11 @@ def _resolve_city(name):
 
     if not name:
         return None
-    return City.objects.filter(name__icontains=name.strip()).select_related("country").first()
+    clean = name.strip()
+    return (
+        City.objects.filter(name__iexact=clean).select_related("country").first()
+        or City.objects.filter(name__icontains=clean).select_related("country").order_by("name").first()
+    )
 
 
 def _format_duration(mins):
@@ -98,19 +96,16 @@ def compare_legs(origin_name, destination_name, date_str, travelers=1):
     driving_edge = leg_edges.get("driving")
     if driving_edge and driving_edge.get("distance_km"):
         distance_km = driving_edge["distance_km"]
-        fare = round(_CAB_BASE_FARE + distance_km * _CAB_RATE_PER_KM)
+        cab_envelope = price_estimator.estimate("cab", distance_km=distance_km, city=origin_city)
+        fare = cab_envelope["expected"]
         rows.append({
             "mode": "cab",
             "duration_mins": driving_edge.get("duration_mins"),
             "duration_label": _format_duration(driving_edge.get("duration_mins")),
             "distance_km": distance_km,
             "price": fare,
-            "price_label": f"Rs {fare:,}",
-            "provenance": {
-                "tier": "estimated",
-                "source": "distance-based estimate",
-                "basis": f"Rs {_CAB_RATE_PER_KM}/km x {distance_km} km road distance + Rs {_CAB_BASE_FARE} base",
-            },
+            "price_label": f"Rs {fare:,.0f}" if fare is not None else None,
+            "provenance": cab_envelope["provenance"],
         })
     # No driving edge (city unresolved or no coords) — the cab row is
     # honestly omitted rather than guessed.

@@ -95,10 +95,11 @@ uncertainty_state must be one of: high_confidence, medium_confidence, needs_deci
 
     def generate_recommendation(self, prompt: str) -> Optional[StructuredRecommendation]:
         import json
+        from apps.common.ai import DEFAULT_GEMINI_MODEL
         full_prompt = self._build_explainability_prompt(prompt)
         try:
             response = self.client.models.generate_content(
-                model="gemini-2.5-flash",
+                model=DEFAULT_GEMINI_MODEL,
                 contents=full_prompt,
                 config={"response_mime_type": "application/json"},
             )

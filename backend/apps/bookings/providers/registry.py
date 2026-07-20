@@ -74,26 +74,88 @@ class ProviderRegistry:
             logger.warning(f"Unknown service type '{service_type}'. Falling back to MockFlightProvider.")
             return MockFlightProvider()
 
+    # Same alias set get_provider() dispatches on, collapsed to the exact
+    # 5 values TravelPriceObservation.service_type's choices declare — an
+    # unrecognized mode (e.g. journey_resolver's "walking"/"driving") is
+    # skipped rather than written with an invalid category.
+    _OBSERVATION_SERVICE_TYPES = {
+        "flight": "flight", "flights": "flight",
+        "hotel": "hotel", "hotels": "hotel",
+        "bus": "bus", "buses": "bus",
+        "train": "train", "trains": "train",
+        "cab": "cab", "cabs": "cab", "taxi": "cab", "taxis": "cab",
+    }
+
+    @classmethod
+    def _record_observations(cls, service_type: str, items: List[Dict[str, Any]], params: Dict[str, Any]) -> None:
+        """Phase 5: every priced search result becomes a TravelPriceObservation,
+        the funnel-point hook for the whole reference-app price-benchmark
+        pipeline (docs/plans/reference-foundation-and-planner-intelligence-
+        master-plan.md §10.3). Imported lazily — apps.reference.services
+        .live_price already imports this module's provider_registry lazily
+        inside a function body, so a module-level import here would risk a
+        circular import at Django app-loading time.
+        """
+        canonical = cls._OBSERVATION_SERVICE_TYPES.get((service_type or "").lower().strip())
+        if canonical is None:
+            return
+        try:
+            from apps.reference.services.live_price import record_price_observation
+        except Exception:
+            return
+        for item in items:
+            record_price_observation(canonical, item, params=params)
+
     def search(self, service_type: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         Execute search using configured provider with automatic mock fallback.
         """
         provider = self.get_provider(service_type)
+        mock_types = (MockFlightProvider, MockHotelProvider, MockBusProvider, MockTrainProvider, MockCabProvider)
+        is_mock = isinstance(provider, mock_types)
+        if is_mock and not getattr(settings, "BOOKINGS_ALLOW_MOCK_INVENTORY", settings.DEBUG):
+            logger.warning("Mock %s inventory is disabled in this environment", service_type)
+            return []
         try:
-            return provider.search(params)
+            results = provider.search(params)
+            default_source = "mock_inventory" if is_mock else "live_inventory"
+            normalized = []
+            allow_mock = getattr(settings, "BOOKINGS_ALLOW_MOCK_INVENTORY", settings.DEBUG)
+            for item in results:
+                source = item.get("source") or default_source
+                # A live provider may explicitly fall back to its sample
+                # adapter. Preserve that provenance and suppress it entirely
+                # when sample inventory is disabled.
+                if source == "mock_inventory" and not allow_mock:
+                    continue
+                item["source"] = source
+                item.setdefault("provenance", {
+                    "source": source,
+                    "label": "Sample data" if source == "mock_inventory" else provider.__class__.__name__,
+                    "is_live": source == "live_inventory",
+                })
+                normalized.append(item)
+            self._record_observations(service_type, normalized, params)
+            return normalized
         except Exception as e:
             logger.error(f"Provider search execution failed for service '{service_type}': {e}. Using fallback mock.")
-            # Fallback to mock provider
+            if not getattr(settings, "BOOKINGS_ALLOW_MOCK_INVENTORY", settings.DEBUG):
+                return []
+            # Development-only fallback, always explicitly marked.
             if service_type in ['flight', 'flights']:
-                return MockFlightProvider().search(params)
+                results = MockFlightProvider().search(params)
             elif service_type in ['hotel', 'hotels']:
-                return MockHotelProvider().search(params)
+                results = MockHotelProvider().search(params)
             elif service_type in ['bus', 'buses']:
-                return MockBusProvider().search(params)
+                results = MockBusProvider().search(params)
             elif service_type in ['train', 'trains']:
-                return MockTrainProvider().search(params)
+                results = MockTrainProvider().search(params)
             else:
-                return MockCabProvider().search(params)
+                results = MockCabProvider().search(params)
+            for item in results:
+                item["source"] = "mock_inventory"
+                item["provenance"] = {"source": "mock_inventory", "label": "Sample data", "is_live": False}
+            return results
 
 
 # Singleton instance

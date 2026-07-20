@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { MapPin, AlertTriangle, Ticket, ChevronDown } from 'lucide-react';
+import { MapPin, AlertTriangle, Ticket, ChevronDown, Wand2 } from 'lucide-react';
 import { MockTripData, ItineraryCity, ItineraryDay } from './types';
 import type { TripLedger } from '@/services/planner.types';
 import { parsePriceToInteger } from './utils/priceParser';
@@ -112,6 +112,21 @@ export default function TripStatusSpine({
 
   return (
     <div className="flex w-full flex-col gap-2 border-b border-line/40 bg-paper-1 px-6 py-2.5 shrink-0">
+      {/* PROV-01 (docs/planner-complete-current-audit-and-repair-plan.md
+          §19 R13): distinct from the review-recommended banner (moved to
+          Checkout) — this is a stronger, more urgent signal ("this isn't
+          the AI-composed plan you asked for") that needs to persist
+          wherever the trip is viewed, not just the ~1.8s loading-screen
+          transition. Violet, not amber, matching the app's existing
+          "AI/suggested" trust-tier color (ProvenanceBadge). */}
+      {data.degraded && (
+        <div role="alert" className="flex items-start gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-[11px] text-violet-900">
+          <Wand2 size={13} className="mt-0.5 shrink-0" />
+          <p className="font-bold">
+            This is a starter plan — our AI planner had trouble generating a full itinerary, so we built this from verified basics. You can customize everything, or try regenerating.
+          </p>
+        </div>
+      )}
       {/* ── Row 1: live position + progress cue + rollups ─────────────── */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">

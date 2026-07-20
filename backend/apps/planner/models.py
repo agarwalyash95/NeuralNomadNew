@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db import models
 from django.utils import timezone
 
@@ -52,6 +53,10 @@ class PlannerWorkspace(BaseModel):
     )
     last_activity_at = models.DateTimeField(default=timezone.now)
     is_modified = models.BooleanField(default=False)
+    # Monotonic version for every canonical trip/draft mutation. Clients use
+    # this as a compare-and-swap token so a slow stream or overlapping canvas
+    # action can never write an older snapshot over newer user input.
+    revision = models.PositiveBigIntegerField(default=0)
 
     class Meta:
         ordering = ["-last_activity_at", "-created_at"]
@@ -92,22 +97,41 @@ INTENT_CHOICES = [
     (INTENT_FOOD_AND_DINING, "Food & Dining"),
 ]
 
-# Fields required per intent (mandatory to show a widget for)
+# Generation-BLOCKING slots per intent (audit CH-04, checklist 1.3): the ONE
+# readiness contract. A slot is listed here only if the pipeline genuinely
+# cannot produce a useful plan without it. Everything else is a recommended
+# ask (INTENT_RECOMMENDED_FIELDS below) — the ladder's ask-order, always
+# skippable, never blocking Create Plan.
 INTENT_REQUIRED_FIELDS = {
-    INTENT_FULL_TRIP: ["destination", "travel_dates"],
-    INTENT_HOTEL_ONLY: ["destination", "travel_dates"],
-    INTENT_FLIGHT_ONLY: ["destination", "origin", "travel_dates"],
-    INTENT_TRAIN_ONLY: ["destination", "origin", "travel_dates"],
-    INTENT_BUS_ONLY: ["destination", "origin", "travel_dates"],
-    INTENT_CAB_ONLY: ["destination", "origin", "travel_dates"],
-    INTENT_CRUISE_ONLY: ["destination", "travel_dates"],
-    INTENT_CAR_RENTAL: ["destination", "origin", "travel_dates"],
-    INTENT_TRANSIT_ONLY: ["destination", "origin", "travel_dates"],
+    INTENT_FULL_TRIP:       ["destination", "origin", "travel_dates", "travelers"],
+    INTENT_HOTEL_ONLY:      ["destination", "travel_dates"],
+    INTENT_FLIGHT_ONLY:     ["destination", "origin", "travel_dates"],
+    INTENT_TRAIN_ONLY:      ["destination", "origin", "travel_dates"],
+    INTENT_BUS_ONLY:        ["destination", "origin", "travel_dates"],
+    INTENT_CAB_ONLY:        ["destination", "origin", "travel_dates"],
+    INTENT_CRUISE_ONLY:     ["destination", "travel_dates"],
+    INTENT_CAR_RENTAL:      ["destination", "origin", "travel_dates"],
+    INTENT_TRANSIT_ONLY:    ["destination", "origin", "travel_dates"],
     INTENT_ACTIVITIES_ONLY: ["destination", "travel_dates"],
     INTENT_FOOD_AND_DINING: ["destination", "travel_dates"],
 }
 
-# Optional fields to collect per intent (shown in optional_trip_details widget)
+# Recommended (non-blocking) slots per intent — improve the plan, never gate it.
+INTENT_RECOMMENDED_FIELDS = {
+    INTENT_FULL_TRIP:       ["preferred_mode", "stay_style"],
+    INTENT_HOTEL_ONLY:      ["travelers", "stay_style"],
+    INTENT_FLIGHT_ONLY:     ["travelers", "journey_style"],
+    INTENT_TRAIN_ONLY:      ["travelers", "journey_style"],
+    INTENT_BUS_ONLY:        ["travelers", "journey_style"],
+    INTENT_CAB_ONLY:        ["travelers", "journey_style"],
+    INTENT_CRUISE_ONLY:     ["travelers", "journey_style"],
+    INTENT_CAR_RENTAL:      ["travelers", "journey_style"],
+    INTENT_TRANSIT_ONLY:    ["travelers", "journey_style"],
+    INTENT_ACTIVITIES_ONLY: ["travelers"],
+    INTENT_FOOD_AND_DINING: ["travelers"],
+}
+
+# Optional fields to collect per intent (shown in cluster widgets)
 # visit_purpose is always listed first — it's the most impactful optional field
 INTENT_OPTIONAL_FIELDS = {
     INTENT_FULL_TRIP:       ["visit_purpose", "travelers", "budget", "interests", "origin", "trip_pace"],
@@ -138,6 +162,16 @@ class TripDraftState(BaseModel):
         related_name="planner_drafts",
     )
     destination_text = models.CharField(max_length=160, blank=True)
+    # Canonical departure state.  Legacy drafts stored this only in metadata,
+    # which made readiness, generation and widget summaries disagree.
+    origin_city = models.ForeignKey(
+        "reference.City",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="planner_origin_drafts",
+    )
+    origin_text = models.CharField(max_length=160, blank=True)
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
     adults = models.PositiveSmallIntegerField(default=1)
@@ -151,39 +185,79 @@ class TripDraftState(BaseModel):
         blank=True,
     )
     budget_currency = models.CharField(max_length=3, default="INR")
-    interests = models.JSONField(default=list, blank=True)
+    interests = models.JSONField(default=list, blank=True, encoder=DjangoJSONEncoder)
     intent = models.CharField(max_length=50, default=INTENT_FULL_TRIP, choices=INTENT_CHOICES)
-    metadata = models.JSONField(default=dict, blank=True)
+    metadata = models.JSONField(default=dict, blank=True, encoder=DjangoJSONEncoder)
 
     class Meta:
         db_table = "planner_trip_draft_state"
 
     @property
     def is_ready_for_plan(self):
-        return len(self.missing_required_slots()) == 0
+        """
+        True when every generation-BLOCKING slot is present — the one
+        readiness contract (audit CH-04): missing_required_slots() is the
+        single source of truth, so readiness and "what's blocking" can
+        never disagree again.
+        """
+        if self.missing_required_slots():
+            return False
+        if not self.adults or self.adults <= 0:
+            return False
+        return True
 
     def missing_required_slots(self):
-        """Returns mandatory slots (destination + dates + origin if required) that block plan creation."""
+        """ONLY the slots that genuinely block plan generation (CH-04)."""
         missing = []
         if not self.destination_text:
             missing.append("destination")
-        
-        required_fields = INTENT_REQUIRED_FIELDS.get(self.intent, [])
-        if "origin" in required_fields:
-            meta = self.metadata or {}
-            if not meta.get("origin"):
-                missing.append("origin")
 
         if not (self.start_date and self.end_date):
             missing.append("travel_dates")
+
+        required_fields = INTENT_REQUIRED_FIELDS.get(self.intent, [])
+        meta = self.metadata or {}
+
+        if "origin" in required_fields and not (self.origin_text or meta.get("origin")):
+            missing.append("origin")
+
+        if "travelers" in required_fields and not meta.get("travelers_set"):
+            missing.append("travelers")
+
+        return missing
+
+    def recommended_slots(self):
+        """Missing NON-blocking asks (the ladder's territory) — improve the
+        plan when answered, never gate Create Plan (audit CH-04)."""
+        missing = []
+        meta = self.metadata or {}
+        recommended = INTENT_RECOMMENDED_FIELDS.get(self.intent, [])
+
+        if "origin" in recommended and not (self.origin_text or meta.get("origin")):
+            missing.append("origin")
+
+        if "travelers" in recommended and not (self.adults and meta.get("travelers_set")):
+            missing.append("travelers")
+
+        if "preferred_mode" in recommended and not meta.get("preferred_mode"):
+            missing.append("preferred_mode")
+
+        if "stay_style" in recommended and not meta.get("star_rating") and not meta.get("property_type"):
+            missing.append("stay_style")
+
+        if "journey_style" in recommended and not meta.get("flight_class") and not meta.get("train_class") and not meta.get("bus_type") and not meta.get("cabin_class") and not meta.get("car_type") and not meta.get("vehicle_type"):
+            missing.append("journey_style")
+
         return missing
 
     def missing_slots(self):
         """
-        Returns ALL missing slots — required + optional — based on intent.
-        Used by the conversation engine to determine what to ask next.
+        ALL missing slots — blocking first, then recommended — used by the
+        conversation engine/prompts/chips to decide what to ask next. Only
+        missing_required_slots() gates generation.
         """
         missing = list(self.missing_required_slots())
+        missing += [s for s in self.recommended_slots() if s not in missing]
         meta = self.metadata or {}
 
         # Optional details not yet submitted for this intent
@@ -193,13 +267,15 @@ class TripDraftState(BaseModel):
             if unfilled:
                 missing.append("optional_details")
 
-        # Nearby cities only relevant for full_trip with 3+ days
+        # Nearby cities only relevant for full_trip with 3+ days — and never
+        # re-listed after the user explicitly declined excursions (CH-10).
         if (
             self.intent == INTENT_FULL_TRIP
             and self.start_date
             and self.end_date
             and (self.end_date - self.start_date).days >= 3
             and not meta.get("nearby_cities")
+            and not meta.get("nearby_cities_declined")
         ):
             missing.append("nearby_cities")
 
@@ -211,13 +287,13 @@ class TripDraftState(BaseModel):
         filled = set()
 
         # Core fields on the model
-        if self.adults and self.adults > 0:
+        if self.adults and meta.get("travelers_set"):
             filled.add("travelers")
-        if self.budget_tier or meta.get("budget_inr"):
+        if self.budget_amount is not None or self.budget_tier or meta.get("budget_inr"):
             filled.add("budget")
         if self.interests:
             filled.add("interests")
-        if meta.get("origin"):
+        if self.origin_text or meta.get("origin"):
             filled.add("origin")
 
         # All metadata-backed optional fields
@@ -255,9 +331,10 @@ class PlannerChatMessage(BaseModel):
         ],
     )
     message = models.TextField()
-    widgets = models.JSONField(default=list, blank=True)
-    commands = models.JSONField(default=list, blank=True)
-    metadata = models.JSONField(default=dict, blank=True)
+    widgets = models.JSONField(default=list, blank=True, encoder=DjangoJSONEncoder)
+    commands = models.JSONField(default=list, blank=True, encoder=DjangoJSONEncoder)
+    metadata = models.JSONField(default=dict, blank=True, encoder=DjangoJSONEncoder)
+    turn_id = models.CharField(max_length=64, blank=True, null=True, unique=True)
 
     class Meta:
         ordering = ["created_at"]
@@ -284,9 +361,20 @@ class PlannerTrip(BaseModel):
         default=0,
     )
     currency_code = models.CharField(max_length=3, default="INR")
-    cities = models.JSONField(default=list, blank=True)
-    days = models.JSONField(default=list, blank=True)
-    metadata = models.JSONField(default=dict, blank=True)
+    # encoder=DjangoJSONEncoder: itinerary blocks carry cost/price figures
+    # sourced from DecimalField master rows (see metadata below).
+    cities = models.JSONField(default=list, blank=True, encoder=DjangoJSONEncoder)
+    days = models.JSONField(default=list, blank=True, encoder=DjangoJSONEncoder)
+    # encoder=DjangoJSONEncoder: this carries generation output (e.g.
+    # selected_journey, budget_cap) that can contain Decimal values sourced
+    # from DecimalField-backed prices/budgets — the plain json.JSONEncoder
+    # Django otherwise uses for JSONField cannot serialize those.
+    metadata = models.JSONField(default=dict, blank=True, encoder=DjangoJSONEncoder)
+    # Phase 4 (docs/planner-output-generation-architecture.md): the first
+    # objective, persisted measure of itinerary quality — {overall,
+    # dimensions: {personalization, grounding, feasibility, coverage,
+    # richness}, reasons, flagged_for_review}. See services/scoring.py.
+    scorecard = models.JSONField(default=dict, blank=True, encoder=DjangoJSONEncoder)
 
     class Meta:
         db_table = "planner_trip"
@@ -300,9 +388,9 @@ class PlannerTripOriginal(BaseModel):
     )
     title = models.CharField(max_length=160)
     summary = models.TextField(blank=True)
-    cities = models.JSONField(default=list, blank=True)
-    days = models.JSONField(default=list, blank=True)
-    metadata = models.JSONField(default=dict, blank=True)
+    cities = models.JSONField(default=list, blank=True, encoder=DjangoJSONEncoder)
+    days = models.JSONField(default=list, blank=True, encoder=DjangoJSONEncoder)
+    metadata = models.JSONField(default=dict, blank=True, encoder=DjangoJSONEncoder)
 
     class Meta:
         db_table = "planner_trip_original"
@@ -323,11 +411,13 @@ class PlanGenerationJob(BaseModel):
     STATUS_RUNNING = "running"
     STATUS_DONE = "done"
     STATUS_FAILED = "failed"
+    STATUS_NEEDS_INPUT = "needs_input"
     STATUS_CHOICES = [
         (STATUS_QUEUED, "Queued"),
         (STATUS_RUNNING, "Running"),
         (STATUS_DONE, "Done"),
         (STATUS_FAILED, "Failed"),
+        (STATUS_NEEDS_INPUT, "Needs input"),
     ]
 
     workspace = models.ForeignKey(
@@ -338,9 +428,31 @@ class PlanGenerationJob(BaseModel):
     status = models.CharField(max_length=12, default=STATUS_QUEUED, choices=STATUS_CHOICES, db_index=True)
     phase = models.CharField(max_length=40, blank=True, default="")
     progress = models.PositiveSmallIntegerField(default=0)
-    # [{key, label, state: pending|active|done|failed, detail, at}]
-    phase_log = models.JSONField(default=list, blank=True)
+    # [{key, label, state: pending|active|done|failed, detail, at, duration_ms}]
+    phase_log = models.JSONField(default=list, blank=True, encoder=DjangoJSONEncoder)
     error = models.TextField(blank=True, default="")
+    # True when `error` describes a non-fatal fallback (status is still DONE)
+    # rather than a genuine failure — see plan_generation.run_generation_job.
+    # Phase 0b: the pipeline used to write status=DONE on outright pipeline
+    # failure too, so a full AI outage looked identical to a real finished
+    # plan; the loading screen can now tell the two apart.
+    degraded = models.BooleanField(default=False)
+    # Per-LLM-call observability (Phase 0h): {phase_key: {model, duration_ms,
+    # prompt_token_count, candidates_token_count, total_token_count}}.
+    # response.usage_metadata was previously discarded entirely, so token
+    # counts, cost, and per-call latency were undiagnosable.
+    # encoder=DjangoJSONEncoder: see PlannerTrip.metadata — usage/blockers/
+    # decision_trace can carry Decimal-derived cost/budget figures.
+    usage = models.JSONField(default=dict, blank=True, encoder=DjangoJSONEncoder)
+    # Immutable input/audit envelope for this run.  This augments the
+    # revision-safe workspace; it is not another writable trip state.
+    input_revision = models.PositiveBigIntegerField(default=0)
+    input_hash = models.CharField(max_length=64, blank=True, default="")
+    quality_state = models.CharField(max_length=24, blank=True, default="")
+    internal_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    refinement_count = models.PositiveSmallIntegerField(default=0)
+    blockers = models.JSONField(default=list, blank=True, encoder=DjangoJSONEncoder)
+    decision_trace = models.JSONField(default=list, blank=True, encoder=DjangoJSONEncoder)
     started_at = models.DateTimeField(null=True, blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)
 
@@ -350,6 +462,35 @@ class PlanGenerationJob(BaseModel):
 
     def __str__(self):
         return f"GenerationJob {self.workspace_id} [{self.status} {self.progress}%]"
+
+
+class JourneyRouteCache(BaseModel):
+    """TTL'd provider/reference resolution for one dated hub pair.
+
+    This is evidence used to build canonical journey options, never another
+    mutable copy of the user's trip.
+    """
+
+    route_key = models.CharField(max_length=255, unique=True)
+    mode = models.CharField(max_length=20, db_index=True)
+    source_code = models.CharField(max_length=32)
+    destination_code = models.CharField(max_length=32)
+    travel_date = models.DateField(null=True, blank=True)
+    options = models.JSONField(default=list, blank=True, encoder=DjangoJSONEncoder)
+    provenance = models.CharField(max_length=32, default="estimated")
+    freshness = models.CharField(max_length=16, default="unknown")
+    source_name = models.CharField(max_length=120, blank=True)
+    as_of = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(db_index=True)
+
+    class Meta:
+        db_table = "planner_journey_route_cache"
+        indexes = [
+            models.Index(
+                fields=["mode", "source_code", "destination_code"],
+                name="planner_jou_mode_ae92f1_idx",
+            )
+        ]
 
 
 class PlannerQuestionBank(BaseModel):
@@ -364,10 +505,10 @@ class PlannerQuestionBank(BaseModel):
         db_index=True,
     )
     destination_text = models.CharField(max_length=160, db_index=True)
-    missing_slots = models.JSONField(default=list, blank=True)
+    missing_slots = models.JSONField(default=list, blank=True, encoder=DjangoJSONEncoder)
     question_text = models.TextField()
     widget_type = models.CharField(max_length=50)
-    widget_data = models.JSONField(default=dict, blank=True)
+    widget_data = models.JSONField(default=dict, blank=True, encoder=DjangoJSONEncoder)
     occurrence_count = models.IntegerField(default=1)
     success_count = models.IntegerField(default=0)
 
@@ -377,40 +518,6 @@ class PlannerQuestionBank(BaseModel):
         indexes = [
             models.Index(fields=["intent", "destination_text"]),
         ]
-
-
-class PlannerIntentFlow(BaseModel):
-    """
-    Records successful conversation patterns per intent.
-    When a plan is successfully created, the conversation flow is stored here.
-    Future AI sessions use these learned flows as templates.
-    """
-    intent = models.CharField(max_length=50, choices=INTENT_CHOICES, db_index=True)
-    destination_text = models.CharField(max_length=160, default="*", db_index=True)
-    conversation_steps = models.JSONField(
-        default=list,
-        help_text="Ordered list of {slot, widget, message_index} steps",
-    )
-    completion_rate = models.FloatField(
-        default=0.0,
-        help_text="Fraction of sessions that led to plan creation",
-    )
-    usage_count = models.IntegerField(default=0)
-    avg_messages_to_complete = models.FloatField(
-        default=0.0,
-        help_text="Average number of messages to reach plan creation",
-    )
-    last_used_at = models.DateTimeField(null=True, blank=True)
-
-    class Meta:
-        db_table = "planner_intent_flow"
-        ordering = ["-completion_rate", "-usage_count"]
-        indexes = [
-            models.Index(fields=["intent", "destination_text"]),
-        ]
-
-    def __str__(self):
-        return f"{self.intent} / {self.destination_text} (rate={self.completion_rate:.0%})"
 
 
 class PlanProposal(BaseModel):
@@ -449,12 +556,12 @@ class PlanProposal(BaseModel):
     kind = models.CharField(max_length=40, default=KIND_PLAN_EDIT)
     title = models.CharField(max_length=200)
     rationale = models.TextField(blank=True)
-    diff = models.JSONField(default=dict, blank=True)
+    diff = models.JSONField(default=dict, blank=True, encoder=DjangoJSONEncoder)
     # T5.2: diff_explanation (what_changed/why/what_improved/what_got_worse/
     # confidence/can_undo) and any other non-diff explanation data live here,
     # separate from `diff` which is the literal before/after/deltas payload
     # accept_proposal applies.
-    metadata = models.JSONField(default=dict, blank=True)
+    metadata = models.JSONField(default=dict, blank=True, encoder=DjangoJSONEncoder)
     status = models.CharField(max_length=20, default=STATUS_OPEN, choices=STATUS_CHOICES, db_index=True)
     # Rejections carry the reason so the agent never re-proposes rejected ideas
     rejection_reason = models.CharField(max_length=300, blank=True)
@@ -507,12 +614,12 @@ class PlanBlockCommitment(BaseModel):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, db_index=True)
     amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     currency = models.CharField(max_length=3, default="INR")
-    quote = models.JSONField(default=dict, blank=True)
+    quote = models.JSONField(default=dict, blank=True, encoder=DjangoJSONEncoder)
     # Every commitment shows its escape hatch
     refundable_until = models.DateTimeField(null=True, blank=True)
     provider_ref = models.CharField(max_length=120, blank=True)
     # Append-only audit trail of transitions: [{to, at, amount}]
-    history = models.JSONField(default=list, blank=True)
+    history = models.JSONField(default=list, blank=True, encoder=DjangoJSONEncoder)
 
     class Meta:
         db_table = "planner_block_commitment"
@@ -550,7 +657,7 @@ class TravelerProfile(BaseModel):
         on_delete=models.CASCADE,
         related_name="traveler_profile",
     )
-    facts = models.JSONField(default=list, blank=True)
+    facts = models.JSONField(default=list, blank=True, encoder=DjangoJSONEncoder)
 
     class Meta:
         db_table = "planner_traveler_profile"
@@ -609,3 +716,24 @@ class PriceWatch(BaseModel):
 
     def __str__(self):
         return f"Watch({self.block_id}, active={self.active})"
+
+
+class PlanInsightDismissal(BaseModel):
+    """
+    Persists 'Not now' on a proactive AI recommendation. Without this, a
+    dismissed insight would simply reappear on the next render. Dismissal is
+    scoped to context_hash, not "forever": once the underlying plan content
+    changes enough to produce a new context_hash, the insight can resurface.
+
+    Phase 7 (knowledge application migration, §12): relocated from
+    apps.knowledge — state-only move (SeparateDatabaseAndState), table
+    untouched, db_table pinned below so Django's default app-label-based
+    naming doesn't imply a rename. apps.knowledge keeps re-exporting this
+    name as a compatibility shim.
+    """
+    workspace = models.ForeignKey(PlannerWorkspace, on_delete=models.CASCADE, related_name="insight_dismissals")
+    context_hash = models.CharField(max_length=64)
+
+    class Meta:
+        db_table = "knowledge_planinsightdismissal"
+        unique_together = ("workspace", "context_hash")

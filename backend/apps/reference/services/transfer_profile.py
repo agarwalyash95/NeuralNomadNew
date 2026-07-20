@@ -71,10 +71,10 @@ Hub type: {hub_type}
 """
 
     try:
-        from apps.common.ai import get_genai_client
+        from apps.common.ai import DEFAULT_GEMINI_MODEL, get_genai_client
         client = get_genai_client()
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=DEFAULT_GEMINI_MODEL,
             contents=prompt,
             config=genai.types.GenerateContentConfig(
                 response_mime_type="application/json",

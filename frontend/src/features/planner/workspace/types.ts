@@ -11,6 +11,8 @@ export interface TripContext {
   tripId: string | null;
   /** Primary destination — first city in the trip (e.g. "Manali") */
   destination: string;
+  /** Country resolved by the backend reference city, used by search canvases. */
+  destinationCountry?: string;
   /** All cities in the trip in order (e.g. ["Manali", "Kasol", "Delhi"]) */
   allCities: string[];
   /** Trip start date string (e.g. "Oct 15") */

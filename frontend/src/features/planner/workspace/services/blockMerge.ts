@@ -61,6 +61,9 @@ export function toRawActivity(
     rating: item.rating ?? null,
     image_url: item.image ?? null,
     ai_tip: item.aiTip ?? null,
+    // Place-specific, like ai_tip/rating/image above — a swap must show why
+    // the NEW place was chosen, never the old occupant's leftover reasoning.
+    why: item.why ?? null,
     block_status: item.blockStatus ?? 'planned',
     status: item.isInactive ? 'inactive' : 'pending',
     is_active: !item.isInactive,

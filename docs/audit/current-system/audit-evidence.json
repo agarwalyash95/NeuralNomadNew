@@ -1,0 +1,24 @@
+[
+  {
+    "Finding ID": "ARCH-001",
+    "Claim": "Thread fallback for generation jobs",
+    "Confidence": "High",
+    "Evidence files": ["backend/apps/planner/views.py"],
+    "Symbols": ["start_generation_job", "spawn_generation_thread", "celery_worker_available"],
+    "Line ranges": ["460-490"],
+    "Commands": [],
+    "Result": "",
+    "Notes": "The POST /plan endpoint dispatches celery tasks but has a dangerous fallback to spawn_generation_thread if PLANNER_ALLOW_THREAD_FALLBACK is True."
+  },
+  {
+    "Finding ID": "PLAN-001",
+    "Claim": "Stale revisions during PATCH",
+    "Confidence": "High",
+    "Evidence files": ["backend/apps/planner/views.py"],
+    "Symbols": ["patch_trip"],
+    "Line ranges": ["510-525"],
+    "Commands": [],
+    "Result": "",
+    "Notes": "The backend expects `expected_revision` to prevent lost updates, but conflicts generate HTTP 409 that the UI needs to handle gracefully."
+  }
+]

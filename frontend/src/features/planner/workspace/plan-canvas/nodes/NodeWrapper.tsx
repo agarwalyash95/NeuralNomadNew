@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plane, Car, BedDouble, Utensils, Zap, Compass, Train, Bus } from 'lucide-react';
+import { Plane, Car, BedDouble, Utensils, Zap, Compass, Train, Bus, Coffee, Moon } from 'lucide-react';
 
 interface NodeWrapperProps {
   type: string;
@@ -43,6 +43,10 @@ export const ICON_STYLES: Record<string, { bg: string; icon: React.ReactNode }> 
   food:       { bg: 'bg-orange-100',  icon: <Utensils  size={12} className="text-orange-600" /> },
   activity:   { bg: 'bg-emerald-100', icon: <Zap       size={12} className="text-emerald-600" fill="currentColor" /> },
   attraction: { bg: 'bg-teal-100',    icon: <Compass   size={12} className="text-teal-600" /> },
+  // Non-bookable anchors — muted so the timeline reads them as "light",
+  // distinct from every real bookable category above.
+  rest:         { bg: 'bg-stone-100',  icon: <Coffee size={12} className="text-stone-500" /> },
+  hotel_return: { bg: 'bg-indigo-50',  icon: <Moon   size={12} className="text-indigo-400" /> },
 };
 
 export default function NodeWrapper({ type, time, endTime, children, iconBgColor, isLast, onTimeChange, itemId }: NodeWrapperProps) {

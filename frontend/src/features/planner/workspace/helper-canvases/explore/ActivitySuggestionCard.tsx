@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Check, Plus, Zap } from 'lucide-react';
+import { Check, Plus, Zap, GitCompareArrows } from 'lucide-react';
 import type { ActivityRecommendation } from './services/activityRecommendationEngine';
 import { TripContext } from '../../types';
 
@@ -10,20 +10,28 @@ interface ActivitySuggestionCardProps {
   onSelect: () => void;
   onAdd: () => void;
   tripContext: TripContext;
+  /** Phase 2b (docs/planner-north-star-audit-and-vision.md) — pin state for
+   *  SightCompareTray. Optional so this card still works anywhere pin
+   *  tracking doesn't apply. */
+  isPinned?: boolean;
+  onTogglePin?: () => void;
 }
 
 export default function ActivitySuggestionCard({
-  recommendation, isPending, onSelect, onAdd,
+  recommendation, isPending, onSelect, onAdd, isPinned, onTogglePin,
 }: ActivitySuggestionCardProps) {
   const { suggestion, durationLabel, priceLabel } = recommendation;
   const photo = suggestion.image_url;
 
-  // Real fact only — no invented "fits afternoon slot" verdict.
-  const factChip = useMemo(() => {
-    if (durationLabel) return durationLabel;
-    if (priceLabel) return priceLabel;
-    if (suggestion.rating != null) return `${suggestion.rating.toFixed(1)}★`;
-    return null;
+  // Phase 2d (docs/planner-north-star-audit-and-vision.md) — up to 2 real
+  // facts instead of 1, so choosing doesn't require opening the detail
+  // panel for every card.
+  const factChips = useMemo(() => {
+    const chips: string[] = [];
+    if (durationLabel) chips.push(durationLabel);
+    if (priceLabel) chips.push(priceLabel);
+    if (chips.length < 2 && suggestion.rating != null) chips.push(`${suggestion.rating.toFixed(1)}★`);
+    return chips.slice(0, 2);
   }, [durationLabel, priceLabel, suggestion.rating]);
 
   return (
@@ -63,28 +71,49 @@ export default function ActivitySuggestionCard({
           )}
         </div>
 
-        {/* Fact chip and Button Row */}
-        <div className="mt-2.5 flex items-center justify-between">
-          {factChip ? (
-            <span className="inline-flex items-center text-[10px] font-bold text-cat-activity bg-cat-activity/10 px-2 py-0.5 rounded-md border border-cat-activity/15">
-              {factChip}
-            </span>
+        {/* Fact chips and Button Row */}
+        <div className="mt-2.5 flex items-center justify-between gap-2">
+          {factChips.length > 0 ? (
+            <div className="flex min-w-0 flex-wrap items-center gap-1">
+              {factChips.map((chip) => (
+                <span key={chip} className="inline-flex items-center text-[10px] font-bold text-cat-activity bg-cat-activity/10 px-2 py-0.5 rounded-md border border-cat-activity/15">
+                  {chip}
+                </span>
+              ))}
+            </div>
           ) : (
             <span />
           )}
 
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onAdd(); }}
-            className={`flex h-7 w-7 items-center justify-center rounded-full shadow-xs transition-all duration-200 cursor-pointer ${
-              isPending 
-                ? 'bg-cat-activity text-white shadow-sm shadow-cat-activity/25' 
-                : 'bg-paper-1 hover:bg-line/40 text-ink-700 border border-line hover:scale-105'
-            }`}
-            title={isPending ? 'Added' : 'Add to plan'}
-          >
-            {isPending ? <Check size={13} strokeWidth={3} /> : <Plus size={13} strokeWidth={3} />}
-          </button>
+          <div className="flex items-center gap-1.5">
+            {onTogglePin && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
+                className={`flex h-7 w-7 items-center justify-center rounded-full shadow-xs transition-all duration-200 cursor-pointer ${
+                  isPinned
+                    ? 'bg-cat-activity/15 text-cat-activity border border-cat-activity/40'
+                    : 'bg-paper-1 hover:bg-line/40 text-ink-500 border border-line hover:scale-105'
+                }`}
+                title={isPinned ? 'Remove from comparison' : 'Add to comparison'}
+                aria-pressed={isPinned}
+              >
+                <GitCompareArrows size={13} strokeWidth={2.5} />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onAdd(); }}
+              className={`flex h-7 w-7 items-center justify-center rounded-full shadow-xs transition-all duration-200 cursor-pointer ${
+                isPending
+                  ? 'bg-cat-activity text-white shadow-sm shadow-cat-activity/25'
+                  : 'bg-paper-1 hover:bg-line/40 text-ink-700 border border-line hover:scale-105'
+              }`}
+              title={isPending ? 'Added' : 'Add to plan'}
+            >
+              {isPending ? <Check size={13} strokeWidth={3} /> : <Plus size={13} strokeWidth={3} />}
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -1,0 +1,32 @@
+{
+  "captured_at": "2026-07-20T00:00:00+05:30",
+  "empty_state_check": {
+    "command": "python manage.py evaluate_price_estimators --json",
+    "output": {},
+    "interpretation": "With zero TravelPriceObservation rows, report is correctly empty rather than fabricating a category entry."
+  },
+  "cold_start_check": {
+    "setup": "2 real cab observations created via provider_registry.search('cab', {...}) (same call as observation_writer_and_rollup.json step 2)",
+    "command": "python manage.py evaluate_price_estimators --json",
+    "output": {
+      "cab": {
+        "status": "cold_start",
+        "sample_count": 2,
+        "note": "fewer than 10 observations — no holdout split attempted."
+      }
+    },
+    "interpretation": "Exact match to the implementation report's claim: 'against real sparse data, correctly reports cold_start (n=2) rather than fabricating metrics on too little data.'"
+  },
+  "evaluated_branch_synthetic_check": {
+    "status": "NOT RE-RUN this evidence pass",
+    "reason": "Bulk-creating 30 synthetic TravelPriceObservation rows was blocked by this session's permission classifier (destructive/bulk-write guard) when attempted for re-verification. This repo's convention is real data only — no seeded/fabricated content in the dev DB outside explicit, cited seed commands (see memory 'Production parity only').",
+    "original_claim_from_implementation_report_not_independently_reproduced_here": "30 synthetic cab observations were temporarily injected, producing MAE≈32.6, WAPE≈0.041, p25-p75 coverage=0.4 (close to the ~0.5 statistically expected for a p25-p75 band by construction) — then deleted along with all other test/synthetic rows before the original session finished.",
+    "code_review_confirms_math_is_real": "evaluate_price_estimators.py (read in full for this evidence pass) computes MAE/median-AE/WAPE/pinball loss/coverage via straightforward statistics.mean/median and manual pinball-loss formulas over an 80/20 date-ordered holdout split — no stubbed or hardcoded metric values; the 'evaluated' branch is genuine code, just not re-exercised with synthetic volume in this pass."
+  },
+  "final_state_after_this_evidence_pass": {
+    "TravelPriceObservation": 0,
+    "TravelPriceSummary": 0,
+    "FareRule": 3,
+    "SourceRegistry": 9
+  }
+}

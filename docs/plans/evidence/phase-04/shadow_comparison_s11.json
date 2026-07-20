@@ -1,0 +1,33 @@
+{
+  "workspace": "be504346-2f80-489d-965f-c93c4112d3bb",
+  "workspace_name": "Himalayan Heights: Gangtok & Pelling Adventure",
+  "origin": "Kolkata",
+  "destination": "Gangtok",
+  "legacy": {
+    "option_count": 5,
+    "modes": [
+      "bus",
+      "cab",
+      "flight",
+      "self_drive",
+      "train"
+    ],
+    "recommended_mode": "train",
+    "recommended_score": 66.4
+  },
+  "route_graph": {
+    "option_count": 5,
+    "modes": [
+      "bus",
+      "cab",
+      "flight",
+      "self_drive",
+      "train"
+    ],
+    "recommended_mode": "train",
+    "recommended_score": 70.0
+  },
+  "no_regression": true,
+  "mode_set_identical": true,
+  "recommended_mode_identical": true
+}

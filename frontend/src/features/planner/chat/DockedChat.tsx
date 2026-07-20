@@ -1,11 +1,17 @@
 'use client';
 
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ArrowUp, Loader2, Sparkles, Bot } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { X, Sparkles, Bot } from 'lucide-react';
 import { useConversation } from './hooks/useConversation';
-import { WidgetRenderer } from './WidgetRenderer';
+import { useChatScroll } from './hooks/useChatScroll';
+import { MessageList } from './MessageList';
+import { ChatInput } from './ChatInput';
+import { TripProgressStrip } from './TripProgressStrip';
+import { usePinnedCapabilities } from './capabilities/usePinnedCapabilities';
+import { PinnedRail } from './capabilities/PinnedRail';
+import { PlanningSummaryCard } from './widgets';
+import PlanLoadingScreen from './PlanLoadingScreen';
 
 export interface DockedChatProps {
   workspaceId: string | null;
@@ -17,27 +23,52 @@ export interface DockedChatProps {
 /**
  * DockedChat — the SAME conversation thread that built this trip, in a
  * compact docked presentation. One session (useConversation), one widget
- * registry; only the shell differs from the full-screen chat.
+ * registry, and now the SAME message/input components as the full-screen
+ * chat (MessageList/ChatInput) — only the FAB/panel shell differs. Fixes
+ * the prior hand-rolled bubble/composer duplication, which meant this
+ * surface never got the confidence checklist, Journey Feed notes, or
+ * multi-widget rendering that landed in MessageList.
  */
 export default function DockedChat({ workspaceId, onOpenHelper, onOptimizeRoutes }: DockedChatProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [isOpen, setIsOpen] = React.useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const {
     query,
     setQuery,
+    workspace,
     messages,
+    readyForPlan,
     isSending,
+    isCreatingPlan,
+    generationJob,
+    suggestedReplies,
+    tripProgress,
     error,
+    confidenceScore,
+    visitPurpose,
+    openExplanations,
+    setOpenExplanations,
     lastAssistantMessageId,
     handleSubmit,
+    handleCreatePlan,
+    handleConfirmAndGenerate,
+    handleRetryGeneration,
   } = useConversation({ workspaceId });
+  const { pinned, pinnedKeys, togglePin } = usePinnedCapabilities();
+  const bottomRef = useChatScroll([messages, isSending]);
 
-  useEffect(() => {
-    if (isOpen) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages, isOpen]);
+  const destination = workspace?.draft_state?.destination_text;
+  const startD = workspace?.draft_state?.start_date ? new Date(workspace.draft_state.start_date) : undefined;
+  const endD = workspace?.draft_state?.end_date ? new Date(workspace.draft_state.end_date) : undefined;
+  const durationDays = startD && endD ? Math.max(1, Math.ceil((endD.getTime() - startD.getTime()) / (1000 * 60 * 60 * 24)) + 1) : undefined;
+  const travelersCount = (workspace?.draft_state?.adults || 1) + (workspace?.draft_state?.children || 0);
+  const budgetText = workspace?.draft_state?.metadata?.budget_inr
+    ? `₹${workspace.draft_state.metadata.budget_inr.toLocaleString()}`
+    : workspace?.draft_state?.budget_tier;
+
+  const isMandatoryComplete = readyForPlan;
+  const isHighlighted = isMandatoryComplete && confidenceScore >= 85;
 
   return (
     <>
@@ -72,9 +103,7 @@ export default function DockedChat({ workspaceId, onOpenHelper, onOptimizeRoutes
                 </div>
                 <div>
                   <h3 className="text-title">Trip conversation</h3>
-                  <p className="text-caption">
-                    The same thread that built this plan
-                  </p>
+                  <p className="text-caption">The same thread that built this plan</p>
                 </div>
               </div>
               <button
@@ -114,104 +143,84 @@ export default function DockedChat({ workspaceId, onOpenHelper, onOptimizeRoutes
 
             {/* Thread */}
             <div className="custom-scrollbar flex-1 space-y-4 overflow-y-auto p-5">
-              {messages.length === 0 && !isSending && (
+              <TripProgressStrip tripProgress={tripProgress} />
+              <PinnedRail pinned={pinned} onTogglePin={togglePin} />
+
+              <PlanningSummaryCard workspace={workspace} />
+
+              {isCreatingPlan && (
+                <PlanLoadingScreen
+                  job={generationJob}
+                  destination={destination}
+                  durationDays={durationDays}
+                  travelersCount={travelersCount}
+                  budgetText={budgetText}
+                  inline={true}
+                  onRetry={handleRetryGeneration}
+                />
+              )}
+
+              {messages.length === 0 && !isSending && !isCreatingPlan && (
                 <div className="flex justify-start">
                   <div className="max-w-[85%] rounded-2xl rounded-tl-md border border-line bg-paper-2 px-4 py-3 shadow-surface">
-                    <p className="text-body">
-                      I can refine the trip plan, compare routes, or help with logistics.
-                    </p>
+                    <p className="text-body">I can refine the trip plan, compare routes, or help with logistics.</p>
                   </div>
                 </div>
               )}
 
-              {messages.map((message) => {
-                const isLastAssistant = message.id === lastAssistantMessageId;
-                return (
-                  <div
-                    key={message.id}
-                    className={cn(
-                      'flex flex-col gap-2',
-                      message.role === 'user' ? 'items-end' : 'items-start'
-                    )}
-                  >
-                    <div
-                      className={cn(
-                        'max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-body shadow-surface',
-                        message.role === 'user'
-                          ? 'rounded-tr-md bg-gradient-to-br from-[rgb(var(--color-ai))] to-violet-700 !text-white'
-                          : 'rounded-tl-md border border-line bg-paper-2'
-                      )}
-                    >
-                      {message.message}
-                    </div>
-                    {isLastAssistant && !isSending && Boolean(message.widgets?.length) && (
-                      <div className="flex w-full flex-col gap-2">
-                        <WidgetRenderer widget={message.widgets![0]!} onSubmit={handleSubmit} />
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-
-              {isSending && (
-                <div className="flex justify-start">
-                  <div className="mr-auto w-fit rounded-2xl rounded-tl-md border border-line bg-paper-2 px-4 py-3 shadow-surface">
-                    <div className="flex items-center gap-2 text-ink-400">
-                      <Loader2 size={16} className="animate-spin" />
-                      <span className="text-body !text-ink-400">NeuralNomad is thinking...</span>
-                    </div>
-                  </div>
-                </div>
+              {messages.length > 0 && (
+                <MessageList
+                  messages={messages}
+                  lastAssistantMessageId={lastAssistantMessageId}
+                  isSending={isSending}
+                  error={error}
+                  intentDisplay={null}
+                  visitPurpose={visitPurpose}
+                  PURPOSE_LABELS={{}}
+                  openExplanations={openExplanations}
+                  setOpenExplanations={setOpenExplanations}
+                  onSubmitWidget={handleSubmit}
+                  onConfirmAndGenerate={handleConfirmAndGenerate}
+                  bottomRef={bottomRef}
+                  pinnedKeys={pinnedKeys}
+                  onTogglePin={togglePin}
+                />
               )}
-
-              {error && (
-                <div className="mr-auto rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-body !text-red-700">
-                  {error}
-                </div>
-              )}
-
-              <div ref={messagesEndRef} />
             </div>
 
-            {/* Composer */}
-            <div className="border-t border-line bg-paper-2/75 p-4">
-              <div className="group relative">
-                <textarea
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                      e.preventDefault();
-                      handleSubmit();
-                    }
-                  }}
-                  placeholder="Ask about this itinerary..."
-                  className="custom-scrollbar min-h-[52px] max-h-[150px] w-full resize-none rounded-[24px] border border-line-strong bg-paper-2 py-3 pl-4 pr-12 text-body !text-ink-900 shadow-surface transition-all duration-[var(--motion-hover)] ease-[var(--ease-out)] placeholder:text-ink-400 focus:border-[rgb(var(--color-ai))] focus:outline-none focus:ring-2 focus:ring-[rgb(var(--color-ai)/0.15)]"
-                  rows={1}
-                  onInput={(e) => {
-                    const target = e.target as HTMLTextAreaElement;
-                    target.style.height = 'auto';
-                    target.style.height = `${Math.min(target.scrollHeight, 150)}px`;
-                  }}
-                />
-                <button
-                  onClick={() => handleSubmit()}
-                  aria-label="Send message"
-                  className={cn(
-                    'absolute bottom-2 right-2 rounded-xl p-1.5 transition-all duration-[var(--motion-hover)] ease-[var(--ease-out)]',
-                    query.trim().length > 0 && !isSending
-                      ? 'bg-[rgb(var(--color-ai))] text-white shadow-surface hover:bg-violet-700'
-                      : 'cursor-not-allowed bg-paper-1 text-ink-400'
-                  )}
-                  disabled={query.trim().length === 0 || isSending}
-                >
-                  {isSending ? (
-                    <Loader2 size={18} className="animate-spin" />
-                  ) : (
-                    <ArrowUp size={18} strokeWidth={2.5} />
-                  )}
-                </button>
+            {/* Proactive next-step chips */}
+            {suggestedReplies.length > 0 && !isSending && (
+              <div className="flex w-full flex-wrap items-center gap-2 border-t border-line/70 bg-paper-2/40 px-4 pt-2">
+                {suggestedReplies.map((chip) => (
+                  <button
+                    key={chip}
+                    onClick={() => (chip.startsWith('Create my plan') ? handleCreatePlan() : handleSubmit(chip))}
+                    className={`rounded-full border px-3 py-1 text-[11px] font-bold transition-all active:scale-95 cursor-pointer ${
+                      chip.startsWith('Create my plan')
+                        ? 'border-[rgb(var(--color-ai)/0.3)] bg-gradient-to-r from-[rgb(var(--color-ai))] to-violet-700 text-white shadow-surface hover:shadow-hover'
+                        : 'border-line-strong bg-paper-2 text-ink-700 hover:border-[rgb(var(--color-ai)/0.4)] hover:bg-[rgb(var(--color-ai)/0.08)] hover:text-[rgb(var(--color-ai))]'
+                    }`}
+                  >
+                    {chip}
+                  </button>
+                ))}
               </div>
+            )}
+
+            {/* Composer (relative, not absolute — the docked panel is already a fixed-height flex column) */}
+            <div className="relative border-t border-line bg-paper-2/75 p-4">
+              <ChatInput
+                query={query}
+                setQuery={setQuery}
+                isSending={isSending}
+                isMandatoryComplete={isMandatoryComplete}
+                isHighlighted={isHighlighted}
+                isCreatingPlan={isCreatingPlan}
+                handleCreatePlan={handleCreatePlan}
+                handleSubmit={handleSubmit}
+                textareaRef={textareaRef}
+                variant="docked"
+              />
             </div>
           </motion.div>
         )}

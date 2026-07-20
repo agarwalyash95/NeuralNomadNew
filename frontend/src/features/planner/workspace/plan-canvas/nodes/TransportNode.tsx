@@ -25,6 +25,8 @@ interface TransportNodeProps {
   distanceKm?: number;
   fallbackOriginCity?: string;
   fallbackDestCity?: string;
+  computedOrigin?: string;
+  computedDestination?: string;
 }
 
 /**
@@ -97,6 +99,14 @@ function TransportNode({
       accentText: 'rgb(180 83 9)',
       connectorColor: 'rgb(217 119 6 / 0.3)',
     },
+    self_drive: {
+      icon: <Car size={18} className="text-emerald-700" />,
+      label: 'Self drive',
+      accentBg: 'rgb(5 150 105 / 0.05)',
+      accentBorder: 'rgb(5 150 105 / 0.14)',
+      accentText: 'rgb(4 120 87)',
+      connectorColor: 'rgb(5 150 105 / 0.3)',
+    },
   };
 
   const config = typeConfig[item.type as keyof typeof typeConfig] ?? typeConfig.flight;
@@ -112,6 +122,35 @@ function TransportNode({
   const transportMeta = item._rawActivity?.metadata?.transport || {};
   const metaSource = transportMeta.resolved_source;
   const metaDest = transportMeta.resolved_destination;
+  const hubLabel = (value: unknown): string | undefined => {
+    if (!value) return undefined;
+    if (typeof value === 'string') return value;
+    if (typeof value === 'object') {
+      const hub = value as { name?: string; code?: string };
+      return hub.code ? `${hub.name || hub.code} (${hub.code})` : hub.name;
+    }
+    return String(value);
+  };
+
+  // PROV-01 (docs/planner-complete-current-audit-and-repair-plan.md §19
+  // R13): the route's OWN provenance/confidence (transportMeta.provenance,
+  // e.g. backend "estimated"/"hub_geometry" at confidence 0.35 vs
+  // "verified_database"/"live_provider") is a different signal from the
+  // PRICE provenance ProvenanceBadge already renders below (item.cost?.
+  // provenance) — before this, a purely geometric, unverified route
+  // estimate and a real database-backed route rendered with identical
+  // plain text ("Requires verification"), no visual distinction at all.
+  // Reuses the exact same trust-grammar badge the rest of the app already
+  // uses, mapped onto the backend's route-provenance vocabulary, rather
+  // than inventing a second visual language.
+  const routeProvenanceTier: 'verified' | 'estimated' | null =
+    transportMeta.provenance === 'live_provider' ||
+    transportMeta.provenance === 'cached_provider' ||
+    transportMeta.provenance === 'verified_database'
+      ? 'verified'
+      : transportMeta.provenance === 'estimated'
+        ? 'estimated'
+        : null;
 
   // Fallback title parsing
   const rawTitle = (item.subtitle || item.title || '').replace('â†’', 'to').replace('→', 'to');
@@ -123,8 +162,8 @@ function TransportNode({
   let parsedOrigin = titleParts.length > 1 ? titleParts[0]?.replace(/^.*:\s*/, '').trim() : undefined;
   let parsedDest = titleParts.length > 1 ? titleParts[1]?.trim() : undefined;
 
-  const originCity = metaSource || parsedOrigin || (isCab && computedOrigin ? computedOrigin : (fallbackOriginCity || 'Origin'));
-  const destCity = metaDest || parsedDest || (isCab && computedDestination ? computedDestination : (fallbackDestCity || 'Destination'));
+  const originCity = hubLabel(metaSource) || parsedOrigin || (isCab && computedOrigin ? computedOrigin : (fallbackOriginCity || 'Origin'));
+  const destCity = hubLabel(metaDest) || parsedDest || (isCab && computedDestination ? computedDestination : (fallbackDestCity || 'Destination'));
   
   const extractCode = (name: string) => {
     const match = name.match(/\(([^)]+)\)$/);
@@ -281,6 +320,18 @@ function TransportNode({
                       return conv ? ` (${conv})` : '';
                     })()}
                   </p>
+                  <div className="mt-1 flex flex-col items-center gap-0.5">
+                    {routeProvenanceTier && (
+                      <ProvenanceBadge provenance={{ tier: routeProvenanceTier, source: transportMeta.source_name, basis: transportMeta.provenance === 'estimated' ? 'geometric estimate, no confirmed schedule' : undefined }} />
+                    )}
+                    <p className="text-[8px] font-bold uppercase tracking-wide text-ink-400">
+                      {transportMeta.booking_availability === 'available'
+                        ? 'Availability verified'
+                        : transportMeta.freshness === 'stale'
+                          ? 'Stale reference — verify'
+                          : 'Requires verification'}
+                    </p>
+                  </div>
                 </div>
 
                 {/* Destination */}

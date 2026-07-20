@@ -1,0 +1,15 @@
+{
+  "likely_poisoned_price_signature": {
+    "prices": [850, 1500, 5000],
+    "required_tier": "verified",
+    "matching_rows": 0,
+    "rows_deleted": 0
+  },
+  "attraction_image_security": {
+    "rows_scanned": 35,
+    "rows_scrubbed": 35,
+    "primary_key_urls_after": 0,
+    "secondary_key_rows_after": 0,
+    "unrecoverable_urls_removed": 0
+  }
+}

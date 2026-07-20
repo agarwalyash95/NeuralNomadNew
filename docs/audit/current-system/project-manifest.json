@@ -1,0 +1,701 @@
+{
+  "Applications": [],
+  "Modules": [],
+  "Entry points": [],
+  "Models": [
+    {
+      "name": "BaseModel",
+      "file": "\\backend\\apps\\common\\models.py"
+    },
+    {
+      "name": "Country",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "State",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "City",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "Airport",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "Airline",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "_RouteFactsMixin",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "AirportRoute",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "RailwayStation",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "TrainRoute",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "BusStation",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "BusRoute",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "MetroStation",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "EnrichmentMixin",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "PlaceCrossIdMixin",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "HotelMaster",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "HotelRoomTier",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "RestaurantMaster",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "AttractionMaster",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "ActivityMaster",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "CategoryVocabularyMap",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "TransferProfile",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "HolidayCalendar",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "WeatherNormals",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "TravelSeason",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "TravelPriceHistory",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "MetroArea",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "MetroAreaAlias",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "MetroAreaCity",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "CityAlias",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "Locality",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "LocalityAlias",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "_BaseServiceArea",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "ReferenceFieldProvenance",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "TravelPriceObservation",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "TravelPriceSummary",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "District",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "SourceRegistry",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "SourceRelease",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "ImportBatch",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "StagingRecord",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "ProviderEntityMap",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "DataQualityIssue",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "HubTransferLink",
+      "file": "\\backend\\apps\\reference\\models.py"
+    },
+    {
+      "name": "FareRule",
+      "file": "\\backend\\apps\\reference\\models.py"
+    }
+  ],
+  "Endpoints": [
+    {
+      "name": "AuthViewSet",
+      "file": "\\backend\\apps\\accounts\\views.py"
+    },
+    {
+      "name": "UserViewSet",
+      "file": "\\backend\\apps\\accounts\\views.py"
+    },
+    {
+      "name": "UserPreferenceViewSet",
+      "file": "\\backend\\apps\\accounts\\views.py"
+    },
+    {
+      "name": "UploadedDocumentViewSet",
+      "file": "\\backend\\apps\\accounts\\views.py"
+    },
+    {
+      "name": "ActivityLogViewSet",
+      "file": "\\backend\\apps\\accounts\\views.py"
+    },
+    {
+      "name": "login",
+      "file": "\\backend\\apps\\accounts\\views.py"
+    },
+    {
+      "name": "register",
+      "file": "\\backend\\apps\\accounts\\views.py"
+    },
+    {
+      "name": "google",
+      "file": "\\backend\\apps\\accounts\\views.py"
+    },
+    {
+      "name": "logout",
+      "file": "\\backend\\apps\\accounts\\views.py"
+    },
+    {
+      "name": "profile",
+      "file": "\\backend\\apps\\accounts\\views.py"
+    },
+    {
+      "name": "update_profile",
+      "file": "\\backend\\apps\\accounts\\views.py"
+    },
+    {
+      "name": "change_password",
+      "file": "\\backend\\apps\\accounts\\views.py"
+    },
+    {
+      "name": "my_preferences",
+      "file": "\\backend\\apps\\accounts\\views.py"
+    },
+    {
+      "name": "DestinationViewSet",
+      "file": "\\backend\\apps\\attractions\\views.py"
+    },
+    {
+      "name": "AttractionViewSet",
+      "file": "\\backend\\apps\\attractions\\views.py"
+    },
+    {
+      "name": "popular",
+      "file": "\\backend\\apps\\attractions\\views.py"
+    },
+    {
+      "name": "categories",
+      "file": "\\backend\\apps\\attractions\\views.py"
+    },
+    {
+      "name": "autocomplete",
+      "file": "\\backend\\apps\\attractions\\views.py"
+    },
+    {
+      "name": "photo_proxy",
+      "file": "\\backend\\apps\\attractions\\views.py"
+    },
+    {
+      "name": "explore",
+      "file": "\\backend\\apps\\attractions\\views.py"
+    },
+    {
+      "name": "details",
+      "file": "\\backend\\apps\\attractions\\views.py"
+    },
+    {
+      "name": "BookingViewSet",
+      "file": "\\backend\\apps\\bookings\\views.py"
+    },
+    {
+      "name": "SearchInventoryViewSet",
+      "file": "\\backend\\apps\\bookings\\views.py"
+    },
+    {
+      "name": "LocationViewSet",
+      "file": "\\backend\\apps\\bookings\\views.py"
+    },
+    {
+      "name": "confirm_payment",
+      "file": "\\backend\\apps\\bookings\\views.py"
+    },
+    {
+      "name": "cancel",
+      "file": "\\backend\\apps\\bookings\\views.py"
+    },
+    {
+      "name": "pending",
+      "file": "\\backend\\apps\\bookings\\views.py"
+    },
+    {
+      "name": "confirmed",
+      "file": "\\backend\\apps\\bookings\\views.py"
+    },
+    {
+      "name": "search",
+      "file": "\\backend\\apps\\bookings\\views.py"
+    },
+    {
+      "name": "search",
+      "file": "\\backend\\apps\\bookings\\views.py"
+    },
+    {
+      "name": "ForexDataViewSet",
+      "file": "\\backend\\apps\\forex\\views.py"
+    },
+    {
+      "name": "ForexVendorViewSet",
+      "file": "\\backend\\apps\\forex\\views.py"
+    },
+    {
+      "name": "ForexDeliveryRequestViewSet",
+      "file": "\\backend\\apps\\forex\\views.py"
+    },
+    {
+      "name": "all_rates",
+      "file": "\\backend\\apps\\forex\\views.py"
+    },
+    {
+      "name": "convert",
+      "file": "\\backend\\apps\\forex\\views.py"
+    },
+    {
+      "name": "by_currency",
+      "file": "\\backend\\apps\\forex\\views.py"
+    },
+    {
+      "name": "DestinationViewSet",
+      "file": "\\backend\\apps\\homepage\\views.py"
+    },
+    {
+      "name": "MoodCategoryViewSet",
+      "file": "\\backend\\apps\\homepage\\views.py"
+    },
+    {
+      "name": "SeasonalInsightViewSet",
+      "file": "\\backend\\apps\\homepage\\views.py"
+    },
+    {
+      "name": "AIFeatureTileViewSet",
+      "file": "\\backend\\apps\\homepage\\views.py"
+    },
+    {
+      "name": "view",
+      "file": "\\backend\\apps\\homepage\\views.py"
+    },
+    {
+      "name": "NotificationViewSet",
+      "file": "\\backend\\apps\\notifications\\views.py"
+    },
+    {
+      "name": "mark_as_read",
+      "file": "\\backend\\apps\\notifications\\views.py"
+    },
+    {
+      "name": "mark_all_as_read",
+      "file": "\\backend\\apps\\notifications\\views.py"
+    },
+    {
+      "name": "unread",
+      "file": "\\backend\\apps\\notifications\\views.py"
+    },
+    {
+      "name": "unread_count",
+      "file": "\\backend\\apps\\notifications\\views.py"
+    },
+    {
+      "name": "by_type",
+      "file": "\\backend\\apps\\notifications\\views.py"
+    },
+    {
+      "name": "PlannerWorkspaceViewSet",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "lazy_chat_stream",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "workspace_chat_stream",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "lazy_chat",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "traveler_profile",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "explain_recommendation",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "trip_prep_status",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "committed_bookings",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "price_lookup",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "batch_distances",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "compare_transport_legs",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "TripViewSet",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "chat",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "draft",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "journey_options",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "plan",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "mutations",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "plan_status",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "plan_tips",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "save_plan",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "book",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "verify_block",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "transition_blocks",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "ledger",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "optimize_route",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "proposals",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "accept_proposal",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "reject_proposal",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "watch_block",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "insights",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "dismiss_insight",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "live",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "upcoming",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "past",
+      "file": "\\backend\\apps\\planner\\views.py"
+    },
+    {
+      "name": "BaseReferenceViewSet",
+      "file": "\\backend\\apps\\reference\\views.py"
+    },
+    {
+      "name": "CountryViewSet",
+      "file": "\\backend\\apps\\reference\\views.py"
+    },
+    {
+      "name": "StateViewSet",
+      "file": "\\backend\\apps\\reference\\views.py"
+    },
+    {
+      "name": "CityViewSet",
+      "file": "\\backend\\apps\\reference\\views.py"
+    },
+    {
+      "name": "AirportViewSet",
+      "file": "\\backend\\apps\\reference\\views.py"
+    },
+    {
+      "name": "AirlineViewSet",
+      "file": "\\backend\\apps\\reference\\views.py"
+    },
+    {
+      "name": "AirportRouteViewSet",
+      "file": "\\backend\\apps\\reference\\views.py"
+    },
+    {
+      "name": "RailwayStationViewSet",
+      "file": "\\backend\\apps\\reference\\views.py"
+    },
+    {
+      "name": "TrainRouteViewSet",
+      "file": "\\backend\\apps\\reference\\views.py"
+    },
+    {
+      "name": "BusStationViewSet",
+      "file": "\\backend\\apps\\reference\\views.py"
+    },
+    {
+      "name": "BusRouteViewSet",
+      "file": "\\backend\\apps\\reference\\views.py"
+    },
+    {
+      "name": "MetroStationViewSet",
+      "file": "\\backend\\apps\\reference\\views.py"
+    },
+    {
+      "name": "HotelMasterViewSet",
+      "file": "\\backend\\apps\\reference\\views.py"
+    },
+    {
+      "name": "RestaurantMasterViewSet",
+      "file": "\\backend\\apps\\reference\\views.py"
+    },
+    {
+      "name": "AttractionMasterViewSet",
+      "file": "\\backend\\apps\\reference\\views.py"
+    },
+    {
+      "name": "ActivityMasterViewSet",
+      "file": "\\backend\\apps\\reference\\views.py"
+    },
+    {
+      "name": "HolidayCalendarViewSet",
+      "file": "\\backend\\apps\\reference\\views.py"
+    },
+    {
+      "name": "WeatherNormalsViewSet",
+      "file": "\\backend\\apps\\reference\\views.py"
+    },
+    {
+      "name": "TravelSeasonViewSet",
+      "file": "\\backend\\apps\\reference\\views.py"
+    },
+    {
+      "name": "explore",
+      "file": "\\backend\\apps\\reference\\views.py"
+    },
+    {
+      "name": "details",
+      "file": "\\backend\\apps\\reference\\views.py"
+    },
+    {
+      "name": "explore",
+      "file": "\\backend\\apps\\reference\\views.py"
+    },
+    {
+      "name": "details",
+      "file": "\\backend\\apps\\reference\\views.py"
+    },
+    {
+      "name": "explore",
+      "file": "\\backend\\apps\\reference\\views.py"
+    },
+    {
+      "name": "details",
+      "file": "\\backend\\apps\\reference\\views.py"
+    },
+    {
+      "name": "explore",
+      "file": "\\backend\\apps\\reference\\views.py"
+    },
+    {
+      "name": "details",
+      "file": "\\backend\\apps\\reference\\views.py"
+    },
+    {
+      "name": "TravelPassViewSet",
+      "file": "\\backend\\apps\\travelpass\\views.py"
+    },
+    {
+      "name": "summary",
+      "file": "\\backend\\apps\\travelpass\\views.py"
+    },
+    {
+      "name": "VisaDataViewSet",
+      "file": "\\backend\\apps\\visa\\views.py"
+    },
+    {
+      "name": "by_country",
+      "file": "\\backend\\apps\\visa\\views.py"
+    },
+    {
+      "name": "required_for_india",
+      "file": "\\backend\\apps\\visa\\views.py"
+    },
+    {
+      "name": "exempt_for_india",
+      "file": "\\backend\\apps\\visa\\views.py"
+    },
+    {
+      "name": "PaymentMethodViewSet",
+      "file": "\\backend\\apps\\wallet\\views.py"
+    },
+    {
+      "name": "TransactionViewSet",
+      "file": "\\backend\\apps\\wallet\\views.py"
+    },
+    {
+      "name": "CheckoutViewSet",
+      "file": "\\backend\\apps\\wallet\\views.py"
+    },
+    {
+      "name": "create_order",
+      "file": "\\backend\\apps\\wallet\\views.py"
+    },
+    {
+      "name": "verify_payment",
+      "file": "\\backend\\apps\\wallet\\views.py"
+    }
+  ],
+  "frontendRoutes": [
+    "/",
+    "/attractions",
+    "/attractions/[id]",
+    "/book-now",
+    "/booking-success",
+    "/bookings",
+    "/bookings/[id]",
+    "/copilot",
+    "/notifications",
+    "/planner",
+    "/planner/profile",
+    "/planner/[workspaceId]",
+    "/settings/profile",
+    "/travel-prep",
+    "/vault/bookings",
+    "/vault/pass",
+    "/vault/transactions",
+    "/vault/wallet"
+  ],
+  "stateStores": [
+    "auth.store.ts",
+    "booking-selection.store.ts",
+    "planner-hover.store.ts",
+    "planner-nav.store.ts"
+  ],
+  "externalIntegrations": [],
+  "environmentVariables": [],
+  "backgroundJobs": [],
+  "AIProviders": [],
+  "prompts": [],
+  "testSuites": [],
+  "knownMocks": [],
+  "deadCodeCandidates": [],
+  "generatedAt": "2026-07-20T01:48:06+05:30",
+  "gitCommit": "unknown"
+}

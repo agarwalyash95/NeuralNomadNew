@@ -84,6 +84,11 @@ export interface Booking {
   provider_booking_id?: string;
   created_at: string;
   updated_at: string;
+  /** Present only on rows bridged in from a planner trip's own commitment
+   *  ladder (see booking.service.ts getCommittedBookings) — absent on a
+   *  real bookings.Booking row. */
+  source?: 'trip_planner';
+  workspace_id?: string;
 }
 
 export interface BookingSearchParams {

@@ -2,10 +2,12 @@
 
 **AI-Powered Travel Planning Platform for Indian Users**
 
+> **Coding agents:** Start with [`AGENTS.md`](AGENTS.md), then read [`docs/agent/CURRENT_STATE.md`](docs/agent/CURRENT_STATE.md) and [`docs/agent/HANDOFF.md`](docs/agent/HANDOFF.md) before changing code. Run `python scripts/agent_context.py` for a read-only context summary.
+
 A modern, scalable platform that uses artificial intelligence to help Indian travelers plan their trips, discover attractions, manage bookings, and navigate travel-related challenges.
 
-> **Status**: ✅ **Phase 1 & 2 Complete** - Production Ready  
-> **Last Updated**: 2024  
+> **Status**: 🚧 **Active development** — see the [current project state](docs/agent/CURRENT_STATE.md) for the verified checkpoint
+> **Last Updated**: 2026-07-18
 > **Version**: 1.0.0
 
 ---
@@ -168,10 +170,11 @@ createdb neuralnomad_db
 
 ## 📚 Documentation
 
-- **[Setup Guide](docs/SETUP.md)** - Complete setup instructions
-- **[Architecture](docs/ARCHITECTURE.md)** - System architecture and design
-- **[Database Schema](docs/DATABASE.md)** - Database design and models
-- **[API Documentation](docs/API.md)** - API endpoints and usage
+- **[Current Project State](docs/agent/CURRENT_STATE.md)** - Verified checkpoint, active gate, and known risks
+- **[Cross-Agent Workflow](docs/agent/WORKFLOW.md)** - Start, implement, verify, and handoff protocol
+- **[Latest Handoff](docs/agent/HANDOFF.md)** - Exact continuation point for the next session
+- **[Planner Audit and Repair Plan](docs/planner-complete-current-audit-and-repair-plan.md)** - Detailed current planner investigation
+- **[Setup Notes](docs/SETUP.md)** - Environment setup notes (currently incomplete)
 
 ## 🏗️ Architecture Highlights
 
@@ -250,9 +253,9 @@ Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`
 
 For questions or issues:
 
-1. Check documentation in `docs/`
-2. Review setup guide: `docs/SETUP.md`
-3. Check architecture: `docs/ARCHITECTURE.md`
+1. Read `AGENTS.md` and `docs/agent/CURRENT_STATE.md`.
+2. Resume from `docs/agent/HANDOFF.md`.
+3. Verify documentation claims against the current code, runtime behavior, and Git diff.
 
 ## 📄 License
 

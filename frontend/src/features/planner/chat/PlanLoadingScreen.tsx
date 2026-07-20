@@ -15,6 +15,8 @@ export interface PlanLoadingScreenProps {
   budgetText?: string;
   /** Real pipeline state polled from GET plan/status/ — nothing simulated */
   job?: GenerationJobStatus | null;
+  /** If true, renders without the fixed full-screen overlay */
+  inline?: boolean;
 }
 
 const PHASE_ICONS: Record<string, string> = {
@@ -35,6 +37,7 @@ export default function PlanLoadingScreen({
   travelersCount,
   budgetText,
   job,
+  inline = false,
 }: PlanLoadingScreenProps) {
   const completedRef = useRef(false);
 
@@ -42,13 +45,17 @@ export default function PlanLoadingScreen({
   const progress = status === 'done' ? 100 : (job?.progress ?? 0);
   const phases = job?.phases ?? [];
 
-  // When the backend reports done, hold 100% briefly, then hand off.
+  const isDegraded = status === 'done' && !!job?.degraded;
+
+  // When the backend reports done, hold 100% briefly, then hand off. A
+  // degraded (fallback) plan holds a bit longer so the honest note below is
+  // actually readable, not just flashed.
   useEffect(() => {
     if (status !== 'done' || completedRef.current) return undefined;
     completedRef.current = true;
-    const timer = setTimeout(() => onComplete?.(), 700);
+    const timer = setTimeout(() => onComplete?.(), isDegraded ? 1800 : 700);
     return () => clearTimeout(timer);
-  }, [status, onComplete]);
+  }, [status, isDegraded, onComplete]);
 
   // Extract destination text — returns undefined when unknown (chip is hidden)
   const formatDestination = (dest: any): string | undefined => {
@@ -62,6 +69,15 @@ export default function PlanLoadingScreen({
   const destFull = formatDestination(destination);
 
   const isFailed = status === 'failed';
+  const needsInput = status === 'needs_input';
+
+  const containerClasses = inline
+    ? "relative flex flex-col items-center justify-center p-4 text-slate-900 overflow-hidden rounded-2xl bg-paper-1 border border-line"
+    : "fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#faf9f6] p-4 sm:p-6 text-slate-900 select-none overflow-hidden";
+
+  const cardClasses = inline
+    ? "w-full rounded-2xl bg-white/70 p-4 shadow-sm backdrop-blur-md"
+    : "w-full rounded-[32px] border border-white/50 bg-white/70 p-6 sm:p-8 shadow-[0_30px_100px_-20px_rgba(79,70,229,0.12)] backdrop-blur-2xl";
 
   return (
     <motion.div
@@ -69,28 +85,32 @@ export default function PlanLoadingScreen({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.3 }}
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#faf9f6] p-4 sm:p-6 text-slate-900 select-none overflow-hidden"
+      className={containerClasses}
     >
       {/* ── Floating Glow Blobs (ambient background) ── */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-indigo-100/40 rounded-full blur-[120px] motion-safe:animate-pulse" style={{ animationDuration: '8s' }} />
-        <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-purple-100/40 rounded-full blur-[120px] motion-safe:animate-pulse" style={{ animationDuration: '10s' }} />
-      </div>
+      {!inline && (
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-indigo-100/40 rounded-full blur-[120px] motion-safe:animate-pulse" style={{ animationDuration: '8s' }} />
+          <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-purple-100/40 rounded-full blur-[120px] motion-safe:animate-pulse" style={{ animationDuration: '10s' }} />
+        </div>
+      )}
 
       <div className="relative z-10 flex flex-col items-center justify-center max-w-lg w-full">
         {/* Brand Badge */}
-        <div className="mb-6 flex items-center gap-2 rounded-xl bg-white/80 px-4 py-1.5 shadow-sm border border-slate-200/70 backdrop-blur-md">
-          <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-gradient-to-tr from-indigo-600 to-purple-600 text-white font-black text-xs">
-            N
+        {!inline && (
+          <div className="mb-6 flex items-center gap-2 rounded-xl bg-white/80 px-4 py-1.5 shadow-sm border border-slate-200/70 backdrop-blur-md">
+            <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-gradient-to-tr from-indigo-600 to-purple-600 text-white font-black text-xs">
+              N
+            </div>
+            <span className="text-sm font-bold text-slate-800 tracking-tight">NeuralNomad</span>
           </div>
-          <span className="text-sm font-bold text-slate-800 tracking-tight">NeuralNomad</span>
-        </div>
+        )}
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: 'easeOut' }}
-          className="w-full rounded-[32px] border border-white/50 bg-white/70 p-6 sm:p-8 shadow-[0_30px_100px_-20px_rgba(79,70,229,0.12)] backdrop-blur-2xl"
+          className={cardClasses}
         >
           <div className="mx-auto mb-4 flex items-center justify-center gap-2 rounded-full bg-indigo-50 px-3.5 py-1 border border-indigo-100/40 w-fit">
             <Sparkles size={13} className="text-indigo-600 motion-safe:animate-pulse" />
@@ -98,7 +118,7 @@ export default function PlanLoadingScreen({
           </div>
 
           <h1 className="text-center text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900">
-            {isFailed ? 'Plan Generation Hit a Snag' : 'Crafting Your Travel Plan'}
+            {needsInput ? 'A Choice Is Needed' : isFailed ? 'Plan Generation Hit a Snag' : 'Crafting Your Travel Plan'}
           </h1>
 
           {/* Meta chips — only facts we actually know */}
@@ -197,6 +217,17 @@ export default function PlanLoadingScreen({
             ))}
           </div>
 
+          {/* ── Degraded notice — status is 'done' but this is the curated
+              fallback plan, not the AI-composed one (Phase 0b: previously
+              indistinguishable from a real success). Honest, not alarming. ── */}
+          {isDegraded && (
+            <div className="mt-6 rounded-2xl border border-amber-100 bg-amber-50/60 p-4">
+              <p className="text-xs font-semibold text-amber-800">
+                {job?.error || 'Our AI planner had trouble this time, so we built a curated starter plan instead — you can still customize everything.'}
+              </p>
+            </div>
+          )}
+
           {/* ── Failure panel with retry ── */}
           {isFailed && (
             <div className="mt-6 rounded-2xl border border-red-100 bg-red-50/60 p-4">
@@ -215,8 +246,27 @@ export default function PlanLoadingScreen({
             </div>
           )}
 
+          {needsInput && (
+            <div className="mt-6 rounded-2xl border border-amber-100 bg-amber-50/60 p-4">
+              <p className="text-xs font-bold text-amber-800">I preserved your trip instead of making an unsafe assumption.</p>
+              <ul className="mt-2 list-disc space-y-1 pl-4 text-[11px] font-medium text-amber-700">
+                {(job?.blockers?.length ? job.blockers : [{ detail: job?.error || 'Review the trip inputs.' }]).map((blocker, index) => (
+                  <li key={`${blocker.code || 'blocker'}-${index}`}>{blocker.detail || blocker.code}</li>
+                ))}
+              </ul>
+              {onRetry && (
+                <button
+                  onClick={onRetry}
+                  className="mt-3 rounded-lg bg-amber-700 px-3.5 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-amber-800"
+                >
+                  Return to trip questions
+                </button>
+              )}
+            </div>
+          )}
+
           {/* ── Progress bar — the width IS the backend progress ── */}
-          {!isFailed && (
+          {!isFailed && !needsInput && (
             <div className="mt-8 space-y-2">
               <div className="flex items-center justify-between text-[11px] font-bold tracking-tight">
                 <span className="text-slate-400 uppercase tracking-wider">Generation Progress</span>

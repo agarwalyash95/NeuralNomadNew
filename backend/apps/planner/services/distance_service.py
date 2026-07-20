@@ -1,5 +1,4 @@
 import os
-import math
 import logging
 import urllib.request
 import urllib.parse
@@ -9,6 +8,8 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.utils import timezone
+
+from apps.reference.services.geo import haversine_km
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,6 @@ def _scenic_score(orig_lat, orig_lng, dest_lat, dest_lng):
         return None
     try:
         from apps.reference.models import AttractionMaster
-        from apps.reference.services.places_explore import haversine
 
         mid_lat = (float(orig_lat) + float(dest_lat)) / 2
         mid_lng = (float(orig_lng) + float(dest_lng)) / 2
@@ -63,7 +63,7 @@ def _scenic_score(orig_lat, orig_lng, dest_lat, dest_lng):
         )[:50]
         for c in candidates:
             if c.latitude is not None and c.longitude is not None:
-                if haversine(mid_lat, mid_lng, float(c.latitude), float(c.longitude)) <= 1.0:
+                if haversine_km(mid_lat, mid_lng, c.latitude, c.longitude) <= 1.0:
                     nearby += 1
         return round(min(nearby / 10.0, 1.0), 2)
     except Exception:
@@ -71,19 +71,8 @@ def _scenic_score(orig_lat, orig_lng, dest_lat, dest_lng):
 
 
 def haversine_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Calculate the great circle distance between two points on the earth in km."""
-    R = 6371.0  # Radius of the earth in km
-    dLat = math.radians(lat2 - lat1)
-    dLon = math.radians(lon2 - lon1)
-    a = (
-        math.sin(dLat / 2) * math.sin(dLat / 2)
-        + math.cos(math.radians(lat1))
-        * math.cos(math.radians(lat2))
-        * math.sin(dLon / 2)
-        * math.sin(dLon / 2)
-    )
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    return round(R * c, 2)
+    """Compatibility wrapper preserving the planner API's two-decimal result."""
+    return round(haversine_km(lat1, lon1, lat2, lon2), 2)
 
 
 def estimate_duration_mins(distance_km: float, mode: str = "driving") -> int:
@@ -110,12 +99,12 @@ class DistanceService:
           "pair_1": { "distance_km": 11.4, "duration_mins": 25, "cached": True }
         }
 
-        Persists to knowledge.DistanceEdge (TTL'd) — this used to write the
+        Persists to reference.DistanceEdge (TTL'd) — this used to write the
         older planner.LocationDistanceCache, which had no expiry and was a
         confirmed duplicate of DistanceEdge's key shape. Retired in the
         production-readiness pass; see docs/planner-production-plan.md Phase 1.
         """
-        from apps.knowledge.models import DistanceEdge
+        from apps.reference.models import DistanceEdge
 
         results = {}
         missing_pairs = []
@@ -240,10 +229,16 @@ class DistanceService:
                 d_lat = dest.get("lat")
                 d_lng = dest.get("lng")
 
-                if o_lat and o_lng and d_lat and d_lng:
+                if all(value is not None for value in (o_lat, o_lng, d_lat, d_lng)):
                     dist_km = haversine_distance_km(float(o_lat), float(o_lng), float(d_lat), float(d_lng))
                 else:
-                    dist_km = 4.5  # default baseline city fallback
+                    results[pair_id] = {
+                        "distance_km": None,
+                        "duration_mins": None,
+                        "cached": False,
+                        "source": "unavailable",
+                    }
+                    continue
 
                 dur_mins = estimate_duration_mins(dist_km, mode)
 
@@ -283,7 +278,7 @@ class DistanceService:
 
         Output: { pair_id: { mode: {distance_km, duration_mins, source, carbon_kg, scenic_score} } }
         """
-        from apps.knowledge.models import DistanceEdge
+        from apps.reference.models import DistanceEdge
 
         by_pair = {p["id"]: {} for p in pairs}
         edge_rows = []

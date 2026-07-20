@@ -11,6 +11,7 @@ Provenance semantics (the product trust grammar):
 
 from datetime import datetime, timedelta
 
+from django.conf import settings
 from django.db.models import Avg, Count, Q
 from django.utils import timezone
 
@@ -37,7 +38,7 @@ def _format_price(service_type, price):
 
 
 def _result_from_record(service_type, record, tier, basis):
-    from apps.planner.services.block_schema import make_provenance
+    from apps.common.provenance import make_provenance
 
     return {
         "status": "success",
@@ -87,6 +88,139 @@ def _record_tier(record):
     return record.provenance_tier or "estimated"
 
 
+def _numeric_price(value):
+    if value in (None, "") or isinstance(value, bool):
+        return None
+    try:
+        price = float(value)
+    except (TypeError, ValueError):
+        return None
+    return price if price >= 0 else None
+
+
+def _extract_provider_price(service_type, result):
+    """Return only a price actually present in the provider payload."""
+    if service_type == "train":
+        for item in result.get("meta", {}).get("classes") or []:
+            price = _numeric_price(item.get("price"))
+            if price is not None:
+                return price
+
+    for provider_result in result.get("providers") or []:
+        price = _numeric_price(provider_result.get("price"))
+        if price is not None:
+            return price
+
+    return _numeric_price(result.get("price"))
+
+
+def _resolve_city(name):
+    """Exact match first, icontains fallback — a plain icontains alone can
+    resolve a short city name to an unrelated city that merely contains it
+    as a substring (e.g. "Agra" is a literal substring of "Lagrange")."""
+    from apps.reference.models import City
+
+    if not name:
+        return None
+    clean = name.strip()
+    return (
+        City.objects.filter(name__iexact=clean).first()
+        or City.objects.filter(name__icontains=clean).order_by("name").first()
+    )
+
+
+def _resolve_observation_fk(service_type, item, origin=""):
+    """Same best-effort fuzzy title/code match lookup_live_price already does
+    for TravelPriceHistory rows — reused here so an observation and its
+    matching history row (when one gets written) resolve to the same FK."""
+    from apps.reference.models import AirportRoute, TrainRoute, BusRoute, HotelMaster
+
+    fk_params = {}
+    if service_type == "flight":
+        fk_params["airport_route"] = AirportRoute.objects.filter(
+            airline__name__icontains=item.get("title") or "").first()
+    elif service_type == "train":
+        fk_params["train_route"] = TrainRoute.objects.filter(
+            train_number=item.get("code")).first()
+    elif service_type == "bus":
+        fk_params["bus_route"] = BusRoute.objects.filter(
+            operator_name__icontains=item.get("title") or "").first()
+    elif service_type == "hotel":
+        fk_params["hotel"] = HotelMaster.objects.filter(
+            name__icontains=item.get("title") or "").first()
+    elif service_type == "cab":
+        fk_params["city"] = _resolve_city(origin) if origin else None
+    return fk_params
+
+
+def record_price_observation(service_type, item, params=None):
+    """Phase 5 observation writer: one TravelPriceObservation per priced
+    provider result, live or mock (mock rows are useful for machinery
+    validation, tagged honestly as ``provider_cache`` rather than
+    ``live_api`` — never confused with a real quote by TravelPriceSummary's
+    rollup, which is free to filter source_type when it wants live-only
+    signal). Never raises — a provider search must not fail because
+    observation-writing had a problem.
+    """
+    try:
+        from apps.reference.models import TravelPriceObservation
+
+        price_val = _extract_provider_price(service_type, item)
+        if price_val is None:
+            return None
+
+        params = params or {}
+        origin = params.get("origin", "")
+        source_type = "live_api" if item.get("source") == "live_inventory" else "provider_cache"
+        fk_params = _resolve_observation_fk(service_type, item, origin=origin)
+
+        return TravelPriceObservation.objects.create(
+            service_type=service_type,
+            observed_date=timezone.now().date(),
+            price=price_val,
+            currency="INR",
+            provider=item.get("title", "") or "",
+            code=item.get("code", "") or "",
+            source_type=source_type,
+            details=item.get("meta", {}) or {},
+            **fk_params,
+        )
+    except Exception as exc:  # observation-writing degrades, never crashes a search
+        print(f"Failed to record price observation: {exc}")
+        return None
+
+
+def _estimator_fallback_result(service_type, destination):
+    """Phase 5 ladder rung (§10.1 classes 2-4), tried after TravelPriceHistory
+    and a live-provider fetch both come up empty, before finally giving up.
+
+    Wired for ``hotel`` only: it's the one category this function's own
+    signature can serve without a distance figure (cab/bus/train need
+    caller-supplied distance_km, which lookup_live_price never receives —
+    those are switched onto price_estimator at their own call sites instead,
+    e.g. transport_compare.py, which already computes distance before calling
+    this function). Returns None (never a fabricated price) when the
+    estimator itself has insufficient_data.
+    """
+    if service_type != "hotel" or not destination:
+        return None
+    from apps.reference.services import price_estimator
+
+    envelope = price_estimator.estimate("hotel", destination_text=destination)
+    if envelope.get("expected") is None:
+        return None
+    return {
+        "status": "success",
+        "price": _format_price(service_type, envelope["expected"]),
+        "exact_price": envelope["expected"],
+        "provider": envelope["provenance"]["source"],
+        "code": "",
+        "details": {"assumptions": envelope["assumptions"], "method": envelope["method"]},
+        "provenance": envelope["provenance"],
+        "price_trend": None,
+    }
+
+
 def lookup_live_price(service_type, date_str, provider="", code="", origin="", destination=""):
     """
     Returns a price result dict with provenance, or None when no relevant
@@ -134,12 +268,15 @@ def lookup_live_price(service_type, date_str, provider="", code="", origin="", d
         return _result_from_record(service_type, price_record, tier, basis=basis)
 
     # Live fetch from real providers — this is the "verified" path
+    if not getattr(settings, "LIVE_PROVIDERS_ENABLED", False):
+        return _estimator_fallback_result(service_type, destination)
+
     from apps.bookings.providers.registry import provider_registry
 
     search_params = {
-        "origin": origin or "DEL",
-        "destination": destination or "BOM",
-        "city": destination or origin or "Mumbai",
+        "origin": origin,
+        "destination": destination,
+        "city": destination or origin,
         "departureDate": date_str,
         "cabinClass": "Economy",
         "travellers": "1",
@@ -151,7 +288,7 @@ def lookup_live_price(service_type, date_str, provider="", code="", origin="", d
         real_results = None
 
     if not real_results:
-        return None
+        return _estimator_fallback_result(service_type, destination)
 
     matched_res = None
     for res in real_results:
@@ -161,30 +298,22 @@ def lookup_live_price(service_type, date_str, provider="", code="", origin="", d
     if not matched_res:
         matched_res = real_results[0]
 
-    if service_type == "train":
-        price_val = matched_res.get("meta", {}).get("classes", [{}])[0].get("price", 850)
-    elif matched_res.get("providers"):
-        price_val = matched_res.get("providers")[0].get("price", 5000)
-    else:
-        price_val = 1500
+    price_val = _extract_provider_price(service_type, matched_res)
+    if price_val is None:
+        return _estimator_fallback_result(service_type, destination)
 
-    from apps.reference.models import AirportRoute, TrainRoute, BusRoute, HotelMaster, City
+    source = matched_res.get("source") or matched_res.get("provenance", {}).get("source")
+    is_live_price = bool(
+        getattr(settings, "LIVE_PROVIDERS_ENABLED", False)
+        and (
+            source == "live_inventory"
+            or matched_res.get("provenance", {}).get("is_live") is True
+        )
+    )
+    tier = "verified" if is_live_price else "estimated"
+    classification = "cached_live_response" if is_live_price else "mock_data"
 
-    fk_params = {}
-    if service_type == "flight":
-        fk_params["airport_route"] = AirportRoute.objects.filter(
-            airline__name__icontains=matched_res.get("title")).first()
-    elif service_type == "train":
-        fk_params["train_route"] = TrainRoute.objects.filter(
-            train_number=matched_res.get("code")).first()
-    elif service_type == "bus":
-        fk_params["bus_route"] = BusRoute.objects.filter(
-            operator_name__icontains=matched_res.get("title")).first()
-    elif service_type == "hotel":
-        fk_params["hotel"] = HotelMaster.objects.filter(
-            name__icontains=matched_res.get("title")).first()
-    elif service_type == "cab":
-        fk_params["city"] = City.objects.filter(name__icontains=origin).first()
+    fk_params = _resolve_observation_fk(service_type, matched_res, origin=origin)
 
     try:
         price_record = TravelPriceHistory.objects.create(
@@ -195,14 +324,23 @@ def lookup_live_price(service_type, date_str, provider="", code="", origin="", d
             provider=matched_res.get("title", provider or "Provider"),
             code=matched_res.get("code", code or "Code"),
             details=matched_res.get("meta", {}),
-            provenance_tier="verified",
+            provenance_tier=tier,
+            classification=classification,
             **fk_params,
         )
     except Exception as exc:
         print(f"Failed to cache live price record: {exc}")
         return None
 
+    # Phase 5: the observation this history row's price is based on — a
+    # separate write (TravelPriceObservation feeds the rollup/benchmark
+    # ladder; TravelPriceHistory is the display-facing cache) rather than
+    # reusing one row for both purposes.
+    record_price_observation(service_type, matched_res, params={"origin": origin})
+
     return _result_from_record(
-        service_type, price_record, "verified",
-        basis="live provider lookup",
+        service_type,
+        price_record,
+        tier,
+        basis="live provider lookup" if is_live_price else "mock inventory estimate",
     )

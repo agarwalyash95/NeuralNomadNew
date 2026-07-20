@@ -1,0 +1,41 @@
+{
+  "cities": {
+    "total": 15395,
+    "publishable": 15123,
+    "missing_coordinates": 2,
+    "placeholder_coordinates": 270,
+    "non_publishable": 272,
+    "publishable_placeholder_coordinates": 0
+  },
+  "railway_stations": {
+    "total": 9011,
+    "coordinates_complete": 8697,
+    "missing_coordinates": 314,
+    "non_publishable": 314,
+    "coordinate_coverage": 0.965154
+  },
+  "other_non_publishable_counts": {
+    "airports": 0,
+    "bus_stations": 0,
+    "metro_stations": 0,
+    "hotels": 0,
+    "restaurants": 0,
+    "attractions": 0,
+    "activities": 0
+  },
+  "report_1_missing_by_state": {
+    "(no state — AW)": {"cities": 1},
+    "(no state — IN)": {"cities": 1, "railway_stations": 314}
+  },
+  "report_2_placeholder_by_state": {
+    "(no state — IN)": {"cities": 270}
+  },
+  "report_9_non_publishable_by_state": {
+    "(no state — AW)": {"cities": 1},
+    "(no state — IN)": {"cities": 271, "railway_stations": 314}
+  },
+  "full_reason_coded_rows": 586,
+  "reason_counts": {"no_coords": 316, "placeholder": 270},
+  "out_of_range_coordinates": 0,
+  "country_bbox_status": "deferred because no approved country-bbox registry exists before Phase 3"
+}

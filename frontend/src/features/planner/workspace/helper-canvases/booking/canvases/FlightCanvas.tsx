@@ -17,6 +17,7 @@ import { useTransportPreference } from '@/features/planner/hooks/usePlannerQueri
 import { CanvasErrorCard, classifyFetchErrorVariant, type CanvasErrorVariant } from '../../shared/CanvasErrorCard';
 import { LiveSearchProgress, LiveResultsBadge, useLiveSearchPhases, useTierEscalation } from '../../shared/LiveSearchProgress';
 import FlightCardSkeleton from './FlightCardSkeleton';
+import SampleInventoryBanner from '../SampleInventoryBanner';
 
 const FLIGHT_SEARCH_PHASES = [
   { key: 'search', label: 'Searching flight inventory' },
@@ -181,8 +182,9 @@ export default function FlightCanvas({ onClose, tripContext, onAddToPlan }: Flig
           seats,
           baggage,
           meal: meal ? ['Meal'] : [],
-          amenities: meal ? ['WiFi', 'Meal'] : ['WiFi'],
+          amenities: flight.meta?.amenities || [],
           provenance,
+          source: flight.source,
         };
       });
       setResults(mapped);
@@ -268,6 +270,7 @@ export default function FlightCanvas({ onClose, tripContext, onAddToPlan }: Flig
         tripContext={tripContext}
         onClose={onClose}
       />
+      {results.some((result: any) => result.source === 'mock_inventory') && <SampleInventoryBanner />}
       <CurrentlyBookedCard tripContext={tripContext} nodeType="flight" />
 
       <div className="custom-scrollbar flex-1 overflow-y-auto">

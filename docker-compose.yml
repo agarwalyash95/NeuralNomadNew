@@ -152,6 +152,14 @@ services:
       - frontend_next:/app/.next
     environment:
       NEXT_PUBLIC_IMAGES_UNOPTIMIZED: "1"
+      # Docker Desktop on Windows often doesn't propagate native filesystem
+      # change events for bind-mounted directories into the Linux container,
+      # so webpack/chokidar's default watcher never sees host-side edits and
+      # HMR silently stops firing (the dev server keeps running, but source
+      # changes never rebuild). Polling sidesteps that by checking file
+      # mtimes instead of relying on inotify across the VM boundary.
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
     command: sh -c "npm install && npm run dev"
     ports:
       - "3000:3000"

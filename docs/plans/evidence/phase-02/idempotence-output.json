@@ -1,0 +1,10 @@
+{
+  "mode": "post_apply_dry_run",
+  "source": "auto --skip-network",
+  "stations_proposed": 0,
+  "city_coordinates_proposed": 0,
+  "publishability_changes_proposed": 0,
+  "paid_api_calls": 0,
+  "legacy_google_preview_calls": 0,
+  "legacy_google_preview_updates": 0
+}

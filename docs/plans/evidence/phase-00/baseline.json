@@ -1,0 +1,89 @@
+{
+  "repository_root": "D:\\Projects\\NeuralNomad",
+  "captured_on": "2026-07-19 Asia/Calcutta",
+  "table_counts": {
+    "reference": {
+      "reference_activitymaster": 356,
+      "reference_airline": 0,
+      "reference_airport": 7063,
+      "reference_airportroute": 0,
+      "reference_airportservicearea": 47291,
+      "reference_attractionmaster": 441,
+      "reference_busroute": 0,
+      "reference_busstation": 0,
+      "reference_busstationservicearea": 0,
+      "reference_city": 15395,
+      "reference_cityalias": 0,
+      "reference_country": 250,
+      "reference_holidaycalendar": 0,
+      "reference_hotelmaster": 388,
+      "reference_hotelroomtier": 0,
+      "reference_locality": 0,
+      "reference_localityalias": 0,
+      "reference_metroarea": 0,
+      "reference_metroareaalias": 0,
+      "reference_metroareacity": 0,
+      "reference_metrostation": 0,
+      "reference_railwaystation": 9011,
+      "reference_railwaystationservicearea": 614260,
+      "reference_referencefieldprovenance": 0,
+      "reference_restaurantmaster": 461,
+      "reference_state": 1976,
+      "reference_trainroute": 0,
+      "reference_transferprofile": 0,
+      "reference_travelpricehistory": 123,
+      "reference_travelpriceobservation": 0,
+      "reference_travelpricesummary": 0,
+      "reference_travelseason": 144,
+      "reference_weathernormals": 144
+    },
+    "knowledge": {
+      "knowledge_crowdpattern": 0,
+      "knowledge_distanceedge": 824,
+      "knowledge_emergencycontact": 0,
+      "knowledge_entityembedding": 42,
+      "knowledge_entityinteractionlog": 0,
+      "knowledge_event": 0,
+      "knowledge_localtip": 74,
+      "knowledge_neighbourhood": 0,
+      "knowledge_placeinsight": 1089,
+      "knowledge_placerelationship": 0,
+      "knowledge_planinsightdismissal": 24,
+      "knowledge_safetyadvisory": 0,
+      "knowledge_transitoutcomelog": 0
+    },
+    "planner": {
+      "planner_block_commitment": 0,
+      "planner_chat_message": 624,
+      "planner_generation_job": 51,
+      "planner_journey_route_cache": 0,
+      "planner_plan_proposal": 38,
+      "planner_price_watch": 0,
+      "planner_question_bank": 190,
+      "planner_traveler_profile": 3,
+      "planner_trip": 44,
+      "planner_trip_draft_state": 60,
+      "planner_trip_original": 44,
+      "planner_workspace": 60
+    }
+  },
+  "coordinates": {
+    "cities_total": 15395,
+    "cities_missing": 2,
+    "cities_at_india_centroid": 8634,
+    "railway_stations_total": 9011,
+    "railway_stations_missing": 314
+  },
+  "likely_poisoned_price_history": {
+    "signature": "verified tier and exact price in [850, 1500, 5000]",
+    "count": 0
+  },
+  "performance": {
+    "direct_route_lookup": {"model": null, "runs": 0, "reason": "no route rows"},
+    "nearby_hub_lookup": {"model": "reference.RailwayStationServiceArea", "runs": 25, "median_ms": 2.101, "p95_ms": 3.45, "max_ms": 12.825}
+  },
+  "external_calls_per_generation": {
+    "jobs_sampled": 50,
+    "result": "usage records did not expose ai_calls, provider_calls, or external_calls fields"
+  }
+}

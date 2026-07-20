@@ -38,11 +38,22 @@ export interface GenerationPhase {
 
 export interface GenerationJobStatus {
   job_id: string;
-  status: 'queued' | 'running' | 'done' | 'failed';
+  revision: number;
+  status: 'queued' | 'running' | 'done' | 'failed' | 'needs_input';
   phase: string;
   progress: number;
   phases: GenerationPhase[];
   error: string | null;
+  /** True when `status === 'done'` is the curated fallback plan (the AI
+   * pipeline failed and a non-AI plan was built instead), not a real
+   * AI-composed success. */
+  degraded: boolean;
+  input_revision?: number;
+  input_hash?: string;
+  quality_state?: 'strong' | 'review_recommended' | 'blocked' | null;
+  refinement_status?: 'not_applied' | 'applied';
+  blockers?: Array<{ code?: string; detail?: string; actions?: string[]; [key: string]: unknown }>;
+  usage?: Record<string, unknown>;
 }
 
 export interface PlannerWorkspace {
@@ -57,6 +68,9 @@ export interface PlannerWorkspace {
   active_canvases: CanvasType[];
   draft_state?: TripDraftState;
   is_modified?: boolean;
+  revision: number;
+  /** Derived server-side from draft readiness, generation jobs, and trip state. */
+  planner_state?: 'collecting' | 'ready' | 'generating' | 'generated' | 'generated_degraded' | 'refining';
   /** Where this trip sits in time — server-computed */
   lifecycle?: WorkspaceLifecycle;
   /** Sidebar section — server-computed, drives sidebar grouping */
@@ -69,7 +83,11 @@ export interface TripDraftState {
   id: string;
   intent?: string;
   destination_city: string | null;
+  destination_country?: string;
   destination_text: string;
+  origin_city?: string | null;
+  origin_text?: string;
+  mobility_preferences?: Record<string, unknown>;
   start_date: string | null;
   end_date: string | null;
   adults: number;
@@ -148,6 +166,10 @@ export interface TripActivity {
   rating: number | null;
   image_url: string | null;
   ai_tip: string | null;
+  /** M5 'expert reasoning shown': the PreferenceScorer reason(s) this block
+   *  was ranked/chosen (plan_generation.py `_candidate_block`). Always
+   *  present on a generated block; absent on a manually-added one. */
+  why?: string | null;
   metadata: Record<string, unknown>;
   /** Block schema v2 — structured cost with provenance (trust grammar).
    *  Always present on reads: PlannerTripSerializer.to_representation upcasts
@@ -174,6 +196,10 @@ export interface TripActivity {
       rating: number | null;
       aiTip: string | null;
       place_id: string | null;
+      /** M5: grounded "chosen over this because..." sentence, computed at
+       *  generation time from the same PreferenceScorer reasons as `why` —
+       *  never a separate LLM call. */
+      tradeoff?: string | null;
     }[];
   } | null;
 }
@@ -251,10 +277,55 @@ export interface PlannerTrip {
   spent_budget: number;
   currency_code: string;
   metadata: Record<string, unknown>;
+  scorecard?: {
+    quality_state?: 'strong' | 'review_recommended' | 'blocked';
+    flagged_for_review?: boolean;
+    reasons?: string[];
+    /** M5 'expert reasoning shown' — set only when the LLM critic pass ran
+     *  (plan was flagged for review and the AI-call budget allowed it). */
+    critic_review?: {
+      summary: string;
+      findings: { issue: string; day_number?: number | null; severity: string }[];
+    } | null;
+    [key: string]: unknown;
+  };
   cities: TripCity[];
   days: TripDay[];
   /** Block schema version emitted by the backend (v2 = provenance-aware) */
   schema_version?: number;
+  /** Monotonic backend revision used for compare-and-swap writes. */
+  revision: number;
+}
+
+export interface JourneySegment {
+  journey_id: string;
+  segment_index: number;
+  segment_role: 'first_mile' | 'mainline' | 'last_mile';
+  mode: string;
+  origin: string;
+  destination: string;
+  booking_availability: 'available' | 'limited' | 'unavailable' | 'unverified';
+  provenance: 'live_provider' | 'cached_provider' | 'verified_database' | 'estimated' | 'ai_recommended' | 'fallback';
+  freshness: 'live' | 'fresh' | 'stale' | 'unknown';
+  [key: string]: unknown;
+}
+
+export interface JourneyOption {
+  id: string;
+  mode: string;
+  feasible: boolean;
+  recommended: boolean;
+  requires_verification: boolean;
+  planning_suitability: { score: number; reasons: string[] };
+  booking_availability: 'available' | 'limited' | 'unavailable' | 'unverified';
+  segments: JourneySegment[];
+  [key: string]: unknown;
+}
+
+export interface PlanMutationResponse {
+  trip: PlannerTrip;
+  revision: number;
+  changed_sections: string[];
 }
 
 // ─── Proposals — AI proposes, the traveler decides ──
@@ -369,6 +440,21 @@ export interface TransportLegComparison {
   destination: string;
   rows: TransportLegRow[];
   recommendation: { mode: string; alternative_mode?: string; reason: string } | null;
+}
+
+// ─── Price lookup (Phase 2e, docs/planner-north-star-audit-and-vision.md) ──
+// A price check for something NOT YET in the plan (e.g. a hotel search
+// result) — mirrors the shape apps.reference.services.live_price returns.
+
+export interface PriceLookupResult {
+  status: string;
+  price: string;
+  exact_price: number;
+  provider: string;
+  code: string;
+  details: Record<string, any>;
+  provenance: { tier: string; source?: string; basis?: string; verified_at?: string };
+  price_trend: { direction: 'up' | 'down' | 'flat'; magnitude_pct: number; basis: string } | null;
 }
 
 // ─── Commitments & Ledger ──────────────────────────

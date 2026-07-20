@@ -18,12 +18,21 @@ export interface ChatStreamHandlers {
   onState?: (state: any) => void;
   onToken: (text: string) => void;
   onWidgets?: (widgets: any[]) => void;
+  /** Additive (docs/ai-chat-implementation-plan.md §3.2) — browse/live capability
+   * cards for this turn. Optional: old callers that don't pass this handler are
+   * unaffected, the event is just ignored. */
+  onCapabilities?: (capabilities: any[]) => void;
+  /** Additive — proactive +1 insights for turns where a plan already exists
+   * (docs/ai-chat-implementation-plan.md Phase 5). Optional; the existing
+   * AIInsightsPanel already surfaces the same data via REST poll, so a
+   * caller that doesn't pass this handler loses nothing. */
+  onInsights?: (insights: any[]) => void;
   onDone: (done: any) => void;
 }
 
 export async function streamChatMessage(
   workspaceId: string | null,
-  body: { message: string; structured_value?: any },
+  body: { message: string; structured_value?: any; turn_id?: string },
   handlers: ChatStreamHandlers,
   signal?: AbortSignal
 ): Promise<void> {
@@ -34,6 +43,7 @@ export async function streamChatMessage(
   const token = getAccessToken();
   const response = await fetch(url, {
     method: 'POST',
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -70,6 +80,12 @@ export async function streamChatMessage(
         break;
       case 'widgets':
         handlers.onWidgets?.(payload);
+        break;
+      case 'capabilities':
+        handlers.onCapabilities?.(payload);
+        break;
+      case 'insights':
+        handlers.onInsights?.(payload);
         break;
       case 'done':
         sawDone = true;

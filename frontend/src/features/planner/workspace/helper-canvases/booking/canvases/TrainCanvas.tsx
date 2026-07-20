@@ -16,6 +16,7 @@ import CurrentlyBookedCard from '../../shared/CurrentlyBookedCard';
 import { CanvasErrorCard, classifyFetchErrorVariant, type CanvasErrorVariant } from '../../shared/CanvasErrorCard';
 import { LiveSearchProgress, useLiveSearchPhases, useTierEscalation } from '../../shared/LiveSearchProgress';
 import TransportCardSkeleton from './TransportCardSkeleton';
+import SampleInventoryBanner from '../SampleInventoryBanner';
 
 const TRAIN_SEARCH_PHASES = [
   { key: 'search', label: 'Searching train inventory' },
@@ -125,7 +126,8 @@ export default function TrainCanvas({ onClose, tripContext, onAddToPlan }: Train
           duration: train.duration || null,
           classes,
           price,
-          availability: baseClass.availability || 'Available',
+          availability: baseClass.availability || 'Availability unknown',
+          source: train.source,
         };
       });
       setResults(mapped);
@@ -183,6 +185,7 @@ export default function TrainCanvas({ onClose, tripContext, onAddToPlan }: Train
   return (
     <div className="flex h-full flex-col bg-paper-1">
       <CanvasHeader icon={<TrainFront size={18} />} iconColor="bg-blue-700" label="Trains" title={searchSummary} tripContext={tripContext} onClose={onClose} />
+      {results.some((result: any) => result.source === 'mock_inventory') && <SampleInventoryBanner />}
       <CurrentlyBookedCard tripContext={tripContext} nodeType="train" />
       <div className="custom-scrollbar flex-1 overflow-y-auto">
         {!isSearchExpanded && (

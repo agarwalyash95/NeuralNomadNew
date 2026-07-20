@@ -1,78 +1,7 @@
 import React, { useState } from 'react';
 import { Sparkles, MapPin, Check } from 'lucide-react';
 import type { WidgetData } from '@/services/planner.types';
-
-const CURRENCY_CONFIGS: Record<string, { min: number; max: number; step: number; defaultValue: number; budgetThreshold: number; midThreshold: number }> = {
-  USD: { min: 200, max: 10000, step: 100, defaultValue: 2000, budgetThreshold: 1000, midThreshold: 3000 },
-  EUR: { min: 200, max: 10000, step: 100, defaultValue: 2000, budgetThreshold: 1000, midThreshold: 3000 },
-  GBP: { min: 150, max: 8000, step: 100, defaultValue: 1500, budgetThreshold: 800, midThreshold: 2400 },
-  INR: { min: 15000, max: 800000, step: 5000, defaultValue: 150000, budgetThreshold: 75000, midThreshold: 220000 },
-  JPY: { min: 30000, max: 1500000, step: 10000, defaultValue: 300000, budgetThreshold: 150000, midThreshold: 450000 },
-};
-
-function getLocalCurrency() {
-  if (typeof window === 'undefined') return { code: 'USD', symbol: '$' };
-  let code = 'USD';
-  const locale = navigator.language || 'en-US';
-  try {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    if (tz?.includes('Kolkata') || tz?.includes('Calcutta')) code = 'INR';
-    else if (locale.endsWith('-IN') || locale.startsWith('hi')) code = 'INR';
-    else if (locale.endsWith('-GB') || tz?.includes('Europe/London')) code = 'GBP';
-    else if (locale.endsWith('-JP') || locale.startsWith('ja')) code = 'JPY';
-    else {
-      const euroLocales = ['de', 'fr', 'es', 'it', 'nl', 'be', 'at', 'fi', 'ie', 'pt', 'gr'];
-      if (euroLocales.some(el => locale.startsWith(el))) code = 'EUR';
-    }
-  } catch { /* noop */ }
-
-  let symbol = '$';
-  try {
-    const parts = new Intl.NumberFormat(undefined, { style: 'currency', currency: code }).formatToParts(1);
-    symbol = parts.find(p => p.type === 'currency')?.value ?? symbol;
-  } catch {
-    if (code === 'INR') symbol = '₹';
-    else if (code === 'GBP') symbol = '£';
-    else if (code === 'JPY') symbol = '¥';
-    else if (code === 'EUR') symbol = '€';
-  }
-  return { code, symbol };
-}
-
-function getBudgetTier(val: number, code: string) {
-  const conf = (CURRENCY_CONFIGS[code] || CURRENCY_CONFIGS.USD) as NonNullable<typeof CURRENCY_CONFIGS[string]>;
-  if (val < conf.budgetThreshold) return 'budget';
-  if (val < conf.midThreshold) return 'mid_range';
-  return 'premium';
-}
-
-const FIELD_OPTIONS: Record<string, string[]> = {
-  flight_class: ['Economy', 'Premium Economy', 'Business', 'First Class'],
-  train_class: ['Sleeper', '3rd AC', '2nd AC', '1st AC', 'Chair Car'],
-  cabin_class: ['Interior', 'Oceanview', 'Balcony', 'Suite'],
-  car_type: ['Hatchback', 'Sedan', 'SUV', 'Luxury'],
-  vehicle_type: ['Hatchback', 'Sedan', 'SUV', 'Luxury'],
-  bus_type: ['AC Sleeper', 'Non-AC Sleeper', 'AC Seater', 'Volvo'],
-  time_window: ['Morning', 'Afternoon', 'Evening', 'Night'],
-  preferred_mode: ['Flight', 'Train', 'Bus', 'Cab', 'Mixed'],
-  star_rating: ['3 Star', '4 Star', '5 Star', 'Luxury Resort'],
-  meal_type: ['Breakfast Included', 'Half Board', 'All Inclusive'],
-  cuisine: ['Local', 'North Indian', 'South Indian', 'Asian', 'Continental'],
-  trip_pace: ['Relaxed', 'Balanced', 'Fast-Paced'],
-  stay_amenities: ['Pool', 'Spa & Wellness', 'Free Breakfast', 'Beachfront', 'Gym'],
-  property_type: ['Hotel', 'Resort', 'Villa', 'Boutique Stay'],
-  non_stop: ['Direct Only', 'Any Flight'],
-  tatkal: ['Standard Booking', 'Tatkal / Urgent'],
-  meal_preference: ['Veg', 'Non-Veg', 'Jain'],
-  journey_timing: ['Day Journey', 'Overnight'],
-  return_trip: ['One Way', 'Round Trip'],
-  transmission: ['Automatic', 'Manual'],
-  priority: ['Cheapest', 'Fastest Route', 'Max Comfort'],
-  intensity_level: ['Light & Easy', 'Moderate', 'Action-Packed'],
-  dining_package: ['Standard Dining', 'Gourmet Package', 'Chef Table'],
-  dietary: ['Vegetarian', 'Vegan', 'Jain', 'Halal', 'No Restrictions'],
-  ambiance: ['Romantic', 'Family Friendly', 'Fine Dining', 'Casual Vibes'],
-};
+import { CURRENCY_CONFIGS, getLocalCurrency, getBudgetTier, FIELD_OPTIONS } from './fieldOptions';
 
 interface OptionalDetailsWidgetProps {
   widget: WidgetData;
@@ -220,13 +149,13 @@ export function OptionalDetailsWidget({ widget, onSubmit }: OptionalDetailsWidge
         <div className="flex items-center gap-3">
           <button
             onClick={handleSkipAll}
-            className="text-xs font-extrabold text-[rgb(var(--color-ai))] hover:opacity-80 transition-opacity cursor-pointer"
+            className="text-xs font-extrabold text-ink-900 hover:opacity-80 transition-opacity cursor-pointer"
           >
             ⚡ Skip All & Build Plan
           </button>
           <button
             onClick={handleNext}
-            className="rounded-lg bg-[rgb(var(--color-ai))] px-4 py-1.5 text-xs font-bold text-white transition-all hover:bg-violet-700 cursor-pointer"
+            className="rounded-lg bg-ink-900 px-4 py-1.5 text-xs font-bold text-white transition-all hover:bg-violet-700 cursor-pointer"
           >
             Next Step
           </button>
@@ -244,7 +173,7 @@ export function OptionalDetailsWidget({ widget, onSubmit }: OptionalDetailsWidge
           <div>
             <label className="text-[11px] font-semibold uppercase text-ink-500 flex justify-between">
               <span>Trip Purpose</span>
-              {prefilled.visit_purpose && <span className="text-[9px] text-[rgb(var(--color-ai))] flex items-center gap-0.5"><Sparkles size={8}/> AI Detected</span>}
+              {prefilled.visit_purpose && <span className="text-[9px] text-ink-900 flex items-center gap-0.5"><Sparkles size={8}/> AI Detected</span>}
             </label>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {['Vacation', 'Business', 'Hometown', 'Family', 'Honeymoon', 'Solo'].map(p => (
@@ -252,7 +181,7 @@ export function OptionalDetailsWidget({ widget, onSubmit }: OptionalDetailsWidge
                   key={p}
                   onClick={() => { setVisitPurpose(p.toLowerCase()); setTimeout(handleNext, 150); }}
                   className={`rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-all border flex items-center gap-1 ${
-                    visitPurpose === p.toLowerCase() ? 'bg-[rgb(var(--color-ai))] text-white border-transparent' : 'bg-paper-0 text-ink-600 border-line hover:bg-paper-1'
+                    visitPurpose === p.toLowerCase() ? 'bg-ink-900 text-white border-transparent' : 'bg-paper-0 text-ink-600 border-line hover:bg-paper-1'
                   }`}
                 >
                   {p}
@@ -279,12 +208,12 @@ export function OptionalDetailsWidget({ widget, onSubmit }: OptionalDetailsWidge
           <div>
             <label className="text-[11px] font-semibold uppercase text-ink-500 flex justify-between">
               <span>Trip Budget</span>
-              {prefilled.recommended_budget_inr && <span className="text-[9px] text-[rgb(var(--color-ai))] flex items-center gap-0.5"><Sparkles size={8}/> Recommended</span>}
+              {prefilled.recommended_budget_inr && <span className="text-[9px] text-ink-900 flex items-center gap-0.5"><Sparkles size={8}/> Recommended</span>}
             </label>
-            <div className="mt-2 text-sm font-bold text-[rgb(var(--color-ai))]">
+            <div className="mt-2 text-sm font-bold text-ink-900">
               {currencySymbol}{new Intl.NumberFormat(undefined).format(budgetVal)}
             </div>
-            <input type="range" min={config.min} max={config.max} step={config.step} value={budgetVal} onChange={(e) => setBudgetVal(Number(e.target.value))} className="mt-2 w-full h-1.5 cursor-pointer appearance-none rounded-lg bg-paper-0 accent-[rgb(var(--color-ai))]" />
+            <input type="range" min={config.min} max={config.max} step={config.step} value={budgetVal} onChange={(e) => setBudgetVal(Number(e.target.value))} className="mt-2 w-full h-1.5 cursor-pointer appearance-none rounded-lg bg-paper-0 accent-ink-900" />
             {nextBtn}
           </div>
         )}
@@ -309,7 +238,7 @@ export function OptionalDetailsWidget({ widget, onSubmit }: OptionalDetailsWidge
                 return (
                   <button key={i} onClick={() => {
                     setInterests(prev => isSel ? prev.filter(x => x !== i.toLowerCase()) : [...prev, i.toLowerCase()]);
-                  }} className={`rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-all border ${isSel ? 'bg-[rgb(var(--color-ai))] text-white border-transparent' : 'bg-paper-0 text-ink-600 border-line hover:bg-paper-1'}`}>
+                  }} className={`rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-all border ${isSel ? 'bg-ink-900 text-white border-transparent' : 'bg-paper-0 text-ink-600 border-line hover:bg-paper-1'}`}>
                     {i}
                   </button>
                 )
@@ -324,14 +253,14 @@ export function OptionalDetailsWidget({ widget, onSubmit }: OptionalDetailsWidge
           <div>
             <label className="text-[11px] font-semibold uppercase text-ink-500 flex justify-between">
               <span>{field.replace('_', ' ')}</span>
-              {prefilled[field] && <span className="text-[9px] text-[rgb(var(--color-ai))] flex items-center gap-0.5"><Sparkles size={8}/> Recommended</span>}
+              {prefilled[field] && <span className="text-[9px] text-ink-900 flex items-center gap-0.5"><Sparkles size={8}/> Recommended</span>}
             </label>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {options.map(opt => (
                 <button
                   key={opt}
                   onClick={() => { setChipVal(field, opt); setTimeout(handleNext, 150); }}
-                  className={`rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-all border ${currentVal === opt ? 'bg-[rgb(var(--color-ai))] text-white border-transparent' : 'bg-paper-0 text-ink-600 border-line hover:bg-paper-1'}`}
+                  className={`rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-all border ${currentVal === opt ? 'bg-ink-900 text-white border-transparent' : 'bg-paper-0 text-ink-600 border-line hover:bg-paper-1'}`}
                 >
                   {opt}
                 </button>
@@ -348,13 +277,13 @@ export function OptionalDetailsWidget({ widget, onSubmit }: OptionalDetailsWidge
     <div className="mr-auto mt-2 flex w-full max-w-sm flex-col gap-3 rounded-2xl border border-line-strong bg-paper-2 p-4 shadow-surface animate-fade-in">
       <div className="flex items-center justify-between border-b border-line pb-2">
         <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-ink-500">
-          <Sparkles size={14} className="text-[rgb(var(--color-ai))] motion-safe:animate-pulse" />
+          <Sparkles size={14} className="text-ink-900 motion-safe:animate-pulse" />
           <span>Fine-tuning your trip</span>
         </div>
         <div className="flex flex-col items-end gap-1">
-          <span className="text-[10px] font-bold text-[rgb(var(--color-ai))] uppercase tracking-wider">AI Confidence {confidenceScore}%</span>
+          <span className="text-[10px] font-bold text-ink-900 uppercase tracking-wider">AI Confidence {confidenceScore}%</span>
           <div className="w-20 bg-paper-0 rounded-full h-1.5 overflow-hidden">
-            <div className="bg-gradient-to-r from-[rgb(var(--color-ai))] to-violet-700 h-1.5 rounded-full transition-all duration-700 ease-out" style={{ width: `${confidenceScore}%` }} />
+            <div className="bg-gradient-to-r from-ink-900 to-violet-700 h-1.5 rounded-full transition-all duration-700 ease-out" style={{ width: `${confidenceScore}%` }} />
           </div>
         </div>
       </div>

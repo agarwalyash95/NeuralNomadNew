@@ -1,0 +1,15 @@
+Phase 02 migration: reference.0013_phase2_geospatial_foundation
+
+Applied successfully:
+- City.coordinate_confidence (nullable float, 0..1 validators)
+- City.is_publishable (indexed boolean)
+- MetroStation.latitude / longitude (nullable Decimal 9,6)
+- 8 composite latitude/longitude indexes
+
+Post-apply `python manage.py makemigrations --check --dry-run`:
+No changes detected.
+
+Post-apply `python manage.py migrate --plan`:
+No planned migration operations.
+
+No in-migration data write exists.

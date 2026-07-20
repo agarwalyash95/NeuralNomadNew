@@ -18,6 +18,7 @@ import AttractionDetailPanel from './AttractionDetailPanel';
 import ActivitySuggestionCard from './ActivitySuggestionCard';
 import ActivityDetailPanel from './ActivityDetailPanel';
 import AttractionCardSkeleton from './AttractionCardSkeleton';
+import SightCompareTray from './SightCompareTray';
 
 import { getAttractionRecommendations } from './services/sightRecommendationEngine';
 import { getActivityRecommendations } from './services/activityRecommendationEngine';
@@ -233,6 +234,19 @@ export default function AttractionsCanvas({ onClose, tripContext, onAddToPlan }:
   const handleCompareActivityToggle = (id: number) => {
     setComparedActivityIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : prev.length >= 3 ? prev : [...prev, id]));
   };
+
+  // Phase 2b (docs/planner-north-star-audit-and-vision.md) — comparedAttractionIds/
+  // comparedActivityIds were already tracked, and isCompared/onCompareToggle were
+  // already threaded into the detail panels, but SightCompareTray itself was
+  // never mounted anywhere: a user could pin places and never see a comparison.
+  const comparedAttractions = useMemo(
+    () => comparedAttractionIds.map((id) => attractionRecommendations.find((r) => r.suggestion.id === id)).filter((r): r is NonNullable<typeof r> => Boolean(r)),
+    [comparedAttractionIds, attractionRecommendations],
+  );
+  const comparedActivities = useMemo(
+    () => comparedActivityIds.map((id) => activityRecommendations.find((r) => r.suggestion.id === id)).filter((r): r is NonNullable<typeof r> => Boolean(r)),
+    [comparedActivityIds, activityRecommendations],
+  );
 
   const handleAIActionToggle = (action: AnyActionId) => {
     setActiveAIAction((prev) => (prev === action ? null : action));
@@ -453,6 +467,8 @@ export default function AttractionsCanvas({ onClose, tripContext, onAddToPlan }:
                       onSelect={() => handleSelectRecommendation(rec.suggestion.id)}
                       onAdd={() => handleSelect(rec.suggestion)}
                       tripContext={tripContext}
+                      isPinned={comparedAttractionIds.includes(rec.suggestion.id)}
+                      onTogglePin={() => handleCompareAttractionToggle(rec.suggestion.id)}
                     />
                   ))}
                   {activeTab === 'activities' && refinedActivities.map((rec) => (
@@ -463,6 +479,8 @@ export default function AttractionsCanvas({ onClose, tripContext, onAddToPlan }:
                       onSelect={() => handleSelectRecommendation(rec.suggestion.id)}
                       onAdd={() => handleSelect(rec.suggestion)}
                       tripContext={tripContext}
+                      isPinned={comparedActivityIds.includes(rec.suggestion.id)}
+                      onTogglePin={() => handleCompareActivityToggle(rec.suggestion.id)}
                     />
                   ))}
                 </div>
@@ -478,6 +496,15 @@ export default function AttractionsCanvas({ onClose, tripContext, onAddToPlan }:
               </div>
             )}
 
+            <SightCompareTray
+              activeTab={activeTab}
+              comparedAttractions={comparedAttractions}
+              comparedActivities={comparedActivities}
+              onRemoveAttraction={handleCompareAttractionToggle}
+              onRemoveActivity={handleCompareActivityToggle}
+              onSelectAttraction={(s) => handleSelect(s)}
+              onSelectActivity={(s) => handleSelect(s)}
+            />
           </motion.div>
         ) : (
           <motion.div

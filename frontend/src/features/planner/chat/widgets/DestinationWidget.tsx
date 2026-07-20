@@ -1,124 +1,149 @@
-import React, { useState } from 'react';
-import { Search, MapPin, Sparkles } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { MapPin } from 'lucide-react';
 import type { WidgetData } from '@/services/planner.types';
+import { WidgetContainer } from './shared/WidgetContainer';
+import { referenceService } from '@/services/reference.service';
 
-const POPULAR_DESTINATIONS = [
-  'Paris', 'Tokyo', 'Bali', 'Dubai', 'New York', 'Singapore',
-  'London', 'Rome', 'Bangkok', 'Goa',
+const QUICK_PICKS = ['Goa', 'Manali', 'Jaipur', 'Bali', 'Dubai', 'Bangkok', 'Kerala', 'Ladakh'];
+
+const ALL_DESTINATIONS = [
+  'Goa', 'Manali', 'Jaipur', 'Kerala', 'Ladakh', 'Shimla', 'Andaman', 'Rishikesh',
+  'Varanasi', 'Coorg', 'Dubai', 'Bangkok', 'Bali', 'Singapore', 'Paris', 'Tokyo',
+  'Maldives', 'Darjeeling', 'Mussoorie', 'Agra', 'Hampi', 'London', 'New York',
 ];
 
 interface DestinationWidgetProps {
   widget: WidgetData;
   onSubmit: (message: string, structuredValue: any) => void;
+  isCompleted?: boolean;
 }
 
-export function DestinationWidget({ onSubmit, widget }: DestinationWidgetProps) {
-  const [city, setCity] = useState('');
+export function DestinationWidget({ onSubmit, widget, isCompleted }: DestinationWidgetProps) {
+  const data = widget.data || {};
+  const intent = (data.intent as string) || 'full_trip';
+  const prefilledDestination = (data.current_destination as string) || '';
+  const prefilledOrigin = (data.current_origin as string) || '';
+  const requiresOrigin = ['flight_only', 'train_only', 'bus_only', 'cab_only'].includes(intent);
+
+  const [destination, setDestination] = useState(prefilledDestination);
+  const [origin, setOrigin] = useState(prefilledOrigin);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const intent = (widget?.data?.intent as string) || 'full_trip';
+  const [citySuggestions, setCitySuggestions] = useState<string[]>([]);
 
-  let title = 'Select Destination';
-  let placeholder = 'e.g. Paris, Tokyo, Bali...';
-  let messagePrefix = 'I want to go to';
+  useEffect(() => {
+    if (!isCompleted) {
+      if (prefilledDestination) setDestination(prefilledDestination);
+      if (prefilledOrigin) setOrigin(prefilledOrigin);
+    }
+  }, [prefilledDestination, prefilledOrigin, isCompleted]);
 
-  if (intent === 'flight_only') {
-    title = 'Arrival Airport / City';
-    placeholder = 'e.g. Mumbai, London, Dubai...';
-    messagePrefix = 'Book a flight to';
-  } else if (intent === 'train_only') {
-    title = 'Destination Station / City';
-    placeholder = 'e.g. Delhi, Mumbai, Patna...';
-    messagePrefix = 'Book a train to';
-  } else if (intent === 'bus_only') {
-    title = 'Bus Destination';
-    placeholder = 'e.g. Manali, Shimla, Jaipur...';
-    messagePrefix = 'Book a bus to';
-  } else if (intent === 'cab_only') {
-    title = 'Drop Location';
-    placeholder = 'e.g. Airport, Hotel, City...';
-    messagePrefix = 'Book a cab to';
-  } else if (intent === 'hotel_only') {
-    title = 'Hotel / Stay Location';
-    placeholder = 'e.g. Goa, Paris, Maldives...';
-    messagePrefix = 'Find hotels in';
-  }
+  useEffect(() => {
+    const query = destination.trim();
+    if (query.length < 2 || isCompleted) {
+      setCitySuggestions([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const cities = await referenceService.searchCities(query);
+        if (!cancelled) setCitySuggestions(cities.slice(0, 6).map(city => `${city.name}${city.country_name ? `, ${city.country_name}` : ''}`));
+      } catch {
+        if (!cancelled) setCitySuggestions([]);
+      }
+    }, 200);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [destination, isCompleted]);
 
-  const filtered = city.trim().length > 0
-    ? POPULAR_DESTINATIONS.filter(d => d.toLowerCase().startsWith(city.toLowerCase()))
-    : [];
+  const filtered = citySuggestions.length > 0
+    ? citySuggestions
+    : destination.trim().length > 1
+      ? ALL_DESTINATIONS.filter(d => d.toLowerCase().includes(destination.toLowerCase())).slice(0, 5)
+      : [];
 
-  const handleSelect = (e?: React.FormEvent, selectedCity?: string) => {
-    e?.preventDefault();
-    const dest = selectedCity ?? city.trim();
-    if (!dest) return;
-    setShowSuggestions(false);
-    onSubmit(`${messagePrefix} ${dest}`, {
-      field: 'destination',
-      value: { name: dest },
+  const intentTitles: Record<string, string> = {
+    flight_only: 'Flight Route',
+    train_only: 'Train Route',
+    bus_only: 'Bus Route',
+    cab_only: 'Cab Route',
+    hotel_only: 'Hotel Location',
+  };
+  const title = intentTitles[intent] || 'Where to?';
+
+  const handleConfirm = () => {
+    if (!destination.trim()) return;
+    if (requiresOrigin && !origin.trim()) return;
+    const msg = origin.trim()
+      ? `I want to go to ${destination.trim()} from ${origin.trim()}`
+      : `I want to go to ${destination.trim()}`;
+    onSubmit(msg, {
+      field: 'destination_submit',
+      value: { destination: destination.trim(), origin: origin.trim() || undefined },
     });
   };
 
-  return (
-    <form
-      onSubmit={handleSelect}
-      className="mr-auto mt-2 flex w-full max-w-sm flex-col gap-2 rounded-2xl border border-line-strong bg-paper-2 p-3 shadow-surface"
-    >
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold uppercase tracking-wider text-ink-500">{title}</p>
-        <span className="flex items-center gap-1 rounded-full bg-[rgb(var(--color-ai)/0.08)] px-2 py-0.5 text-[10px] font-bold text-[rgb(var(--color-ai))]">
-          <Sparkles size={10} /> AI Analyzing
-        </span>
-      </div>
+  const summaryNode = <span className="font-semibold text-ink-800">{origin ? `${origin} → ${destination}` : destination}</span>;
 
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" size={16} />
+  return (
+    <WidgetContainer
+      header={{ icon: <MapPin size={13} />, title }}
+      isCompleted={isCompleted}
+      summaryNode={summaryNode}
+      onConfirm={destination.trim() && (!requiresOrigin || origin.trim()) ? handleConfirm : undefined}
+    >
+      {/* Input row */}
+      <div className="relative flex items-center gap-2 rounded-xl border border-line bg-paper-0 px-3 py-2 focus-within:border-ink-900 transition-colors">
+        {requiresOrigin && (
+          <>
+            <input
+              value={origin}
+              onChange={e => setOrigin(e.target.value)}
+              placeholder="From"
+              className="w-0 flex-1 border-none bg-transparent text-xs font-semibold text-ink-800 placeholder:text-ink-400 focus:outline-none"
+            />
+            <span className="text-ink-300">→</span>
+          </>
+        )}
         <input
-          autoFocus
-          value={city}
-          onChange={(e) => { setCity(e.target.value); setShowSuggestions(true); }}
+          autoFocus={!prefilledDestination}
+          value={destination}
+          onChange={e => { setDestination(e.target.value); setShowSuggestions(true); }}
           onFocus={() => setShowSuggestions(true)}
           onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-          placeholder={placeholder}
-          className="w-full rounded-xl border border-line bg-paper-2 py-2 pl-9 pr-4 text-sm text-ink-800 placeholder:text-ink-400 shadow-surface focus:border-[rgb(var(--color-ai))] focus:outline-none focus:ring-2 focus:ring-[rgb(var(--color-ai)/0.2)]"
+          placeholder={requiresOrigin ? 'To' : 'City, country or region…'}
+          className="w-0 flex-1 border-none bg-transparent text-xs font-semibold text-ink-800 placeholder:text-ink-400 focus:outline-none"
         />
         {showSuggestions && filtered.length > 0 && (
-          <div className="absolute z-10 mt-1 w-full rounded-xl border border-line bg-paper-2 shadow-modal overflow-hidden">
-            {filtered.slice(0, 5).map((dest) => (
+          <div className="absolute left-0 right-0 top-full z-10 mt-1 overflow-hidden rounded-xl border border-line bg-paper-2 shadow-lg">
+            {filtered.map(dest => (
               <button
                 key={dest}
                 type="button"
-                onMouseDown={() => handleSelect(undefined, dest)}
-                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-ink-700 hover:bg-[rgb(var(--color-ai)/0.08)] hover:text-[rgb(var(--color-ai))] transition-colors"
+                onMouseDown={e => { e.preventDefault(); setDestination(dest); setShowSuggestions(false); }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-ink-700 hover:bg-paper-1 transition-colors"
               >
-                <MapPin size={13} className="text-ink-400" /> {dest}
+                <MapPin size={11} className="text-ink-400" /> {dest}
               </button>
             ))}
           </div>
         )}
       </div>
 
-      {city.trim().length === 0 && (
+      {/* Quick picks — only when empty */}
+      {!destination.trim() && (
         <div className="flex flex-wrap gap-1.5">
-          {POPULAR_DESTINATIONS.slice(0, 6).map((dest) => (
+          {QUICK_PICKS.map(dest => (
             <button
               key={dest}
               type="button"
-              onClick={() => handleSelect(undefined, dest)}
-              className="rounded-lg border border-line bg-paper-0 px-2.5 py-1 text-[11px] font-medium text-ink-600 hover:border-[rgb(var(--color-ai)/0.4)] hover:bg-[rgb(var(--color-ai)/0.08)] hover:text-[rgb(var(--color-ai))] transition-colors"
+              onClick={() => setDestination(dest)}
+              className="rounded-full border border-line bg-paper-0 px-2.5 py-1 text-[11px] font-medium text-ink-600 hover:border-ink-900 hover:text-ink-900 transition-colors"
             >
               {dest}
             </button>
           ))}
         </div>
       )}
-
-      <button
-        type="submit"
-        disabled={!city.trim()}
-        className="mt-1 w-full rounded-xl bg-gradient-to-r from-[rgb(var(--color-ai))] to-violet-700 py-2 text-sm font-semibold text-white shadow-surface transition-all hover:opacity-90 disabled:from-line disabled:to-line disabled:text-ink-400"
-      >
-        Confirm Location
-      </button>
-    </form>
+    </WidgetContainer>
   );
 }
